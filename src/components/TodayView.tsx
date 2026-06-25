@@ -1,6 +1,8 @@
 import { AlertTriangle, Banknote, CheckCircle2, Megaphone, Plus, Target } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
+import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId } from '../types';
 
 interface TodayViewProps {
@@ -11,6 +13,7 @@ interface TodayViewProps {
 }
 
 export function TodayView({ data, insights, updateData, setActiveView }: TodayViewProps) {
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
@@ -24,8 +27,10 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     }));
   };
 
-  const addTask = () => {
-    const title = window.prompt('Qual tarefa você quer lembrar?');
+  const addTask = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get('title') ?? '').trim();
     if (!title) return;
     updateData((current) => ({
       ...current,
@@ -33,13 +38,15 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         {
           id: makeId('task'),
           title,
-          dueDate: new Date().toISOString().slice(0, 10),
-          area: 'campanhas',
+          dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+          area: String(form.get('area') ?? 'campanhas') as Task['area'],
           done: false,
         },
         ...current.tasks,
       ],
     }));
+    setTaskModalOpen(false);
+    event.currentTarget.reset();
   };
 
   return (
@@ -54,11 +61,39 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           <h1 className="mt-2 text-3xl font-black text-white">Esta é a operação agora.</h1>
           <p className="mt-2 text-brand-muted">Prioridades, cobranças, campanhas e projetos que precisam de decisão.</p>
         </div>
-        <button onClick={addTask} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
+        <button onClick={() => setTaskModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
           <Plus size={18} />
           Nova tarefa rápida
         </button>
       </div>
+
+      <Modal title="Nova tarefa" description="Registre uma ação rápida para acompanhar na central do dia." open={taskModalOpen} onClose={() => setTaskModalOpen(false)}>
+        <form onSubmit={addTask} className="space-y-5 p-5">
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-brand-soft">Tarefa</span>
+            <input name="title" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Área</span>
+              <select name="area" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="campanhas">Campanhas</option>
+                <option value="clientes">Clientes</option>
+                <option value="financeiro">Financeiro</option>
+                <option value="projetos">Projetos</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Data</span>
+              <input name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
+            <button type="button" onClick={() => setTaskModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
+            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar tarefa</button>
+          </div>
+        </form>
+      </Modal>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric icon={Megaphone} label="Campanhas ativas" value={activeCampaigns.length.toString()} />

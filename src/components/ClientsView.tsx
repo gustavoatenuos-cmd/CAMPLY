@@ -1,5 +1,7 @@
 import { Mail, Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { makeId, money } from '../data/camplyStore';
+import { Modal } from './ui/Modal';
 import { CamplyData, ClientStatus } from '../types';
 
 interface ClientsViewProps {
@@ -8,29 +10,39 @@ interface ClientsViewProps {
 }
 
 export function ClientsView({ data, updateData }: ClientsViewProps) {
-  const addClient = () => {
-    const name = window.prompt('Nome do cliente');
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const addClient = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
     if (!name) return;
+
     updateData((current) => ({
       ...current,
       clients: [
         {
           id: makeId('client'),
           name,
-          segment: 'Novo segmento',
-          contact: '',
-          monthlyFee: 0,
-          dueDay: 10,
-          adInvestmentMeta: 0,
-          adInvestmentGoogle: 0,
-          adInvestmentYoutube: 0,
-          adInvestmentTikTok: 0,
-          status: 'lead',
-          notes: 'Completar dados do cliente.',
+          company: String(form.get('company') ?? ''),
+          segment: String(form.get('segment') ?? ''),
+          structure: String(form.get('structure') ?? ''),
+          hasProject: form.get('hasProject') === 'on',
+          contact: String(form.get('contact') ?? ''),
+          monthlyFee: Number(form.get('monthlyFee') ?? 0),
+          dueDay: Number(form.get('dueDay') ?? 10),
+          adInvestmentMeta: Number(form.get('adInvestmentMeta') ?? 0),
+          adInvestmentGoogle: Number(form.get('adInvestmentGoogle') ?? 0),
+          adInvestmentYoutube: Number(form.get('adInvestmentYoutube') ?? 0),
+          adInvestmentTikTok: Number(form.get('adInvestmentTikTok') ?? 0),
+          status: String(form.get('status') ?? 'lead') as ClientStatus,
+          notes: String(form.get('notes') ?? ''),
         },
         ...current.clients,
       ],
     }));
+    setModalOpen(false);
+    event.currentTarget.reset();
   };
 
   const setStatus = (id: string, status: ClientStatus) => {
@@ -42,7 +54,62 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
 
   return (
     <section className="h-full overflow-y-auto p-6 lg:p-8">
-      <Header eyebrow="Clientes" title="Base comercial" action="Novo cliente" onAction={addClient} />
+      <Header eyebrow="Clientes" title="Base comercial" action="Novo cliente" onAction={() => setModalOpen(true)} />
+      <Modal title="Novo cliente" description="Cadastre a empresa, estrutura trabalhada, investimento de mídia e dados operacionais." open={modalOpen} onClose={() => setModalOpen(false)}>
+        <form onSubmit={addClient} className="space-y-5 p-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Nome do responsável" name="name" required />
+            <Field label="Empresa / marca" name="company" />
+            <Field label="Segmento" name="segment" placeholder="Ex: clínica, infoproduto, ecommerce" />
+            <Field label="Contato principal" name="contact" placeholder="E-mail, telefone ou WhatsApp" />
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-brand-soft">Estrutura trabalhada</span>
+            <textarea name="structure" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Mensalidade de gestão" name="monthlyFee" type="number" min="0" step="0.01" />
+            <Field label="Dia de vencimento" name="dueDay" type="number" min="1" max="31" defaultValue="10" />
+          </div>
+
+          <div>
+            <p className="mb-3 text-sm font-semibold text-brand-soft">Investimento em anúncios</p>
+            <div className="grid gap-4 md:grid-cols-4">
+              <Field label="Facebook/Meta" name="adInvestmentMeta" type="number" min="0" step="0.01" />
+              <Field label="Google" name="adInvestmentGoogle" type="number" min="0" step="0.01" />
+              <Field label="YouTube" name="adInvestmentYoutube" type="number" min="0" step="0.01" />
+              <Field label="TikTok" name="adInvestmentTikTok" type="number" min="0" step="0.01" />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
+              <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" defaultValue="lead">
+                <option value="lead">Lead</option>
+                <option value="active">Ativo</option>
+                <option value="paused">Pausado</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-3 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm font-semibold text-brand-soft">
+              <input name="hasProject" type="checkbox" className="h-4 w-4 accent-brand-green" />
+              Faz parte de algum projeto
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-brand-soft">Observações</span>
+            <textarea name="notes" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+          </label>
+
+          <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
+            <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
+            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar cliente</button>
+          </div>
+        </form>
+      </Modal>
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {data.clients.map((client) => {
           const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id);
@@ -54,7 +121,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">{client.name}</h2>
-                  <p className="mt-1 text-sm text-brand-muted">{client.segment}</p>
+                  <p className="mt-1 text-sm text-brand-muted">{client.company || client.segment || 'Sem empresa informada'}</p>
                 </div>
                 <select value={client.status} onChange={(event) => setStatus(client.id, event.target.value as ClientStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
                   <option value="active">Ativo</option>
@@ -63,6 +130,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
                 </select>
               </div>
               <p className="mt-5 flex items-center gap-2 text-sm text-brand-muted"><Mail size={15} /> {client.contact || 'Contato não informado'}</p>
+              {client.structure && <p className="mt-3 text-sm leading-relaxed text-brand-muted">{client.structure}</p>}
               <div className="mt-5 grid grid-cols-3 gap-2">
                 <Mini label="Mensalidade" value={money(client.monthlyFee)} />
                 <Mini label="Vence dia" value={client.dueDay.toString()} />
@@ -88,6 +156,15 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
         })}
       </div>
     </section>
+  );
+}
+
+function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
+      <input name={name} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" {...props} />
+    </label>
   );
 }
 

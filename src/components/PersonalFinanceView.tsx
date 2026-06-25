@@ -1,5 +1,7 @@
 import { Check, Plus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
+import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus } from '../types';
 
 interface PersonalFinanceViewProps {
@@ -8,29 +10,34 @@ interface PersonalFinanceViewProps {
 }
 
 export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewProps) {
+  const [modalOpen, setModalOpen] = useState(false);
   const pending = data.receivables.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0);
   const overdue = data.receivables.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0);
   const paid = data.receivables.filter((item) => item.status === 'paid').reduce((sum, item) => sum + item.amount, 0);
   const projectsToReceive = data.projects.reduce((sum, project) => sum + Math.max(0, project.amountCharged - project.amountReceived), 0);
 
-  const addReceivable = () => {
-    const client = data.clients[0];
-    const amount = Number(window.prompt('Valor a receber'));
-    if (!client || !amount) return;
+  const addReceivable = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const clientId = String(form.get('clientId') ?? '');
+    const amount = Number(form.get('amount') ?? 0);
+    if (!clientId || !amount) return;
     updateData((current) => ({
       ...current,
       receivables: [
         {
           id: makeId('recv'),
-          clientId: client.id,
-          description: 'Novo recebimento',
+          clientId,
+          description: String(form.get('description') ?? ''),
           amount,
-          dueDate: new Date().toISOString().slice(0, 10),
-          status: 'pending',
+          dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+          status: String(form.get('status') ?? 'pending') as PaymentStatus,
         },
         ...current.receivables,
       ],
     }));
+    setModalOpen(false);
+    event.currentTarget.reset();
   };
 
   const setStatus = (id: string, status: PaymentStatus) => {
@@ -47,11 +54,45 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Meu financeiro</p>
           <h1 className="mt-1 text-2xl font-black text-white">Recebimentos da operação</h1>
         </div>
-        <button onClick={addReceivable} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
+        <button onClick={() => setModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
           <Plus size={18} />
           Novo recebimento
         </button>
       </div>
+
+      <Modal title="Novo recebimento" description="Cadastre mensalidades, parcelas ou cobranças próprias da operação." open={modalOpen} onClose={() => setModalOpen(false)}>
+        <form onSubmit={addReceivable} className="space-y-5 p-5">
+          {data.clients.length === 0 && (
+            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+              Cadastre um cliente antes de lançar recebimentos.
+            </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente</span>
+              <select name="clientId" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Selecione</option>
+                {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+            </label>
+            <Field label="Descrição" name="description" placeholder="Ex: mensalidade, setup, parcela do projeto" required />
+            <Field label="Valor" name="amount" type="number" min="0" step="0.01" required />
+            <Field label="Vencimento" name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
+              <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="pending">{paymentStatusLabels.pending}</option>
+                <option value="overdue">{paymentStatusLabels.overdue}</option>
+                <option value="paid">{paymentStatusLabels.paid}</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
+            <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
+            <button disabled={data.clients.length === 0} className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink disabled:opacity-50">Salvar recebimento</button>
+          </div>
+        </form>
+      </Modal>
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Total label="Mensalidades pendentes" value={money(pending)} />
@@ -108,6 +149,15 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         })}
       </div>
     </section>
+  );
+}
+
+function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
+      <input name={name} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" {...props} />
+    </label>
   );
 }
 

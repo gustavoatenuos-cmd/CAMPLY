@@ -9,7 +9,10 @@ export type Priority = 'low' | 'medium' | 'high';
 export interface Client {
   id: string;
   name: string;
+  company: string;
   segment: string;
+  structure: string;
+  hasProject: boolean;
   contact: string;
   monthlyFee: number;
   dueDay: number;
@@ -27,13 +30,21 @@ export interface Campaign {
   name: string;
   platform: 'Meta Ads' | 'Google Ads' | 'TikTok Ads' | 'Outro';
   status: CampaignStatus;
-  objective: string;
+  objective: MetaCampaignObjective | string;
   budget: number;
   spent: number;
   lastOptimizedAt: string;
   nextAction: string;
   priority: Priority;
 }
+
+export type MetaCampaignObjective =
+  | 'Reconhecimento'
+  | 'Tráfego'
+  | 'Engajamento'
+  | 'Cadastros'
+  | 'Promoção do app'
+  | 'Vendas';
 
 export interface Receivable {
   id: string;
