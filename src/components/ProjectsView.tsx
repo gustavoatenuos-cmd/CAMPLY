@@ -1,6 +1,6 @@
 import { ExternalLink, Plus, Save } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { formatDate, makeId, money, normalizeMonthlyInvestment, projectStatusLabels } from '../data/camplyStore';
+import { createActivityLog, formatDate, makeId, money, normalizeMonthlyInvestment, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, Project, ProjectStatus, ProjectType } from '../types';
 
@@ -26,28 +26,40 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
+    const project: Project = {
+      id: makeId('project'),
+      projectType: selectedProjectType ?? 'traffic',
+      clientId: String(form.get('clientId') ?? ''),
+      ownerName: String(form.get('ownerName') ?? ''),
+      company: String(form.get('company') ?? ''),
+      billingType: String(form.get('billingType') ?? 'recurring') as Project['billingType'],
+      name,
+      role: String(form.get('role') ?? ''),
+      status: String(form.get('status') ?? 'active') as ProjectStatus,
+      progress: newProjectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
+      dueDate: newProjectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+      amountCharged: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
+      amountReceived: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
+      deliveredUrl: String(form.get('deliveredUrl') ?? ''),
+      visibility: String(form.get('visibility') ?? 'private') as Project['visibility'],
+      nextAction: String(form.get('nextAction') ?? ''),
+    };
+
     updateData((current) => ({
       ...current,
-      projects: [
-        {
-          id: makeId('project'),
-          projectType: selectedProjectType ?? 'traffic',
-          clientId: String(form.get('clientId') ?? ''),
-          ownerName: String(form.get('ownerName') ?? ''),
-          company: String(form.get('company') ?? ''),
-          billingType: String(form.get('billingType') ?? 'recurring') as Project['billingType'],
-          name,
-          role: String(form.get('role') ?? ''),
-          status: String(form.get('status') ?? 'active') as ProjectStatus,
-          progress: newProjectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
-          dueDate: newProjectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-          amountCharged: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
-          amountReceived: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
-          deliveredUrl: String(form.get('deliveredUrl') ?? ''),
-          visibility: String(form.get('visibility') ?? 'private') as Project['visibility'],
-          nextAction: String(form.get('nextAction') ?? ''),
-        },
-        ...current.projects,
+      projects: [project, ...current.projects],
+      activityLogs: [
+        createActivityLog({
+          action: 'project_created',
+          title: `Projeto criado: ${project.name}`,
+          description: `${project.projectType === 'traffic' ? 'Projeto de tráfego recorrente' : 'Projeto de site pontual'} cadastrado para a operação.`,
+          projectId: project.id,
+          clientId: project.clientId,
+          campaignId: '',
+          receivableId: '',
+          taskId: '',
+        }),
+        ...current.activityLogs,
       ],
     }));
     setModalOpen(false);
@@ -56,9 +68,25 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   };
 
   const setStatus = (id: string, status: ProjectStatus) => {
+    const project = data.projects.find((item) => item.id === id);
     updateData((current) => ({
       ...current,
       projects: current.projects.map((project) => (project.id === id ? { ...project, status } : project)),
+      activityLogs: project
+        ? [
+            createActivityLog({
+              action: 'project_status_changed',
+              title: `Status do projeto: ${project.name}`,
+              description: `Projeto alterado para ${projectStatusLabels[status]}.`,
+              projectId: project.id,
+              clientId: project.clientId,
+              campaignId: '',
+              receivableId: '',
+              taskId: '',
+            }),
+            ...current.activityLogs,
+          ]
+        : current.activityLogs,
     }));
   };
 
@@ -73,6 +101,21 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
       projects: current.projects.map((item) =>
         item.id === project.id ? { ...item, amountCharged, amountReceived, deliveredUrl } : item,
       ),
+      activityLogs: [
+        createActivityLog({
+          action: 'project_updated',
+          title: `Projeto atualizado: ${project.name}`,
+          description: project.billingType === 'recurring'
+            ? 'Link entregue ou dados complementares foram atualizados.'
+            : `Valores atualizados: cobrado ${money(amountCharged)}, recebido ${money(amountReceived)}.`,
+          projectId: project.id,
+          clientId: project.clientId,
+          campaignId: '',
+          receivableId: '',
+          taskId: '',
+        }),
+        ...current.activityLogs,
+      ],
     }));
   };
 

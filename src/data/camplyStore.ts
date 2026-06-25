@@ -1,4 +1,4 @@
-import { CamplyData, CampaignStatus, Insight, PaymentStatus, ProjectStatus } from '../types';
+import { ActivityLog, CamplyData, CampaignStatus, Insight, PaymentStatus, ProjectStatus } from '../types';
 
 const STORAGE_KEY = 'camply-data-v2';
 
@@ -32,6 +32,7 @@ export const initialData: CamplyData = {
   receivables: [],
   projects: [],
   tasks: [],
+  activityLogs: [],
 };
 
 export const loadData = (): CamplyData => {
@@ -65,6 +66,15 @@ export const loadData = (): CamplyData => {
         deliveredUrl: project.deliveredUrl ?? '',
         visibility: project.visibility ?? 'private',
       })),
+      activityLogs: (parsed.activityLogs ?? []).map((log) => ({
+        ...log,
+        projectId: log.projectId ?? '',
+        clientId: log.clientId ?? '',
+        campaignId: log.campaignId ?? '',
+        receivableId: log.receivableId ?? '',
+        taskId: log.taskId ?? '',
+        actor: log.actor ?? 'Gustavo',
+      })),
     };
   } catch {
     return initialData;
@@ -76,6 +86,13 @@ export const saveData = (data: CamplyData) => {
 };
 
 export const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+export const createActivityLog = (input: Omit<ActivityLog, 'id' | 'actor' | 'createdAt'>): ActivityLog => ({
+  id: makeId('log'),
+  actor: 'Gustavo',
+  createdAt: new Date().toISOString(),
+  ...input,
+});
 
 export const normalizeMonthlyInvestment = (value: number, period: 'daily' | 'weekly' | 'monthly') => {
   if (period === 'daily') return value * 30;

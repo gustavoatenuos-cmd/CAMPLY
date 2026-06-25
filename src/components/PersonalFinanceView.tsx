@@ -1,8 +1,8 @@
 import { Check, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
+import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
-import { CamplyData, PaymentStatus } from '../types';
+import { CamplyData, PaymentStatus, Receivable } from '../types';
 
 interface PersonalFinanceViewProps {
   data: CamplyData;
@@ -21,19 +21,31 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
     const form = new FormData(event.currentTarget);
     const clientId = String(form.get('clientId') ?? '');
     const amount = Number(form.get('amount') ?? 0);
-    if (!clientId || !amount) return;
+    const client = data.clients.find((item) => item.id === clientId);
+    if (!client || !amount) return;
+    const receivable: Receivable = {
+      id: makeId('recv'),
+      clientId,
+      description: String(form.get('description') ?? ''),
+      amount,
+      dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+      status: String(form.get('status') ?? 'pending') as PaymentStatus,
+    };
     updateData((current) => ({
       ...current,
-      receivables: [
-        {
-          id: makeId('recv'),
-          clientId,
-          description: String(form.get('description') ?? ''),
-          amount,
-          dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-          status: String(form.get('status') ?? 'pending') as PaymentStatus,
-        },
-        ...current.receivables,
+      receivables: [receivable, ...current.receivables],
+      activityLogs: [
+        createActivityLog({
+          action: 'receivable_created',
+          title: `Recebimento criado: ${client.name}`,
+          description: `${receivable.description || 'Cobrança'} no valor de ${money(receivable.amount)} com vencimento em ${formatDate(receivable.dueDate)}.`,
+          projectId: client.projectId,
+          clientId: client.id,
+          campaignId: '',
+          receivableId: receivable.id,
+          taskId: '',
+        }),
+        ...current.activityLogs,
       ],
     }));
     setModalOpen(false);
@@ -41,9 +53,26 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
   };
 
   const setStatus = (id: string, status: PaymentStatus) => {
+    const receivable = data.receivables.find((item) => item.id === id);
+    const client = data.clients.find((item) => item.id === receivable?.clientId);
     updateData((current) => ({
       ...current,
       receivables: current.receivables.map((item) => (item.id === id ? { ...item, status } : item)),
+      activityLogs: receivable
+        ? [
+            createActivityLog({
+              action: 'receivable_status_changed',
+              title: status === 'paid' ? `Pagamento recebido: ${client?.name ?? 'Cliente'}` : `Status financeiro alterado: ${client?.name ?? 'Cliente'}`,
+              description: `${receivable.description || 'Recebível'} de ${money(receivable.amount)} foi marcado como ${paymentStatusLabels[status]}.`,
+              projectId: client?.projectId ?? '',
+              clientId: receivable.clientId,
+              campaignId: '',
+              receivableId: receivable.id,
+              taskId: '',
+            }),
+            ...current.activityLogs,
+          ]
+        : current.activityLogs,
     }));
   };
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AUTH_STORAGE_KEY } from './auth';
+import { ActivityView } from './components/ActivityView';
 import { AuthGate } from './components/AuthGate';
 import { CampaignsView } from './components/CampaignsView';
 import { ClientsView } from './components/ClientsView';
@@ -48,6 +49,7 @@ export default function App() {
         {activeView === 'mediaFinance' && <FinanceView data={data} />}
         {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
         {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
+        {activeView === 'activity' && <ActivityView data={data} />}
         {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
       </main>
     </div>

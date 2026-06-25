@@ -1,10 +1,10 @@
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { campaignColumns, campaignStatusLabels, makeId, money } from '../data/camplyStore';
+import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money } from '../data/camplyStore';
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
-import { CamplyData, CampaignStatus, Priority } from '../types';
+import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -17,9 +17,26 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
     const status = result.destination.droppableId as CampaignStatus;
+    const campaign = data.campaigns.find((item) => item.id === result.draggableId);
+    const client = data.clients.find((item) => item.id === campaign?.clientId);
     updateData((current) => ({
       ...current,
       campaigns: current.campaigns.map((campaign) => (campaign.id === result.draggableId ? { ...campaign, status } : campaign)),
+      activityLogs: campaign
+        ? [
+            createActivityLog({
+              action: 'campaign_status_changed',
+              title: `Campanha movida: ${campaign.name}`,
+              description: `Campanha alterada para ${campaignStatusLabels[status]}.`,
+              projectId: client?.projectId ?? '',
+              clientId: campaign.clientId,
+              campaignId: campaign.id,
+              receivableId: '',
+              taskId: '',
+            }),
+            ...current.activityLogs,
+          ]
+        : current.activityLogs,
     }));
   };
 
@@ -31,23 +48,35 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
     const client = data.clients.find((item) => item.id === clientId);
     if (!client || !name) return;
 
+    const campaign: Campaign = {
+      id: makeId('campaign'),
+      clientId: client.id,
+      name,
+      platform: String(form.get('platform') ?? 'Meta Ads') as 'Meta Ads',
+      status: String(form.get('status') ?? 'setup') as CampaignStatus,
+      objective: String(form.get('objective') ?? 'Tráfego'),
+      budget: Number(form.get('budget') ?? 0),
+      spent: Number(form.get('spent') ?? 0),
+      lastOptimizedAt: String(form.get('lastOptimizedAt') ?? new Date().toISOString().slice(0, 10)),
+      nextAction: String(form.get('nextAction') ?? ''),
+      priority: String(form.get('priority') ?? 'medium') as Priority,
+    };
+
     updateData((current) => ({
       ...current,
-      campaigns: [
-        {
-          id: makeId('campaign'),
+      campaigns: [campaign, ...current.campaigns],
+      activityLogs: [
+        createActivityLog({
+          action: 'campaign_created',
+          title: `Campanha criada: ${campaign.name}`,
+          description: `${campaign.platform} para ${client.name}, objetivo ${campaign.objective}.`,
+          projectId: client.projectId,
           clientId: client.id,
-          name,
-          platform: String(form.get('platform') ?? 'Meta Ads') as 'Meta Ads',
-          status: String(form.get('status') ?? 'setup') as CampaignStatus,
-          objective: String(form.get('objective') ?? 'Tráfego'),
-          budget: Number(form.get('budget') ?? 0),
-          spent: Number(form.get('spent') ?? 0),
-          lastOptimizedAt: String(form.get('lastOptimizedAt') ?? new Date().toISOString().slice(0, 10)),
-          nextAction: String(form.get('nextAction') ?? ''),
-          priority: String(form.get('priority') ?? 'medium') as Priority,
-        },
-        ...current.campaigns,
+          campaignId: campaign.id,
+          receivableId: '',
+          taskId: '',
+        }),
+        ...current.activityLogs,
       ],
     }));
     setModalOpen(false);

@@ -1,6 +1,6 @@
 import { Edit3, Mail, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
+import { createActivityLog, makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
 import { BillingType, CamplyData, ClientStatus, InvestmentPeriod } from '../types';
@@ -46,6 +46,21 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       clients: editingClient
         ? current.clients.map((client) => (client.id === editingClient.id ? nextClient : client))
         : [nextClient, ...current.clients],
+      activityLogs: [
+        createActivityLog({
+          action: editingClient ? 'client_updated' : 'client_created',
+          title: editingClient ? `Cliente editado: ${nextClient.name}` : `Cliente criado: ${nextClient.name}`,
+          description: editingClient
+            ? 'Dados comerciais, financeiros ou operacionais do cliente foram atualizados.'
+            : `${nextClient.company || nextClient.segment || 'Cliente sem empresa informada'} entrou na base operacional.`,
+          projectId: nextClient.projectId,
+          clientId: nextClient.id,
+          campaignId: '',
+          receivableId: '',
+          taskId: '',
+        }),
+        ...current.activityLogs,
+      ],
     }));
     setModalOpen(false);
     setEditingClientId(null);
@@ -53,9 +68,25 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
   };
 
   const setStatus = (id: string, status: ClientStatus) => {
+    const client = data.clients.find((item) => item.id === id);
     updateData((current) => ({
       ...current,
       clients: current.clients.map((client) => (client.id === id ? { ...client, status } : client)),
+      activityLogs: client
+        ? [
+            createActivityLog({
+              action: 'client_status_changed',
+              title: `Status alterado: ${client.name}`,
+              description: `Cliente movido para ${status}.`,
+              projectId: client.projectId,
+              clientId: client.id,
+              campaignId: '',
+              receivableId: '',
+              taskId: '',
+            }),
+            ...current.activityLogs,
+          ]
+        : current.activityLogs,
     }));
   };
 

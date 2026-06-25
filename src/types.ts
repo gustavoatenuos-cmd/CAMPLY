@@ -1,4 +1,4 @@
-export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'intelligence';
+export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';
@@ -88,12 +88,42 @@ export interface Task {
   done: boolean;
 }
 
+export type ActivityAction =
+  | 'client_created'
+  | 'client_updated'
+  | 'client_status_changed'
+  | 'campaign_created'
+  | 'campaign_status_changed'
+  | 'task_created'
+  | 'task_completed'
+  | 'task_reopened'
+  | 'receivable_created'
+  | 'receivable_status_changed'
+  | 'project_created'
+  | 'project_status_changed'
+  | 'project_updated';
+
+export interface ActivityLog {
+  id: string;
+  action: ActivityAction;
+  title: string;
+  description: string;
+  projectId: string;
+  clientId: string;
+  campaignId: string;
+  receivableId: string;
+  taskId: string;
+  actor: string;
+  createdAt: string;
+}
+
 export interface CamplyData {
   clients: Client[];
   campaigns: Campaign[];
   receivables: Receivable[];
   projects: Project[];
   tasks: Task[];
+  activityLogs: ActivityLog[];
 }
 
 export interface Insight {

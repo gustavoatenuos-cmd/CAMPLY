@@ -1,6 +1,6 @@
 import { AlertTriangle, Banknote, CheckCircle2, Megaphone, Plus, Target } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { daysUntil, formatDate, makeId, money } from '../data/camplyStore';
+import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId } from '../types';
@@ -24,6 +24,19 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     updateData((current) => ({
       ...current,
       tasks: current.tasks.map((item) => (item.id === task.id ? { ...item, done: !item.done } : item)),
+      activityLogs: [
+        createActivityLog({
+          action: task.done ? 'task_reopened' : 'task_completed',
+          title: task.done ? `Tarefa reaberta: ${task.title}` : `Tarefa concluída: ${task.title}`,
+          description: task.done ? 'A tarefa voltou para a lista de pendências.' : 'A tarefa foi marcada como concluída na central do dia.',
+          projectId: '',
+          clientId: '',
+          campaignId: '',
+          receivableId: '',
+          taskId: task.id,
+        }),
+        ...current.activityLogs,
+      ],
     }));
   };
 
@@ -32,17 +45,28 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     const form = new FormData(event.currentTarget);
     const title = String(form.get('title') ?? '').trim();
     if (!title) return;
+    const task: Task = {
+      id: makeId('task'),
+      title,
+      dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+      area: String(form.get('area') ?? 'campanhas') as Task['area'],
+      done: false,
+    };
     updateData((current) => ({
       ...current,
-      tasks: [
-        {
-          id: makeId('task'),
-          title,
-          dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-          area: String(form.get('area') ?? 'campanhas') as Task['area'],
-          done: false,
-        },
-        ...current.tasks,
+      tasks: [task, ...current.tasks],
+      activityLogs: [
+        createActivityLog({
+          action: 'task_created',
+          title: `Tarefa criada: ${task.title}`,
+          description: `Nova tarefa adicionada para ${formatDate(task.dueDate)} na área de ${task.area}.`,
+          projectId: '',
+          clientId: '',
+          campaignId: '',
+          receivableId: '',
+          taskId: task.id,
+        }),
+        ...current.activityLogs,
       ],
     }));
     setTaskModalOpen(false);
