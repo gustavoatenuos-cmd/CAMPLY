@@ -1,4 +1,4 @@
-import { Mail, Plus } from 'lucide-react';
+import { Edit3, Mail, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { billingTypes, investmentPeriods } from '../data/options';
@@ -12,40 +12,43 @@ interface ClientsViewProps {
 
 export function ClientsView({ data, updateData }: ClientsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const editingClient = data.clients.find((client) => client.id === editingClientId);
 
-  const addClient = (event: FormEvent<HTMLFormElement>) => {
+  const saveClient = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
+    const nextClient = {
+      id: editingClient?.id ?? makeId('client'),
+      projectId: String(form.get('projectId') ?? ''),
+      name,
+      company: String(form.get('company') ?? ''),
+      segment: String(form.get('segment') ?? ''),
+      structure: String(form.get('structure') ?? ''),
+      hasProject: form.get('hasProject') === 'on',
+      contact: String(form.get('contact') ?? ''),
+      monthlyFee: Number(form.get('monthlyFee') ?? 0),
+      managementFeeType: String(form.get('managementFeeType') ?? 'recurring') as BillingType,
+      dueDay: Number(form.get('dueDay') ?? 10),
+      adInvestmentPeriod: String(form.get('adInvestmentPeriod') ?? 'monthly') as InvestmentPeriod,
+      adInvestmentMeta: Number(form.get('adInvestmentMeta') ?? 0),
+      adInvestmentGoogle: Number(form.get('adInvestmentGoogle') ?? 0),
+      adInvestmentYoutube: Number(form.get('adInvestmentYoutube') ?? 0),
+      adInvestmentTikTok: Number(form.get('adInvestmentTikTok') ?? 0),
+      status: String(form.get('status') ?? 'lead') as ClientStatus,
+      notes: String(form.get('notes') ?? ''),
+    };
 
     updateData((current) => ({
       ...current,
-      clients: [
-        {
-          id: makeId('client'),
-          projectId: String(form.get('projectId') ?? ''),
-          name,
-          company: String(form.get('company') ?? ''),
-          segment: String(form.get('segment') ?? ''),
-          structure: String(form.get('structure') ?? ''),
-          hasProject: form.get('hasProject') === 'on',
-          contact: String(form.get('contact') ?? ''),
-          monthlyFee: Number(form.get('monthlyFee') ?? 0),
-          managementFeeType: String(form.get('managementFeeType') ?? 'recurring') as BillingType,
-          dueDay: Number(form.get('dueDay') ?? 10),
-          adInvestmentPeriod: String(form.get('adInvestmentPeriod') ?? 'monthly') as InvestmentPeriod,
-          adInvestmentMeta: Number(form.get('adInvestmentMeta') ?? 0),
-          adInvestmentGoogle: Number(form.get('adInvestmentGoogle') ?? 0),
-          adInvestmentYoutube: Number(form.get('adInvestmentYoutube') ?? 0),
-          adInvestmentTikTok: Number(form.get('adInvestmentTikTok') ?? 0),
-          status: String(form.get('status') ?? 'lead') as ClientStatus,
-          notes: String(form.get('notes') ?? ''),
-        },
-        ...current.clients,
-      ],
+      clients: editingClient
+        ? current.clients.map((client) => (client.id === editingClient.id ? nextClient : client))
+        : [nextClient, ...current.clients],
     }));
     setModalOpen(false);
+    setEditingClientId(null);
     event.currentTarget.reset();
   };
 
@@ -58,20 +61,36 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
 
   return (
     <section className="h-full overflow-y-auto p-6 lg:p-8">
-      <Header eyebrow="Clientes" title="Base comercial" action="Novo cliente" onAction={() => setModalOpen(true)} />
-      <Modal title="Novo cliente" description="Cadastre a empresa, estrutura trabalhada, investimento de mídia e dados operacionais." open={modalOpen} onClose={() => setModalOpen(false)}>
-        <form onSubmit={addClient} className="space-y-5 p-5">
+      <Header
+        eyebrow="Clientes"
+        title="Base comercial"
+        action="Novo cliente"
+        onAction={() => {
+          setEditingClientId(null);
+          setModalOpen(true);
+        }}
+      />
+      <Modal
+        title={editingClient ? 'Editar cliente' : 'Novo cliente'}
+        description="Cadastre a empresa, estrutura trabalhada, investimento de mídia e dados operacionais."
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingClientId(null);
+        }}
+      >
+        <form key={editingClient?.id ?? 'new-client'} onSubmit={saveClient} className="space-y-5 p-5">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Nome do responsável" name="name" required />
-            <Field label="Empresa / marca" name="company" />
-            <Field label="Segmento" name="segment" placeholder="Ex: clínica, infoproduto, ecommerce" />
-            <Field label="Contato principal" name="contact" placeholder="E-mail, telefone ou WhatsApp" />
+            <Field label="Nome do responsável" name="name" defaultValue={editingClient?.name} required />
+            <Field label="Empresa / marca" name="company" defaultValue={editingClient?.company} />
+            <Field label="Segmento" name="segment" defaultValue={editingClient?.segment} placeholder="Ex: clínica, infoproduto, ecommerce" />
+            <Field label="Contato principal" name="contact" defaultValue={editingClient?.contact} placeholder="E-mail, telefone ou WhatsApp" />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Projeto guarda-chuva</span>
-              <select name="projectId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select name="projectId" defaultValue={editingClient?.projectId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Sem projeto</option>
                 {data.projects.map((project) => (
                   <option key={project.id} value={project.id}>
@@ -82,7 +101,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de serviço</span>
-              <select name="managementFeeType" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select name="managementFeeType" defaultValue={editingClient?.managementFeeType ?? 'recurring'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 {billingTypes.map((type) => (
                   <option key={type.value} value={type.value}>
                     {type.label}
@@ -94,12 +113,12 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
 
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Estrutura trabalhada</span>
-            <textarea name="structure" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
+            <textarea name="structure" defaultValue={editingClient?.structure} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <MoneyField label="Valor da gestão" name="monthlyFee" />
-            <Field label="Dia de vencimento" name="dueDay" type="number" min="1" max="31" defaultValue="10" />
+            <MoneyField label="Valor da gestão" name="monthlyFee" defaultValue={editingClient?.monthlyFee} />
+            <Field label="Dia de vencimento" name="dueDay" type="number" min="1" max="31" defaultValue={editingClient?.dueDay ?? 10} />
           </div>
 
           <div>
@@ -107,7 +126,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               <p className="text-sm font-semibold text-brand-soft">Investimento em anúncios</p>
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-brand-soft">Período do investimento</span>
-                <select name="adInvestmentPeriod" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <select name="adInvestmentPeriod" defaultValue={editingClient?.adInvestmentPeriod ?? 'monthly'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                   {investmentPeriods.map((period) => (
                     <option key={period.value} value={period.value}>
                       {period.label}
@@ -117,36 +136,45 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               </label>
             </div>
             <div className="grid gap-4 md:grid-cols-4">
-              <MoneyField label="Facebook/Meta" name="adInvestmentMeta" />
-              <MoneyField label="Google" name="adInvestmentGoogle" />
-              <MoneyField label="YouTube" name="adInvestmentYoutube" />
-              <MoneyField label="TikTok" name="adInvestmentTikTok" />
+              <MoneyField label="Facebook/Meta" name="adInvestmentMeta" defaultValue={editingClient?.adInvestmentMeta} />
+              <MoneyField label="Google" name="adInvestmentGoogle" defaultValue={editingClient?.adInvestmentGoogle} />
+              <MoneyField label="YouTube" name="adInvestmentYoutube" defaultValue={editingClient?.adInvestmentYoutube} />
+              <MoneyField label="TikTok" name="adInvestmentTikTok" defaultValue={editingClient?.adInvestmentTikTok} />
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
-              <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" defaultValue="lead">
+              <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" defaultValue={editingClient?.status ?? 'lead'}>
                 <option value="lead">Lead</option>
                 <option value="active">Ativo</option>
                 <option value="paused">Pausado</option>
               </select>
             </label>
             <label className="flex items-center gap-3 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm font-semibold text-brand-soft">
-              <input name="hasProject" type="checkbox" className="h-4 w-4 accent-brand-green" />
+              <input name="hasProject" type="checkbox" defaultChecked={editingClient?.hasProject || !!editingClient?.projectId} className="h-4 w-4 accent-brand-green" />
               Cliente vinculado a uma estrutura de projeto
             </label>
           </div>
 
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Observações</span>
-            <textarea name="notes" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+            <textarea name="notes" defaultValue={editingClient?.notes} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
           </label>
 
           <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
-            <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
-            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar cliente</button>
+            <button
+              type="button"
+              onClick={() => {
+                setModalOpen(false);
+                setEditingClientId(null);
+              }}
+              className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft"
+            >
+              Cancelar
+            </button>
+            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">{editingClient ? 'Salvar alterações' : 'Salvar cliente'}</button>
           </div>
         </form>
       </Modal>
@@ -172,6 +200,16 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
                   <option value="paused">Pausado</option>
                 </select>
               </div>
+              <button
+                onClick={() => {
+                  setEditingClientId(client.id);
+                  setModalOpen(true);
+                }}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-semibold text-brand-soft transition hover:border-brand-green hover:text-white"
+              >
+                <Edit3 size={15} />
+                Editar dados
+              </button>
               <p className="mt-5 flex items-center gap-2 text-sm text-brand-muted"><Mail size={15} /> {client.contact || 'Contato não informado'}</p>
               {client.structure && <p className="mt-3 text-sm leading-relaxed text-brand-muted">{client.structure}</p>}
               <div className="mt-5 grid grid-cols-3 gap-2">
