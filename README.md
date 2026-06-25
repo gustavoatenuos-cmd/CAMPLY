@@ -30,7 +30,20 @@ Ela descreve:
 
 ## Estado atual
 
-MVP local. Os dados ficam salvos no navegador usando `localStorage`, para validar a rotina antes de conectar Supabase ou outro backend.
+MVP com persistência híbrida. O app abre rápido usando `localStorage` e, quando o Supabase está configurado, sincroniza o estado da operação na tabela `camply_workspace`.
+
+## Supabase
+
+Crie um arquivo `.env.local` com:
+
+```bash
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sua-chave-publishable
+```
+
+Depois rode o SQL de [supabase/schema.sql](supabase/schema.sql) no SQL Editor do Supabase.
+
+Observação: a política atual é para MVP single-user com senha local. Quando o Camply tiver login real, troque por Supabase Auth e RLS por usuário/organização.
 
 ## Rodar
 

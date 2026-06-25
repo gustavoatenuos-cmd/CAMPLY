@@ -35,47 +35,51 @@ export const initialData: CamplyData = {
   activityLogs: [],
 };
 
+export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
+  const parsed = { ...initialData, ...data } as CamplyData;
+
+  return {
+    ...parsed,
+    clients: parsed.clients.map((client) => ({
+      ...client,
+      projectId: client.projectId ?? '',
+      managementFeeType: client.managementFeeType ?? 'recurring',
+      adInvestmentPeriod: client.adInvestmentPeriod ?? 'monthly',
+      adInvestmentMeta: client.adInvestmentMeta ?? 0,
+      adInvestmentGoogle: client.adInvestmentGoogle ?? 0,
+      adInvestmentYoutube: client.adInvestmentYoutube ?? 0,
+      adInvestmentTikTok: client.adInvestmentTikTok ?? 0,
+    })),
+    projects: parsed.projects.map((project) => ({
+      ...project,
+      projectType: project.projectType ?? (project.billingType === 'recurring' ? 'traffic' : 'site'),
+      clientId: project.clientId ?? parsed.clients[0]?.id ?? '',
+      ownerName: project.ownerName ?? '',
+      company: project.company ?? '',
+      billingType: project.billingType ?? 'one_time',
+      amountCharged: project.amountCharged ?? 0,
+      amountReceived: project.amountReceived ?? 0,
+      deliveredUrl: project.deliveredUrl ?? '',
+      visibility: project.visibility ?? 'private',
+    })),
+    activityLogs: (parsed.activityLogs ?? []).map((log) => ({
+      ...log,
+      projectId: log.projectId ?? '',
+      clientId: log.clientId ?? '',
+      campaignId: log.campaignId ?? '',
+      receivableId: log.receivableId ?? '',
+      taskId: log.taskId ?? '',
+      actor: log.actor ?? 'Gustavo',
+    })),
+  };
+};
+
 export const loadData = (): CamplyData => {
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (!stored) return initialData;
 
   try {
-    const parsed = { ...initialData, ...JSON.parse(stored) } as CamplyData;
-
-    return {
-      ...parsed,
-      clients: parsed.clients.map((client) => ({
-        ...client,
-        projectId: client.projectId ?? '',
-        managementFeeType: client.managementFeeType ?? 'recurring',
-        adInvestmentPeriod: client.adInvestmentPeriod ?? 'monthly',
-        adInvestmentMeta: client.adInvestmentMeta ?? 0,
-        adInvestmentGoogle: client.adInvestmentGoogle ?? 0,
-        adInvestmentYoutube: client.adInvestmentYoutube ?? 0,
-        adInvestmentTikTok: client.adInvestmentTikTok ?? 0,
-      })),
-      projects: parsed.projects.map((project) => ({
-        ...project,
-        projectType: project.projectType ?? (project.billingType === 'recurring' ? 'traffic' : 'site'),
-        clientId: project.clientId ?? parsed.clients[0]?.id ?? '',
-        ownerName: project.ownerName ?? '',
-        company: project.company ?? '',
-        billingType: project.billingType ?? 'one_time',
-        amountCharged: project.amountCharged ?? 0,
-        amountReceived: project.amountReceived ?? 0,
-        deliveredUrl: project.deliveredUrl ?? '',
-        visibility: project.visibility ?? 'private',
-      })),
-      activityLogs: (parsed.activityLogs ?? []).map((log) => ({
-        ...log,
-        projectId: log.projectId ?? '',
-        clientId: log.clientId ?? '',
-        campaignId: log.campaignId ?? '',
-        receivableId: log.receivableId ?? '',
-        taskId: log.taskId ?? '',
-        actor: log.actor ?? 'Gustavo',
-      })),
-    };
+    return normalizeData(JSON.parse(stored));
   } catch {
     return initialData;
   }

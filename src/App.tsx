@@ -11,16 +11,44 @@ import { ProjectsView } from './components/ProjectsView';
 import { Sidebar } from './components/Sidebar';
 import { TodayView } from './components/TodayView';
 import { buildInsights, loadData, saveData } from './data/camplyStore';
+import { loadRemoteData, saveRemoteData } from './data/supabaseStore';
 import { CamplyData, ViewId } from './types';
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(() => window.sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true');
   const [activeView, setActiveView] = useState<ViewId>('today');
   const [data, setData] = useState<CamplyData>(() => loadData());
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!authenticated) return;
+
+    let active = true;
+
+    loadRemoteData().then((remoteData) => {
+      if (!active) return;
+      if (remoteData) setData(remoteData);
+      setRemoteLoaded(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [authenticated]);
 
   useEffect(() => {
     saveData(data);
   }, [data]);
+
+  useEffect(() => {
+    if (!authenticated || !remoteLoaded) return;
+
+    const timeout = window.setTimeout(() => {
+      void saveRemoteData(data);
+    }, 500);
+
+    return () => window.clearTimeout(timeout);
+  }, [authenticated, data, remoteLoaded]);
 
   const insights = useMemo(() => buildInsights(data), [data]);
 
