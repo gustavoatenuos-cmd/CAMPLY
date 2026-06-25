@@ -21,6 +21,10 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           contact: '',
           monthlyFee: 0,
           dueDay: 10,
+          adInvestmentMeta: 0,
+          adInvestmentGoogle: 0,
+          adInvestmentYoutube: 0,
+          adInvestmentTikTok: 0,
           status: 'lead',
           notes: 'Completar dados do cliente.',
         },
@@ -43,6 +47,8 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
         {data.clients.map((client) => {
           const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id);
           const pending = data.receivables.filter((item) => item.clientId === client.id && item.status !== 'paid');
+          const totalAds =
+            client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
           return (
             <article key={client.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
               <div className="flex items-start justify-between gap-4">
@@ -61,6 +67,16 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
                 <Mini label="Mensalidade" value={money(client.monthlyFee)} />
                 <Mini label="Vence dia" value={client.dueDay.toString()} />
                 <Mini label="Campanhas" value={campaigns.length.toString()} />
+              </div>
+              <div className="mt-4 rounded-lg bg-brand-surface p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Investimento em tráfego</p>
+                <p className="mt-1 text-lg font-black text-brand-green">{money(totalAds)}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Mini label="Facebook/Meta" value={money(client.adInvestmentMeta)} />
+                  <Mini label="Google" value={money(client.adInvestmentGoogle)} />
+                  <Mini label="YouTube" value={money(client.adInvestmentYoutube)} />
+                  <Mini label="TikTok" value={money(client.adInvestmentTikTok)} />
+                </div>
               </div>
               <div className="mt-4 rounded-lg bg-brand-surface p-3">
                 <p className="text-xs text-brand-muted">A receber</p>

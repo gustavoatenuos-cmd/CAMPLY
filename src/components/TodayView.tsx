@@ -116,7 +116,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             </div>
           </Panel>
 
-          <Panel title="Recebimentos próximos" button="Financeiro" onClick={() => setActiveView('finance')}>
+          <Panel title="Recebimentos próximos" button="Meu financeiro" onClick={() => setActiveView('personalFinance')}>
             <div className="space-y-3">
               {pendingPayments.map((item) => {
                 const client = data.clients.find((clientItem) => clientItem.id === item.clientId);

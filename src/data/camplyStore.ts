@@ -43,6 +43,10 @@ export const initialData: CamplyData = {
       contact: 'andreza@cliente.com',
       monthlyFee: 1800,
       dueDay: 5,
+      adInvestmentMeta: 5000,
+      adInvestmentGoogle: 0,
+      adInvestmentYoutube: 0,
+      adInvestmentTikTok: 0,
       status: 'active',
       notes: 'Foco em leads via WhatsApp. Precisa de atenção semanal nos criativos.',
     },
@@ -53,6 +57,10 @@ export const initialData: CamplyData = {
       contact: 'contato@sorriso.com',
       monthlyFee: 2200,
       dueDay: 10,
+      adInvestmentMeta: 8000,
+      adInvestmentGoogle: 1500,
+      adInvestmentYoutube: 0,
+      adInvestmentTikTok: 0,
       status: 'active',
       notes: 'Campanhas de agendamento com meta de reduzir custo por conversa.',
     },
@@ -63,6 +71,10 @@ export const initialData: CamplyData = {
       contact: 'contato@moda.com',
       monthlyFee: 2500,
       dueDay: 20,
+      adInvestmentMeta: 0,
+      adInvestmentGoogle: 3000,
+      adInvestmentYoutube: 1200,
+      adInvestmentTikTok: 0,
       status: 'lead',
       notes: 'Aguardando aprovação de verba e contrato.',
     },
@@ -137,20 +149,30 @@ export const initialData: CamplyData = {
   projects: [
     {
       id: 'project-camply',
+      clientId: 'client-andreza',
       name: 'Camply Assistente Operacional',
       role: 'Produto próprio',
       status: 'active',
       progress: 45,
       dueDate: dateFromNow(14),
+      amountCharged: 1800,
+      amountReceived: 0,
+      deliveredUrl: 'https://github.com/gustavoatenuos-cmd/CAMPLY',
+      visibility: 'private',
       nextAction: 'Validar rotina diária, dados necessários e próximos módulos.',
     },
     {
       id: 'project-parceria',
+      clientId: 'client-sorriso',
       name: 'Parceria Funil Perpétuo',
       role: 'Gestor de mídia e estratégia',
       status: 'planning',
       progress: 20,
       dueDate: dateFromNow(21),
+      amountCharged: 2500,
+      amountReceived: 800,
+      deliveredUrl: '',
+      visibility: 'private',
       nextAction: 'Definir oferta, verba inicial e meta de CPL.',
     },
   ],
@@ -184,7 +206,26 @@ export const loadData = (): CamplyData => {
   if (!stored) return initialData;
 
   try {
-    return { ...initialData, ...JSON.parse(stored) };
+    const parsed = { ...initialData, ...JSON.parse(stored) } as CamplyData;
+
+    return {
+      ...parsed,
+      clients: parsed.clients.map((client) => ({
+        ...client,
+        adInvestmentMeta: client.adInvestmentMeta ?? 0,
+        adInvestmentGoogle: client.adInvestmentGoogle ?? 0,
+        adInvestmentYoutube: client.adInvestmentYoutube ?? 0,
+        adInvestmentTikTok: client.adInvestmentTikTok ?? 0,
+      })),
+      projects: parsed.projects.map((project) => ({
+        ...project,
+        clientId: project.clientId ?? parsed.clients[0]?.id ?? '',
+        amountCharged: project.amountCharged ?? 0,
+        amountReceived: project.amountReceived ?? 0,
+        deliveredUrl: project.deliveredUrl ?? '',
+        visibility: project.visibility ?? 'private',
+      })),
+    };
   } catch {
     return initialData;
   }

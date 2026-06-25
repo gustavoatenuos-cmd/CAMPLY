@@ -1,4 +1,4 @@
-export type ViewId = 'today' | 'campaigns' | 'clients' | 'finance' | 'projects' | 'intelligence';
+export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'intelligence';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';
@@ -13,6 +13,10 @@ export interface Client {
   contact: string;
   monthlyFee: number;
   dueDay: number;
+  adInvestmentMeta: number;
+  adInvestmentGoogle: number;
+  adInvestmentYoutube: number;
+  adInvestmentTikTok: number;
   status: ClientStatus;
   notes: string;
 }
@@ -42,11 +46,16 @@ export interface Receivable {
 
 export interface Project {
   id: string;
+  clientId: string;
   name: string;
   role: string;
   status: ProjectStatus;
   progress: number;
   dueDate: string;
+  amountCharged: number;
+  amountReceived: number;
+  deliveredUrl: string;
+  visibility: 'private' | 'portfolio' | 'public';
   nextAction: string;
 }
 

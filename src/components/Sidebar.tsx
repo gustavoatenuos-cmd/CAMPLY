@@ -1,4 +1,4 @@
-import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, Sparkles, Users } from 'lucide-react';
+import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, Landmark, Sparkles, Users } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
@@ -6,8 +6,9 @@ const items = [
   { id: 'today', label: 'Hoje', icon: CalendarCheck },
   { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
   { id: 'clients', label: 'Clientes', icon: Users },
-  { id: 'finance', label: 'Financeiro', icon: Banknote },
+  { id: 'mediaFinance', label: 'Verbas de mídia', icon: Banknote },
   { id: 'projects', label: 'Projetos', icon: BriefcaseBusiness },
+  { id: 'personalFinance', label: 'Meu financeiro', icon: Landmark },
   { id: 'intelligence', label: 'Inteligência', icon: Sparkles },
 ] satisfies Array<{ id: ViewId; label: string; icon: typeof CalendarCheck }>;
 
