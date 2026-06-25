@@ -12,6 +12,7 @@ interface ProjectsViewProps {
 
 export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [newProjectBillingType, setNewProjectBillingType] = useState<Project['billingType']>('recurring');
   const groupedClients = data.clients.filter((client) => client.projectId);
   const recurringRevenue = groupedClients
     .filter((client) => client.managementFeeType === 'recurring')
@@ -33,14 +34,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
           clientId: String(form.get('clientId') ?? ''),
           ownerName: String(form.get('ownerName') ?? ''),
           company: String(form.get('company') ?? ''),
-          billingType: String(form.get('billingType') ?? 'one_time') as Project['billingType'],
+          billingType: String(form.get('billingType') ?? 'recurring') as Project['billingType'],
           name,
           role: String(form.get('role') ?? ''),
-          status: String(form.get('status') ?? 'planning') as ProjectStatus,
-          progress: Number(form.get('progress') ?? 0),
-          dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-          amountCharged: Number(form.get('amountCharged') ?? 0),
-          amountReceived: Number(form.get('amountReceived') ?? 0),
+          status: String(form.get('status') ?? 'active') as ProjectStatus,
+          progress: newProjectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
+          dueDate: newProjectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+          amountCharged: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
+          amountReceived: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
           deliveredUrl: String(form.get('deliveredUrl') ?? ''),
           visibility: String(form.get('visibility') ?? 'private') as Project['visibility'],
           nextAction: String(form.get('nextAction') ?? ''),
@@ -62,8 +63,8 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   const updateProjectDetails = (event: FormEvent<HTMLFormElement>, project: Project) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const amountCharged = Number(form.get('amountCharged') ?? project.amountCharged);
-    const amountReceived = Number(form.get('amountReceived') ?? project.amountReceived);
+    const amountCharged = project.billingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? project.amountCharged);
+    const amountReceived = project.billingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? project.amountReceived);
     const deliveredUrl = String(form.get('deliveredUrl') ?? project.deliveredUrl);
     updateData((current) => ({
       ...current,
@@ -86,7 +87,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
         </button>
       </div>
 
-      <Modal title="Novo projeto" description="Cadastre entrega, cliente, valor cobrado, recebimento e link finalizado." open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal title="Novo projeto" description="Cadastre o projeto guarda-chuva. Se for recorrente, valores e prazos vêm dos clientes vinculados." open={modalOpen} onClose={() => setModalOpen(false)}>
         <form onSubmit={addProject} className="space-y-5 p-5">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nome do projeto" name="name" required />
@@ -94,15 +95,20 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             <Field label="Empresa do projeto" name="company" placeholder="Ex: SPX" />
             <Field label="Papel / tipo de entrega" name="role" placeholder="Ex: landing page, funil, loja, automação" />
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente vinculado</span>
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente principal / contratante</span>
               <select name="clientId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Sem cliente</option>
                 {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
               </select>
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de cobrança do projeto</span>
-              <select name="billingType" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo do projeto</span>
+              <select
+                name="billingType"
+                value={newProjectBillingType}
+                onChange={(event) => setNewProjectBillingType(event.target.value as Project['billingType'])}
+                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
+              >
                 {billingTypes.map((type) => (
                   <option key={type.value} value={type.value}>
                     {type.label}
@@ -113,16 +119,20 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
               <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
-                <option value="planning">{projectStatusLabels.planning}</option>
                 <option value="active">{projectStatusLabels.active}</option>
+                <option value="planning">{projectStatusLabels.planning}</option>
                 <option value="waiting">{projectStatusLabels.waiting}</option>
                 <option value="done">{projectStatusLabels.done}</option>
               </select>
             </label>
-            <Field label="Progresso (%)" name="progress" type="number" min="0" max="100" defaultValue="0" />
-            <Field label="Prazo" name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
-            <MoneyField label="Valor cobrado" name="amountCharged" />
-            <MoneyField label="Valor recebido" name="amountReceived" />
+            {newProjectBillingType === 'one_time' && (
+              <>
+                <Field label="Progresso (%)" name="progress" type="number" min="0" max="100" defaultValue="0" />
+                <Field label="Prazo" name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+                <MoneyField label="Valor cobrado" name="amountCharged" />
+                <MoneyField label="Valor recebido" name="amountReceived" />
+              </>
+            )}
             <Field label="Link finalizado" name="deliveredUrl" type="url" placeholder="https://..." />
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Visibilidade</span>
@@ -164,6 +174,9 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             const totalAds = client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
             return sum + normalizeMonthlyInvestment(totalAds, client.adInvestmentPeriod);
           }, 0);
+          const projectAmount = project.billingType === 'recurring' ? recurringTotal + oneTimeTotal : project.amountCharged;
+          const projectReceived = project.billingType === 'recurring' ? 0 : project.amountReceived;
+          const openAmount = project.billingType === 'recurring' ? recurringTotal : Math.max(0, projectAmount - projectReceived);
 
           return (
           <article key={project.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
@@ -185,15 +198,17 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               </select>
             </div>
 
-            <div className="mt-5">
-              <div className="mb-2 flex justify-between text-xs text-brand-muted">
-                <span>Progresso</span>
-                <span>{project.progress}%</span>
+            {project.billingType === 'one_time' && (
+              <div className="mt-5">
+                <div className="mb-2 flex justify-between text-xs text-brand-muted">
+                  <span>Progresso</span>
+                  <span>{project.progress}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-brand-surface2">
+                  <div className="h-2 rounded-full bg-brand-green" style={{ width: `${project.progress}%` }} />
+                </div>
               </div>
-              <div className="h-2 rounded-full bg-brand-surface2">
-                <div className="h-2 rounded-full bg-brand-green" style={{ width: `${project.progress}%` }} />
-              </div>
-            </div>
+            )}
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <div className="rounded-lg bg-brand-surface p-3">
@@ -209,21 +224,23 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 <p className="mt-1 font-semibold text-white">{money(monthlyMedia)}</p>
               </div>
               <div className="rounded-lg bg-brand-surface p-3">
-                <p className="text-xs text-brand-muted">Cobrança do projeto</p>
-                <p className="mt-1 font-semibold text-white">{project.billingType === 'recurring' ? 'Recorrente' : 'Pontual'}</p>
+                <p className="text-xs text-brand-muted">Modelo do projeto</p>
+                <p className="mt-1 font-semibold text-white">{project.billingType === 'recurring' ? 'Trabalho recorrente' : 'Entrega pontual'}</p>
               </div>
               <div className="rounded-lg bg-brand-surface p-3">
-                <p className="text-xs text-brand-muted">Valor cobrado</p>
-                <p className="mt-1 font-semibold text-white">{money(project.amountCharged)}</p>
+                <p className="text-xs text-brand-muted">{project.billingType === 'recurring' ? 'Somatória do projeto' : 'Valor cobrado'}</p>
+                <p className="mt-1 font-semibold text-white">{money(projectAmount)}</p>
               </div>
               <div className="rounded-lg bg-brand-surface p-3">
-                <p className="text-xs text-brand-muted">Em aberto</p>
-                <p className="mt-1 font-semibold text-brand-green">{money(Math.max(0, project.amountCharged - project.amountReceived))}</p>
+                <p className="text-xs text-brand-muted">{project.billingType === 'recurring' ? 'Recorrência mensal' : 'Em aberto'}</p>
+                <p className="mt-1 font-semibold text-brand-green">{money(openAmount)}</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
-                <p className="text-xs text-brand-muted">Prazo</p>
-                <p className="mt-1 font-semibold text-white">{formatDate(project.dueDate)}</p>
-              </div>
+              {project.billingType === 'one_time' && (
+                <div className="rounded-lg bg-brand-surface p-3">
+                  <p className="text-xs text-brand-muted">Prazo</p>
+                  <p className="mt-1 font-semibold text-white">{project.dueDate ? formatDate(project.dueDate) : 'Sem prazo'}</p>
+                </div>
+              )}
               <div className="rounded-lg bg-brand-surface p-3">
                 <p className="text-xs text-brand-muted">Próxima ação</p>
                 <p className="mt-1 text-sm font-medium text-white">{project.nextAction}</p>
@@ -231,8 +248,16 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             </div>
 
             <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 md:grid-cols-[1fr_1fr_1.4fr_auto] md:items-end">
-              <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={project.amountCharged} />
-              <MoneyField label="Valor recebido" name="amountReceived" defaultValue={project.amountReceived} />
+              {project.billingType === 'one_time' ? (
+                <>
+                  <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={project.amountCharged} />
+                  <MoneyField label="Valor recebido" name="amountReceived" defaultValue={project.amountReceived} />
+                </>
+              ) : (
+                <div className="md:col-span-2 rounded-lg border border-brand-line bg-brand-ink p-3 text-sm text-brand-muted">
+                  Projeto recorrente: valores vêm automaticamente dos clientes vinculados.
+                </div>
+              )}
               <Field label="Link entregue" name="deliveredUrl" type="url" defaultValue={project.deliveredUrl} placeholder="https://..." />
               <button className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-semibold text-brand-soft hover:border-brand-green hover:text-white">
                 <Save size={15} />
