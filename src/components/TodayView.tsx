@@ -46,7 +46,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-emerald-400">Central do dia</p>
-          <h1 className="mt-2 text-3xl font-black text-white">Gustavo, esta é sua operação agora.</h1>
+          <h1 className="mt-2 text-3xl font-black text-white">Esta é a operação agora.</h1>
           <p className="mt-2 text-slate-400">Prioridades, cobranças, campanhas e projetos que precisam de decisão.</p>
         </div>
         <button onClick={addTask} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950">

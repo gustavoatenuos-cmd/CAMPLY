@@ -171,7 +171,7 @@ export const initialData: CamplyData = {
     },
     {
       id: 'task-camply-brief',
-      title: 'Organizar briefing dos próximos módulos do Camply',
+      title: 'Organizar briefing dos próximos módulos',
       area: 'projetos',
       dueDate: dateFromNow(1),
       done: false,

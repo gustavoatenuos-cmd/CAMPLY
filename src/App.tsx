@@ -3,7 +3,6 @@ import { CampaignsView } from './components/CampaignsView';
 import { ClientsView } from './components/ClientsView';
 import { FinanceView } from './components/FinanceView';
 import { IntelligenceView } from './components/IntelligenceView';
-import { Login } from './components/Login';
 import { ProjectsView } from './components/ProjectsView';
 import { Sidebar } from './components/Sidebar';
 import { TodayView } from './components/TodayView';
@@ -11,7 +10,6 @@ import { buildInsights, loadData, saveData } from './data/camplyStore';
 import { CamplyData, ViewId } from './types';
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>('today');
   const [data, setData] = useState<CamplyData>(() => loadData());
 
@@ -24,10 +22,6 @@ export default function App() {
   const updateData = (updater: (data: CamplyData) => CamplyData) => {
     setData((current) => updater(current));
   };
-
-  if (!authenticated) {
-    return <Login onLogin={() => setAuthenticated(true)} />;
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-white">
