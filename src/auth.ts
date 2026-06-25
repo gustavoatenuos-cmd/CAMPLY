@@ -1,4 +1,4 @@
-const PASSWORD_HASH = '91ed9f1b7253b0c04a2e022b98bada9607d97311c0034761bc62edf219710b2b';
+const PASSWORD_HASH = '8b7828d9139747af056e8c4f0512891da90e56b7f16f06da18d48ec604ea8c9d';
 
 export const AUTH_STORAGE_KEY = 'camply-authenticated';
 
