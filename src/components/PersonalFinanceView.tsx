@@ -76,7 +76,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
               </select>
             </label>
             <Field label="Descrição" name="description" placeholder="Ex: mensalidade, setup, parcela do projeto" required />
-            <Field label="Valor" name="amount" type="number" min="0" step="0.01" required />
+            <MoneyField label="Valor" name="amount" required />
             <Field label="Vencimento" name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
@@ -157,6 +157,18 @@ function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputEle
     <label className="block">
       <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
       <input name={name} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" {...props} />
+    </label>
+  );
+}
+
+function MoneyField({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
+      <div className="flex rounded-lg border border-brand-line bg-brand-surface focus-within:border-brand-green">
+        <span className="grid place-items-center border-r border-brand-line px-3 text-sm font-bold text-brand-green">R$</span>
+        <input name={name} type="number" min="0" step="0.01" className="w-full bg-transparent px-3 py-2 text-white outline-none" {...props} />
+      </div>
     </label>
   );
 }

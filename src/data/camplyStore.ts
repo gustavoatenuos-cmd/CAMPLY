@@ -45,6 +45,9 @@ export const loadData = (): CamplyData => {
       ...parsed,
       clients: parsed.clients.map((client) => ({
         ...client,
+        projectId: client.projectId ?? '',
+        managementFeeType: client.managementFeeType ?? 'recurring',
+        adInvestmentPeriod: client.adInvestmentPeriod ?? 'monthly',
         adInvestmentMeta: client.adInvestmentMeta ?? 0,
         adInvestmentGoogle: client.adInvestmentGoogle ?? 0,
         adInvestmentYoutube: client.adInvestmentYoutube ?? 0,
@@ -53,6 +56,9 @@ export const loadData = (): CamplyData => {
       projects: parsed.projects.map((project) => ({
         ...project,
         clientId: project.clientId ?? parsed.clients[0]?.id ?? '',
+        ownerName: project.ownerName ?? '',
+        company: project.company ?? '',
+        billingType: project.billingType ?? 'one_time',
         amountCharged: project.amountCharged ?? 0,
         amountReceived: project.amountReceived ?? 0,
         deliveredUrl: project.deliveredUrl ?? '',
@@ -69,6 +75,12 @@ export const saveData = (data: CamplyData) => {
 };
 
 export const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+export const normalizeMonthlyInvestment = (value: number, period: 'daily' | 'weekly' | 'monthly') => {
+  if (period === 'daily') return value * 30;
+  if (period === 'weekly') return value * 4.33;
+  return value;
+};
 
 export const money = (value: number) =>
   value.toLocaleString('pt-BR', {

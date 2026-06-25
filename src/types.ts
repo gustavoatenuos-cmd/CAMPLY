@@ -5,9 +5,12 @@ export type ClientStatus = 'active' | 'lead' | 'paused';
 export type PaymentStatus = 'pending' | 'paid' | 'overdue';
 export type ProjectStatus = 'planning' | 'active' | 'waiting' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
+export type BillingType = 'recurring' | 'one_time';
+export type InvestmentPeriod = 'daily' | 'weekly' | 'monthly';
 
 export interface Client {
   id: string;
+  projectId: string;
   name: string;
   company: string;
   segment: string;
@@ -15,7 +18,9 @@ export interface Client {
   hasProject: boolean;
   contact: string;
   monthlyFee: number;
+  managementFeeType: BillingType;
   dueDay: number;
+  adInvestmentPeriod: InvestmentPeriod;
   adInvestmentMeta: number;
   adInvestmentGoogle: number;
   adInvestmentYoutube: number;
@@ -58,6 +63,9 @@ export interface Receivable {
 export interface Project {
   id: string;
   clientId: string;
+  ownerName: string;
+  company: string;
+  billingType: BillingType;
   name: string;
   role: string;
   status: ProjectStatus;

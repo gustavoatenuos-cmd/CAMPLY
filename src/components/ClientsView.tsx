@@ -1,8 +1,9 @@
 import { Mail, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { makeId, money } from '../data/camplyStore';
+import { makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
+import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
-import { CamplyData, ClientStatus } from '../types';
+import { BillingType, CamplyData, ClientStatus, InvestmentPeriod } from '../types';
 
 interface ClientsViewProps {
   data: CamplyData;
@@ -23,6 +24,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       clients: [
         {
           id: makeId('client'),
+          projectId: String(form.get('projectId') ?? ''),
           name,
           company: String(form.get('company') ?? ''),
           segment: String(form.get('segment') ?? ''),
@@ -30,7 +32,9 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           hasProject: form.get('hasProject') === 'on',
           contact: String(form.get('contact') ?? ''),
           monthlyFee: Number(form.get('monthlyFee') ?? 0),
+          managementFeeType: String(form.get('managementFeeType') ?? 'recurring') as BillingType,
           dueDay: Number(form.get('dueDay') ?? 10),
+          adInvestmentPeriod: String(form.get('adInvestmentPeriod') ?? 'monthly') as InvestmentPeriod,
           adInvestmentMeta: Number(form.get('adInvestmentMeta') ?? 0),
           adInvestmentGoogle: Number(form.get('adInvestmentGoogle') ?? 0),
           adInvestmentYoutube: Number(form.get('adInvestmentYoutube') ?? 0),
@@ -64,23 +68,59 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             <Field label="Contato principal" name="contact" placeholder="E-mail, telefone ou WhatsApp" />
           </div>
 
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Projeto guarda-chuva</span>
+              <select name="projectId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Sem projeto</option>
+                {data.projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de serviço</span>
+              <select name="managementFeeType" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                {billingTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Estrutura trabalhada</span>
             <textarea name="structure" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Mensalidade de gestão" name="monthlyFee" type="number" min="0" step="0.01" />
+            <MoneyField label="Valor da gestão" name="monthlyFee" />
             <Field label="Dia de vencimento" name="dueDay" type="number" min="1" max="31" defaultValue="10" />
           </div>
 
           <div>
-            <p className="mb-3 text-sm font-semibold text-brand-soft">Investimento em anúncios</p>
+            <div className="mb-3 grid gap-4 md:grid-cols-[1fr_220px] md:items-end">
+              <p className="text-sm font-semibold text-brand-soft">Investimento em anúncios</p>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-brand-soft">Período do investimento</span>
+                <select name="adInvestmentPeriod" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                  {investmentPeriods.map((period) => (
+                    <option key={period.value} value={period.value}>
+                      {period.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="grid gap-4 md:grid-cols-4">
-              <Field label="Facebook/Meta" name="adInvestmentMeta" type="number" min="0" step="0.01" />
-              <Field label="Google" name="adInvestmentGoogle" type="number" min="0" step="0.01" />
-              <Field label="YouTube" name="adInvestmentYoutube" type="number" min="0" step="0.01" />
-              <Field label="TikTok" name="adInvestmentTikTok" type="number" min="0" step="0.01" />
+              <MoneyField label="Facebook/Meta" name="adInvestmentMeta" />
+              <MoneyField label="Google" name="adInvestmentGoogle" />
+              <MoneyField label="YouTube" name="adInvestmentYoutube" />
+              <MoneyField label="TikTok" name="adInvestmentTikTok" />
             </div>
           </div>
 
@@ -95,7 +135,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             </label>
             <label className="flex items-center gap-3 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm font-semibold text-brand-soft">
               <input name="hasProject" type="checkbox" className="h-4 w-4 accent-brand-green" />
-              Faz parte de algum projeto
+              Cliente vinculado a uma estrutura de projeto
             </label>
           </div>
 
@@ -116,12 +156,15 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           const pending = data.receivables.filter((item) => item.clientId === client.id && item.status !== 'paid');
           const totalAds =
             client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
+          const monthlyAds = normalizeMonthlyInvestment(totalAds, client.adInvestmentPeriod);
+          const project = data.projects.find((item) => item.id === client.projectId);
           return (
             <article key={client.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-white">{client.name}</h2>
                   <p className="mt-1 text-sm text-brand-muted">{client.company || client.segment || 'Sem empresa informada'}</p>
+                  {project && <p className="mt-1 text-xs font-semibold text-brand-green">Projeto: {project.name}</p>}
                 </div>
                 <select value={client.status} onChange={(event) => setStatus(client.id, event.target.value as ClientStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
                   <option value="active">Ativo</option>
@@ -132,13 +175,14 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               <p className="mt-5 flex items-center gap-2 text-sm text-brand-muted"><Mail size={15} /> {client.contact || 'Contato não informado'}</p>
               {client.structure && <p className="mt-3 text-sm leading-relaxed text-brand-muted">{client.structure}</p>}
               <div className="mt-5 grid grid-cols-3 gap-2">
-                <Mini label="Mensalidade" value={money(client.monthlyFee)} />
+                <Mini label={client.managementFeeType === 'recurring' ? 'Mensalidade' : 'Pontual'} value={money(client.monthlyFee)} />
                 <Mini label="Vence dia" value={client.dueDay.toString()} />
                 <Mini label="Campanhas" value={campaigns.length.toString()} />
               </div>
               <div className="mt-4 rounded-lg bg-brand-surface p-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Investimento em tráfego</p>
-                <p className="mt-1 text-lg font-black text-brand-green">{money(totalAds)}</p>
+                <p className="mt-1 text-lg font-black text-brand-green">{money(totalAds)} <span className="text-xs text-brand-muted">/{periodLabel(client.adInvestmentPeriod)}</span></p>
+                <p className="text-xs text-brand-muted">Equivalente mensal estimado: {money(monthlyAds)}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Mini label="Facebook/Meta" value={money(client.adInvestmentMeta)} />
                   <Mini label="Google" value={money(client.adInvestmentGoogle)} />
@@ -166,6 +210,24 @@ function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputEle
       <input name={name} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" {...props} />
     </label>
   );
+}
+
+function MoneyField({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
+      <div className="flex rounded-lg border border-brand-line bg-brand-surface focus-within:border-brand-green">
+        <span className="grid place-items-center border-r border-brand-line px-3 text-sm font-bold text-brand-green">R$</span>
+        <input name={name} type="number" min="0" step="0.01" className="w-full bg-transparent px-3 py-2 text-white outline-none" {...props} />
+      </div>
+    </label>
+  );
+}
+
+function periodLabel(period: InvestmentPeriod) {
+  if (period === 'daily') return 'dia';
+  if (period === 'weekly') return 'semana';
+  return 'mês';
 }
 
 function Header({ eyebrow, title, action, onAction }: { eyebrow: string; title: string; action: string; onAction: () => void }) {
