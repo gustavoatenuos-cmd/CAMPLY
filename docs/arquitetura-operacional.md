@@ -1,143 +1,230 @@
-# Camply: Arquitetura Operacional
+# Camply: CRM Operacional, Campanhas e Financeiro
 
-O Camply deve ser tratado como um CRM operacional para prestação de serviços, unindo gestão de projetos, clientes, campanhas, tarefas, financeiro e histórico em uma visão única.
+O Camply deve ser construido como uma central de operacao para prestacao de servicos. Ele precisa unir CRM, projetos, clientes, campanhas, tarefas, recebimentos e historico em um unico painel rapido de usar no dia a dia.
 
-## Princípio Central
-
-O sistema precisa entender a hierarquia real da operação:
-
-1. Projeto principal ou conta contratante
-2. Clientes, unidades ou empresas vinculadas ao projeto
-3. Serviços prestados para cada cliente
-4. Campanhas, tarefas, financeiro, recebimentos e histórico
-
-Também deve permitir clientes diretos, sem projeto principal.
-
-Exemplo:
+O ponto principal do produto e entender que nem todo cliente e isolado. Muitas vezes existe uma conta contratante, chamada aqui de Projeto Principal, e dentro dela varios clientes, unidades ou empresas operacionais.
 
 ```text
-Projeto principal: SPX Assessoria
-Contratante: João
-Tipo: Tráfego recorrente
+Projeto principal: SPX
+Contratante: Joao
 
-Clientes vinculados:
-- Clínica A
-- Clínica B
-- Clínica C
+Clientes operacionais:
+- Clinica A
+- Clinica B
+- Clinica C
 - Pizzaria X
 ```
 
-## Entidades Principais
+Tambem deve existir o caso simples: cliente direto, sem projeto pai.
 
-### Projeto Principal
+## Objetivo Do Sistema
 
-Representa a conta guarda-chuva, contratante ou projeto macro.
+O sistema deve ajudar a responder rapidamente:
+
+- O que eu preciso fazer hoje?
+- Quais clientes estao sem otimizacao?
+- Quais campanhas precisam de atencao?
+- Quem esta perto de vencer ou atrasado?
+- Quanto eu tenho a receber?
+- Quanto e receita minha e quanto e verba de anuncio do cliente?
+- Qual projeto guarda-chuva concentra quais clientes, campanhas, tarefas e valores?
+- O que ja foi feito para cada cliente?
+
+O Camply nao deve ser apenas um CRUD. Ele deve calcular, alertar, consolidar e priorizar.
+
+## Hierarquia Central
+
+```text
+Projeto Principal / Conta Contratante
+  -> Clientes / Empresas / Unidades
+    -> Servicos prestados
+    -> Campanhas
+    -> Tarefas
+    -> Recebimentos
+    -> Historico
+```
+
+Regras:
+
+- Um projeto principal pode ter varios clientes vinculados.
+- Um cliente pode existir sem projeto principal.
+- Um cliente pode ter varios servicos.
+- Um cliente pode ter varias campanhas.
+- Financeiro, tarefas e historico podem estar ligados ao projeto, ao cliente, a campanha ou ao servico.
+- O projeto principal deve consolidar automaticamente os dados dos clientes filhos.
+
+## Entidades E Tabelas
+
+### projects
+
+Representa a conta contratante, projeto guarda-chuva ou entrega principal.
 
 Campos:
 
 - id
-- nome do projeto
-- tipo: tráfego ou site
-- contratante/responsável
-- empresa contratante
-- status
-- modelo financeiro: recorrente ou pontual
-- data de início
-- prazo, apenas para projeto pontual
-- progresso, apenas para projeto pontual
-- link finalizado, quando existir entrega
-- observações internas
-- criado em
-- atualizado em
+- name
+- type: traffic, site, mixed, other
+- contractor_name
+- contractor_company
+- status: planning, active, waiting, done, paused
+- billing_model: recurring, one_time, mixed
+- start_date
+- due_date, apenas quando pontual
+- progress, apenas quando pontual
+- delivered_url
+- visibility: private, portfolio, public
+- responsible_user_id
+- next_action
+- notes
+- created_at
+- updated_at
 
 Regras:
 
-- Projeto de tráfego tende a ser recorrente.
+- Projeto de trafego tende a ser recorrente.
 - Projeto de site tende a ser pontual.
-- Projeto recorrente não precisa de prazo nem progresso.
-- Projeto recorrente calcula valor pela soma dos clientes vinculados.
-- Projeto pontual pode ter valor próprio, prazo, progresso e entrega final.
+- Projeto recorrente nao precisa de prazo nem progresso obrigatorio.
+- Projeto recorrente calcula valor pela soma dos clientes e servicos vinculados.
+- Projeto pontual pode ter valor proprio, prazo, progresso e entrega final.
+- O projeto deve exibir receita, verba de midia, pendencias e alertas consolidados.
 
-### Cliente Operacional
+### clients
 
-Representa a empresa, unidade ou cliente atendido dentro de um projeto, ou um cliente direto.
+Representa a empresa, unidade ou cliente operacional atendido.
 
 Campos:
 
 - id
 - project_id, opcional
-- nome do responsável
-- empresa/marca
-- segmento
-- contato principal
-- status
-- tipo de serviço: recorrente ou pontual
-- estrutura trabalhada
-- data de início
-- responsável interno
-- mensalidade ou valor de gestão
-- dia de vencimento
-- período do investimento de mídia: diário, semanal ou mensal
-- investimento Meta
-- investimento Google
-- investimento YouTube
-- investimento TikTok
-- última otimização
-- próxima otimização
-- último contato
-- próxima ação
-- observações internas
+- owner_name
+- company_name
+- segment
+- contact_name
+- contact_phone
+- contact_email
+- status: active, lead, paused, finished
+- service_profile: traffic, site, recurring_support, one_time, mixed
+- structure_description
+- start_date
+- internal_owner_id
+- management_fee
+- management_fee_type: recurring, one_time
+- due_day
+- ad_investment_period: daily, weekly, monthly
+- ad_investment_meta
+- ad_investment_google
+- ad_investment_youtube
+- ad_investment_tiktok
+- ad_investment_other
+- last_optimization_at
+- next_optimization_at
+- last_contact_at
+- next_action
+- notes
+- created_at
+- updated_at
 
 Campos calculados:
 
-- total de verba de anúncio
-- verba mensal estimada
-- dias sem otimização
-- total em aberto
-- quantidade de campanhas
-- criticidade operacional
+- total_media_budget
+- estimated_monthly_media_budget
+- days_without_optimization
+- open_receivable_amount
+- active_campaign_count
+- pending_task_count
+- operational_risk_score
 
-### Campanha
+Regras:
 
-Representa campanhas de tráfego vinculadas a um cliente.
+- Cliente com project_id entra na consolidacao do projeto principal.
+- Cliente sem project_id e tratado como cliente direto.
+- Verba de anuncio nunca deve ser somada como receita propria.
+- Mensalidade de gestao entra como receita propria.
+- Cliente ativo sem proxima acao deve gerar alerta leve.
+
+### services
+
+Representa o servico prestado para um cliente.
 
 Campos:
 
 - id
+- project_id, opcional
 - client_id
-- nome
-- plataforma
-- objetivo
-- status
-- data de início
-- orçamento
-- período do orçamento: diário ou mensal
-- valor investido
-- data da última otimização
-- próxima otimização
-- observações de performance
-- próxima ação
-- prioridade
+- type: traffic_management, site_creation, landing_page, design, consulting, other
+- name
+- billing_type: recurring, one_time
+- service_amount
+- media_budget_amount
+- media_budget_period
+- status: active, paused, delivered, canceled
+- start_date
+- due_date
+- delivered_at
+- delivered_url
+- notes
+- created_at
+- updated_at
 
-Objetivos Meta iniciais:
+Regras:
+
+- Trafego pago normalmente cria servico recorrente.
+- Site normalmente cria servico pontual.
+- Servicos recorrentes alimentam previsao mensal.
+- Servicos pontuais alimentam projetos e recebiveis ate serem quitados.
+
+### campaigns
+
+Representa campanhas de midia vinculadas a um cliente.
+
+Campos:
+
+- id
+- project_id, opcional, herdado do cliente quando existir
+- client_id
+- service_id, opcional
+- name
+- platform: Meta Ads, Google Ads, YouTube Ads, TikTok Ads, LinkedIn Ads, Outro
+- objective
+- status: setup, launching, live, optimize, waiting, paused, finished
+- start_date
+- daily_budget
+- monthly_budget
+- budget_period: daily, monthly
+- amount_spent
+- last_optimized_at
+- next_optimization_at
+- performance_notes
+- next_action
+- priority: low, medium, high, critical
+- created_at
+- updated_at
+
+Objetivos iniciais de Meta Ads:
 
 - Reconhecimento
-- Tráfego
+- Trafego
 - Engajamento
 - Cadastros
-- Promoção do app
+- Promocao do app
 - Vendas
 
 Campos calculados:
 
-- dias sem otimização
-- percentual de verba consumida
-- verba mensal estimada
-- alerta de campanha parada
+- days_without_optimization
+- consumed_budget_rate
+- estimated_monthly_budget
+- stopped_campaign_alert
 
-### Tarefa
+Regras:
 
-Representa ações do dia a dia.
+- Campanha ativa sem otimizacao por X dias gera alerta.
+- Campanha com verba consumida acima de um limite gera alerta.
+- Campanha parada ou aguardando cliente deve aparecer na rotina.
+
+### tasks
+
+Representa tarefas e lembretes operacionais.
 
 Campos:
 
@@ -145,318 +232,621 @@ Campos:
 - project_id, opcional
 - client_id, opcional
 - campaign_id, opcional
-- título
-- área: campanhas, clientes, financeiro, projetos
-- status
-- prioridade
-- data de vencimento
-- responsável
-- descrição
-- concluída em
+- service_id, opcional
+- title
+- description
+- area: crm, campaigns, finance, projects, delivery
+- status: pending, doing, done, canceled
+- priority: low, medium, high, critical
+- due_date
+- completed_at
+- responsible_user_id
+- created_at
+- updated_at
 
 Regras:
 
-- Tarefas vencidas devem gerar alerta.
-- Tarefas ligadas a projeto/cliente devem aparecer na visão consolidada.
+- Tarefa vencida gera alerta.
+- Tarefa critica deve aparecer no dashboard Hoje.
+- Tarefa vinculada a cliente aparece tambem no detalhe do cliente.
+- Tarefa vinculada a projeto aparece tambem no consolidado do projeto.
 
-### Financeiro
+### receivables
 
-Deve separar receita própria de verba de mídia.
-
-#### Recebíveis do Serviço
+Representa valores que voce tem a receber pelo seu servico.
 
 Campos:
 
 - id
 - project_id, opcional
 - client_id, opcional
-- descrição
-- valor total cobrado
-- valor recebido
-- valor pendente
-- data de vencimento
-- status: pendente, pago, atrasado
-- forma de pagamento
-- tipo: recorrente ou pontual
-- observações financeiras
+- service_id, opcional
+- description
+- gross_amount
+- service_revenue_amount
+- media_budget_amount
+- received_amount
+- pending_amount
+- due_date
+- paid_at
+- status: pending, paid, overdue, partial, canceled
+- billing_type: recurring, one_time
+- payment_method: pix, boleto, card, transfer, cash, other
+- recurrence_month
+- notes
+- created_at
+- updated_at
 
-#### Verba de Mídia
+Regras:
 
-Vem dos clientes/campanhas, não deve ser misturada com receita própria.
+- service_revenue_amount e receita sua.
+- media_budget_amount e verba de anuncio e deve ficar separada.
+- pending_amount = gross_amount - received_amount.
+- Pagamento vencido e nao pago vira overdue.
+- Recebivel recorrente deve poder gerar previsao mensal.
+- Recebivel pontual deve aparecer ate ser quitado.
 
-Campos relevantes:
+### media_budgets
 
+Representa dinheiro destinado as plataformas de anuncio.
+
+Campos:
+
+- id
+- project_id, opcional
 - client_id
+- campaign_id, opcional
 - platform
-- valor
-- período: diário, semanal ou mensal
-- valor mensal estimado
+- amount
+- period: daily, weekly, monthly
+- estimated_monthly_amount
+- start_date
+- end_date
+- status: active, paused, finished
+- notes
 
 Regras:
 
-- Receita própria = mensalidades, setups, projetos e serviços.
-- Verba de anúncio = dinheiro do cliente destinado às plataformas.
-- Dashboard deve mostrar os dois separadamente.
+- Verba diaria: amount * 30.
+- Verba semanal: amount * 4.33.
+- Verba mensal: amount.
+- Deve entrar no painel de Verbas de Midia, nao no painel de receita propria.
 
-### Histórico de Atividades
+### activity_logs
 
-Registra rastreabilidade operacional.
+Registra rastreabilidade do que foi feito.
 
 Campos:
 
 - id
-- tipo da ação
 - project_id, opcional
 - client_id, opcional
 - campaign_id, opcional
-- financial_id, opcional
-- descrição
-- autor
-- data e hora
-- metadados
+- service_id, opcional
+- receivable_id, opcional
+- task_id, opcional
+- action_type
+- title
+- description
+- actor_user_id
+- occurred_at
+- metadata_json
 
 Eventos importantes:
 
-- campanha otimizada
-- contato realizado
-- pagamento recebido
-- serviço entregue
-- status alterado
-- tarefa concluída
-- campanha pausada
+- Cliente criado ou editado
+- Campanha criada, pausada, otimizada ou finalizada
+- Contato feito com cliente
+- Pagamento recebido
+- Recebivel criado ou atrasado
+- Servico entregue
+- Link finalizado cadastrado
+- Tarefa criada ou concluida
+- Status alterado
+
+### users e permissoes futuras
+
+Campos de users:
+
+- id
+- name
+- email
+- role: owner, manager, traffic, finance, viewer
+- status
+- created_at
+
+Permissoes futuras:
+
+- owner: acesso total
+- manager: operacao, clientes, campanhas, projetos e financeiro
+- traffic: campanhas, tarefas e historico operacional
+- finance: recebimentos e financeiro
+- viewer: somente leitura
 
 ## Relacionamentos
 
 ```text
 projects 1:N clients
-clients 1:N campaigns
-projects 1:N tasks
-clients 1:N tasks
-campaigns 1:N tasks
+projects 1:N services
 projects 1:N receivables
-clients 1:N receivables
+projects 1:N tasks
 projects 1:N activity_logs
+
+clients 1:N services
+clients 1:N campaigns
+clients 1:N receivables
+clients 1:N tasks
 clients 1:N activity_logs
+
+services 1:N campaigns
+services 1:N receivables
+services 1:N tasks
+
+campaigns 1:N tasks
 campaigns 1:N activity_logs
+
+receivables 1:N activity_logs
+tasks 1:N activity_logs
 ```
-
-## Dashboard Principal
-
-Deve mostrar:
-
-- total a receber no mês
-- total recebido
-- total em aberto
-- total em atraso
-- receita própria prevista
-- verba de mídia total mensal estimada
-- clientes ativos
-- projetos ativos
-- campanhas ativas
-- clientes há mais dias sem otimização
-- campanhas críticas
-- próximos vencimentos
-- próximas tarefas
-- alertas críticos
-
-## Regras de Inteligência
-
-### Otimização
-
-Gerar alerta quando:
-
-- cliente sem otimização há mais de X dias
-- campanha ativa sem otimização há mais de X dias
-- campanha em etapa “No ar” sem próxima ação definida
-
-Cálculo:
-
-```text
-dias_sem_otimizacao = hoje - ultima_otimizacao
-```
-
-### Financeiro
-
-Gerar alerta quando:
-
-- pagamento vence em até 3 dias
-- pagamento está atrasado
-- projeto pontual tem valor pendente
-- cliente recorrente está sem recebível previsto
-
-Cálculos:
-
-```text
-valor_pendente = valor_cobrado - valor_recebido
-receita_propria = soma(serviços, mensalidades, projetos)
-verba_midia = soma(investimentos de anúncio normalizados para mês)
-```
-
-### Projeto Guarda-Chuva
-
-Para projeto recorrente:
-
-```text
-receita_recorrente = soma(mensalidades dos clientes vinculados)
-receita_pontual = soma(serviços pontuais dos clientes vinculados)
-verba_midia_mensal = soma(verbas normalizadas dos clientes vinculados)
-quantidade_clientes = count(clientes vinculados)
-```
-
-Para projeto pontual:
-
-```text
-valor_projeto = valor cobrado no projeto
-em_aberto = valor cobrado - valor recebido
-progresso = informado manualmente
-prazo = obrigatório
-```
-
-### Prioridade do Dia
-
-Um item vira prioridade quando:
-
-- pagamento está atrasado
-- campanha está há muitos dias sem otimização
-- tarefa venceu
-- projeto pontual passou do prazo
-- cliente ativo não tem próxima ação
-
-## Filtros Necessários
-
-- projeto principal
-- cliente
-- status
-- tipo de serviço
-- plataforma
-- responsável
-- período
-- pagamento
-- atraso
-- pendência operacional
 
 ## Telas Principais
 
 ### Hoje
 
-Visão de operação diária:
+Tela inicial da rotina.
 
-- alertas críticos
-- tarefas do dia
-- clientes que exigem atenção
-- campanhas sem otimização
-- recebimentos próximos
+Deve mostrar:
+
+- alertas criticos
+- prioridades do dia
+- clientes mais tempo sem otimizacao
+- campanhas que precisam revisar
+- pagamentos proximos
+- pagamentos atrasados
+- tarefas vencidas e de hoje
+- proximas acoes registradas
+
+Acoes rapidas:
+
+- marcar tarefa como feita
+- registrar otimizacao
+- registrar contato
+- marcar pagamento como recebido
+- criar nova tarefa
 
 ### Projetos
 
-Visão por projeto pai:
+Tela de projeto principal e consolidacao.
 
-- modelo: tráfego ou site
-- recorrente ou pontual
-- contratante
+Deve mostrar:
+
+- nome do projeto e contratante
+- tipo: trafego, site ou misto
+- status
 - clientes vinculados
-- receita consolidada
-- verba de mídia consolidada
-- tarefas e pendências
+- servicos vinculados
+- receita propria consolidada
+- verba de midia consolidada
+- recebimentos em aberto
+- atrasos
+- tarefas pendentes
+- historico do projeto
+
+Ao criar projeto:
+
+- escolher modelo: Trafego ou Site
+- Trafego cria estrutura recorrente
+- Site cria estrutura pontual
+- permitir projeto misto depois na V2
 
 ### Clientes
 
-Cadastro e operação:
+Tela de CRM operacional.
 
+Deve mostrar:
+
+- projeto pai, quando existir
 - dados da empresa
-- projeto vinculado
-- serviço prestado
-- investimento de mídia
+- responsavel e contato
+- servicos prestados
+- mensalidade ou valor pontual
+- investimento de anuncio por plataforma
+- periodo do investimento
 - campanhas
-- financeiro
-- histórico
+- ultima otimizacao
+- proxima otimizacao
+- ultimo contato
+- proxima acao
+- tarefas e pendencias
+- historico
+
+Acoes rapidas:
+
+- editar dados
+- adicionar campanha
+- registrar otimizacao
+- registrar contato
+- criar recebivel
+- criar tarefa
 
 ### Campanhas
 
-Kanban operacional:
+Tela operacional em formato kanban/lista.
 
-- setup
-- subindo
-- no ar
-- otimizar
-- aguardando cliente
-- pausado
+Colunas sugeridas:
 
-### Financeiro
+- Setup
+- Subindo
+- No ar
+- Otimizar
+- Aguardando cliente
+- Pausado
 
-Duas visões separadas:
+Filtros:
 
-- Meu financeiro: receita própria, recebimentos, atrasos, projetos a receber
-- Verbas de mídia: dinheiro do cliente destinado às plataformas
+- projeto
+- cliente
+- plataforma
+- objetivo
+- status
+- prioridade
+- dias sem otimizacao
 
-### Histórico
+### Meu Financeiro
 
-Linha do tempo de tudo que aconteceu.
+Tela da receita propria.
+
+Deve mostrar:
+
+- total a receber no mes
+- total recebido
+- total em aberto
+- total em atraso
+- previsao recorrente
+- valores pontuais
+- recebiveis por cliente
+- recebiveis por projeto
+- status de pagamento
+
+Importante:
+
+- esta tela nao deve tratar verba de anuncio como receita.
+
+### Verbas De Midia
+
+Tela separada para dinheiro de anuncio dos clientes.
+
+Deve mostrar:
+
+- verba total mensal estimada
+- verba por projeto
+- verba por cliente
+- verba por plataforma
+- periodo cadastrado: diario, semanal ou mensal
+- equivalente mensal estimado
+
+### Inteligencia
+
+Tela de leitura automatica da operacao.
+
+Deve mostrar:
+
+- alertas criticos
+- oportunidades de melhoria
+- clientes em risco
+- campanhas sem otimizacao
+- financeiro atrasado
+- projetos com pendencia
+- recomendacao objetiva para cada alerta
+
+### Historico
+
+Linha do tempo pesquisavel.
+
+Filtros:
+
+- projeto
+- cliente
+- campanha
+- financeiro
+- tipo de acao
+- periodo
+- responsavel
+
+## Dashboard Principal
+
+Indicadores obrigatorios:
+
+- Total a receber no mes
+- Total recebido no mes
+- Total em aberto
+- Total em atraso
+- Receita propria prevista
+- Verba de midia mensal estimada
+- Clientes ativos
+- Projetos ativos
+- Campanhas ativas
+- Tarefas vencidas
+- Clientes ha mais dias sem otimizacao
+- Proximos vencimentos
+- Proximas tarefas
+- Alertas criticos
+
+Blocos recomendados:
+
+- Painel financeiro
+- Painel operacional
+- Painel de campanhas
+- Painel de projetos
+- Lista de prioridades do dia
+
+## Calculos Principais
+
+### Dias sem otimizacao
+
+```text
+dias_sem_otimizacao = hoje - ultima_otimizacao
+```
+
+Se nao existir ultima otimizacao:
+
+```text
+dias_sem_otimizacao = hoje - data_inicio
+```
+
+### Verba mensal estimada
+
+```text
+se periodo = diario:
+  verba_mensal = valor * 30
+
+se periodo = semanal:
+  verba_mensal = valor * 4.33
+
+se periodo = mensal:
+  verba_mensal = valor
+```
+
+### Receita propria
+
+```text
+receita_propria = soma(service_revenue_amount dos recebiveis)
+```
+
+ou, no cadastro operacional:
+
+```text
+receita_prevista = soma(mensalidades de gestao + servicos pontuais)
+```
+
+### Valor pendente
+
+```text
+valor_pendente = valor_cobrado - valor_recebido
+```
+
+### Consolidado do projeto principal
+
+```text
+clientes_do_projeto = clientes onde project_id = projeto.id
+
+receita_recorrente = soma(mensalidade dos clientes vinculados)
+receita_pontual = soma(servicos pontuais vinculados)
+verba_midia_mensal = soma(verba mensal estimada dos clientes vinculados)
+campanhas_ativas = count(campanhas ativas dos clientes vinculados)
+tarefas_pendentes = count(tarefas abertas vinculadas ao projeto ou aos clientes)
+em_aberto = soma(recebiveis pendentes do projeto e dos clientes vinculados)
+em_atraso = soma(recebiveis atrasados do projeto e dos clientes vinculados)
+```
+
+### Score de risco operacional
+
+Sugestao inicial:
+
+```text
+risco = 0
+
+se pagamento atrasado: +40
+se cliente sem otimizacao >= 7 dias: +30
+se campanha ativa sem otimizacao >= 5 dias: +25
+se tarefa critica vencida: +20
+se cliente ativo sem proxima acao: +10
+se campanha pausada sem motivo/observacao: +10
+```
+
+Classificacao:
+
+- 0 a 19: normal
+- 20 a 39: atencao
+- 40 a 69: alto
+- 70+: critico
+
+## Automacoes E Alertas
+
+Alertas operacionais:
+
+- Cliente sem otimizacao ha X dias.
+- Campanha ativa sem otimizacao ha X dias.
+- Campanha pausada sem proxima acao.
+- Cliente ativo sem proxima acao.
+- Projeto com tarefa vencida.
+- Entrega pontual atrasada.
+- Follow-up vencido.
+
+Alertas financeiros:
+
+- Pagamento vence em ate 3 dias.
+- Pagamento atrasado.
+- Cliente recorrente sem recebivel previsto no mes.
+- Projeto pontual com valor pendente.
+- Valor recebido menor que valor cobrado.
+
+Automacoes recomendadas:
+
+- Ao marcar campanha como otimizada, atualizar last_optimized_at e criar activity_log.
+- Ao registrar pagamento recebido, atualizar receivable, status e criar activity_log.
+- Ao criar cliente recorrente, sugerir recebivel mensal.
+- Ao criar projeto de trafego, sugerir billing_model recorrente.
+- Ao criar projeto de site, sugerir billing_model pontual, prazo e progresso.
+- Ao cadastrar link entregue, registrar evento de entrega.
+
+## Fluxos De Uso
+
+### Novo projeto de trafego
+
+1. Criar Projeto Principal.
+2. Escolher modelo Trafego.
+3. Informar contratante, empresa e papel da entrega.
+4. Sistema define recorrente por padrao.
+5. Cadastrar clientes operacionais dentro dele.
+6. Para cada cliente, informar mensalidade de gestao e verba de anuncio.
+7. Dashboard do projeto passa a somar clientes, campanhas, receita e verba.
+
+### Novo projeto de site
+
+1. Criar Projeto Principal.
+2. Escolher modelo Site.
+3. Informar cliente, prazo, valor cobrado e valor recebido.
+4. Sistema define pontual por padrao.
+5. Criar tarefas de entrega.
+6. Ao finalizar, cadastrar link entregue.
+7. Sistema registra historico e pendencia financeira se houver valor aberto.
+
+### Cliente direto
+
+1. Criar cliente sem projeto pai.
+2. Informar tipo de servico, mensalidade ou valor pontual.
+3. Cadastrar campanhas, tarefas e recebiveis.
+4. Cliente aparece nos dashboards sem consolidacao por projeto.
+
+### Rotina diaria
+
+1. Abrir tela Hoje.
+2. Ver alertas criticos.
+3. Resolver pagamentos atrasados.
+4. Otimizar campanhas mais antigas.
+5. Registrar contato ou proxima acao.
+6. Marcar tarefas como concluidas.
+7. Historico registra as principais acoes.
+
+## Filtros Necessarios
+
+- Projeto principal
+- Cliente
+- Status
+- Tipo de servico
+- Plataforma
+- Objetivo da campanha
+- Responsavel
+- Periodo
+- Pagamento
+- Atraso
+- Pendencia operacional
+- Risco operacional
+- Recorrente ou pontual
+
+## Experiencia De Uso
+
+Principios:
+
+- Poucos cliques para registrar acao.
+- Formularios completos, sem prompt nativo do navegador.
+- Cards com resumo claro e botao de editar.
+- Dinheiro sempre com prefixo R$.
+- Verba de anuncio e receita propria sempre separadas.
+- Projeto pai sempre mostra consolidado dos filhos.
+- Cliente sempre mostra o que esta pendente agora.
+- Dashboard deve priorizar acao, nao apenas estatistica.
+
+Padrao visual:
+
+- Interface escura profissional.
+- Verde Camply para acao positiva e destaque.
+- Cards compactos.
+- Tabelas/listas para operacao recorrente.
+- Badges para status, risco e vencimento.
+- Modais para cadastro e edicao.
 
 ## MVP Recomendado
 
-Prioridade para a versão atual:
+Deve existir agora:
 
-- cadastro/edição de projetos
-- cadastro/edição de clientes
-- vínculo projeto-cliente
-- campanhas por cliente
-- financeiro separado entre receita própria e mídia
-- dashboard “Hoje”
-- alertas automáticos básicos
-- histórico simples de ações
+- Login simples por senha.
+- Cadastro e edicao de Projetos Principais.
+- Escolha de modelo do projeto: Trafego ou Site.
+- Cadastro e edicao de Clientes.
+- Cliente vinculado ou nao a Projeto Principal.
+- Campos de mensalidade, vencimento e verba por plataforma.
+- Investimento com periodo diario, semanal ou mensal.
+- Cadastro de Campanhas por cliente.
+- Kanban de campanhas.
+- Financeiro separado em Meu Financeiro e Verbas de Midia.
+- Dashboard Hoje com alertas basicos.
+- Inteligencia calculando atrasos, otimizacoes e vencimentos.
+- Dados sem exemplos ficticios.
+- Persistencia local em localStorage enquanto nao houver banco.
 
-## Versão 2
+## Versao 2
 
-Pode ficar para depois:
+Pode ficar para uma etapa seguinte:
 
-- login com backend real
-- Supabase/Postgres
-- multiusuário/equipe
-- permissões por papel
-- anexos
-- integração com Meta Ads/Google Ads
-- notificações por WhatsApp/email
-- automações recorrentes
-- exportação de relatórios
-- IA lendo histórico e sugerindo ações
+- Backend com Supabase/Postgres.
+- Login real com usuario e senha.
+- Multiusuario e permissoes.
+- Activity log completo.
+- Geracao automatica de recebiveis recorrentes.
+- Notificacoes por WhatsApp, email ou push.
+- Integracao com Meta Ads e Google Ads.
+- Upload de anexos e contratos.
+- Relatorios PDF.
+- Exportacao CSV.
+- Templates de checklist por tipo de projeto.
+- IA lendo historico e sugerindo proximas acoes.
+- Webhooks de pagamento.
 
-## Arquitetura Técnica Recomendada
+## Arquitetura Tecnica Recomendada
 
-Frontend:
+Estado atual:
 
-- React + TypeScript
-- componentes reutilizáveis de formulário
-- estado local hoje, backend depois
+- React
+- TypeScript
+- Vite
+- Tailwind
+- localStorage
 
-Backend futuro:
+Evolucao recomendada:
 
-- Supabase Auth
-- Postgres
-- Row Level Security
-- API para integrações externas
+- Supabase Auth para login.
+- Postgres como banco.
+- Row Level Security para permissao por usuario.
+- Tabelas normalizadas para projetos, clientes, campanhas, tarefas, recebiveis e historico.
+- Jobs agendados para gerar alertas e recebiveis recorrentes.
+- API para integrar plataformas de anuncio no futuro.
 
-Tabelas futuras:
+## Prioridade De Implementacao
 
-- users
-- projects
-- clients
-- services
-- campaigns
-- tasks
-- receivables
-- media_budgets
-- activity_logs
-- files
+Ordem recomendada:
 
-## Direção de Produto
+1. Fechar bem Projetos e Clientes.
+2. Garantir edicao completa dos dados cadastrados.
+3. Consolidar projeto pai com clientes filhos.
+4. Melhorar campanhas e otimizacoes.
+5. Melhorar financeiro e recorrencia.
+6. Criar historico de atividades.
+7. Evoluir dashboard e inteligencia.
+8. Migrar para banco real.
 
-O Camply não deve virar apenas um CRUD. Ele precisa operar como um painel de comando:
+## Definicao De Pronto
 
-- mostra o que está atrasado
-- mostra o que precisa ser feito hoje
-- soma dinheiro corretamente
-- separa verba de mídia de receita própria
-- consolida projetos com múltiplos clientes
-- registra histórico do trabalho feito
-- reduz dependência de memória/manualidade
+O Camply esta pronto para uso operacional quando:
+
+- um projeto com varios clientes mostra somas corretas;
+- um cliente direto funciona sem projeto pai;
+- campanhas mostram dias sem otimizacao;
+- financeiro separa receita propria de verba de anuncio;
+- dashboard mostra prioridades reais do dia;
+- cadastros podem ser editados;
+- pagamentos atrasados e proximos geram alerta;
+- tarefas vencidas aparecem como prioridade;
+- historico registra as principais acoes;
+- nao existem dados ficticios no sistema inicial.
