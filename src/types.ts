@@ -7,6 +7,7 @@ export type ProjectStatus = 'planning' | 'active' | 'waiting' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
 export type BillingType = 'recurring' | 'one_time';
 export type InvestmentPeriod = 'daily' | 'weekly' | 'monthly';
+export type ProjectType = 'traffic' | 'site';
 
 export interface Client {
   id: string;
@@ -62,6 +63,7 @@ export interface Receivable {
 
 export interface Project {
   id: string;
+  projectType: ProjectType;
   clientId: string;
   ownerName: string;
   company: string;

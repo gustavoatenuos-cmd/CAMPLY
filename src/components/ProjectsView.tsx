@@ -1,9 +1,8 @@
 import { ExternalLink, Plus, Save } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { formatDate, makeId, money, normalizeMonthlyInvestment, projectStatusLabels } from '../data/camplyStore';
-import { billingTypes } from '../data/options';
 import { Modal } from './ui/Modal';
-import { CamplyData, Project, ProjectStatus } from '../types';
+import { CamplyData, Project, ProjectStatus, ProjectType } from '../types';
 
 interface ProjectsViewProps {
   data: CamplyData;
@@ -12,7 +11,8 @@ interface ProjectsViewProps {
 
 export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [newProjectBillingType, setNewProjectBillingType] = useState<Project['billingType']>('recurring');
+  const [selectedProjectType, setSelectedProjectType] = useState<ProjectType | null>(null);
+  const newProjectBillingType: Project['billingType'] = selectedProjectType === 'site' ? 'one_time' : 'recurring';
   const groupedClients = data.clients.filter((client) => client.projectId);
   const recurringRevenue = groupedClients
     .filter((client) => client.managementFeeType === 'recurring')
@@ -31,6 +31,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
       projects: [
         {
           id: makeId('project'),
+          projectType: selectedProjectType ?? 'traffic',
           clientId: String(form.get('clientId') ?? ''),
           ownerName: String(form.get('ownerName') ?? ''),
           company: String(form.get('company') ?? ''),
@@ -50,6 +51,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
       ],
     }));
     setModalOpen(false);
+    setSelectedProjectType(null);
     event.currentTarget.reset();
   };
 
@@ -87,7 +89,45 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
         </button>
       </div>
 
-      <Modal title="Novo projeto" description="Cadastre o projeto guarda-chuva. Se for recorrente, valores e prazos vêm dos clientes vinculados." open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal
+        title={selectedProjectType ? 'Novo projeto' : 'Escolha o modelo do projeto'}
+        description={
+          selectedProjectType
+            ? selectedProjectType === 'traffic'
+              ? 'Projeto de tráfego é recorrente e funciona como guarda-chuva para clientes vinculados.'
+              : 'Projeto de site é pontual, com prazo, progresso e valor próprio.'
+            : 'Selecione o tipo de projeto para o sistema montar a estrutura correta.'
+        }
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setSelectedProjectType(null);
+        }}
+      >
+        {!selectedProjectType ? (
+          <div className="grid gap-4 p-5 md:grid-cols-2">
+            <button
+              onClick={() => setSelectedProjectType('traffic')}
+              className="rounded-2xl border border-brand-line bg-brand-surface p-5 text-left transition hover:border-brand-green"
+            >
+              <p className="text-lg font-black text-white">Projeto de tráfego</p>
+              <p className="mt-2 text-sm leading-relaxed text-brand-muted">
+                Para operação recorrente, como SPX Assessoria. Os valores vêm dos clientes vinculados.
+              </p>
+              <p className="mt-4 text-sm font-bold text-brand-green">Recorrente • Sem prazo • Sem progresso</p>
+            </button>
+            <button
+              onClick={() => setSelectedProjectType('site')}
+              className="rounded-2xl border border-brand-line bg-brand-surface p-5 text-left transition hover:border-brand-green"
+            >
+              <p className="text-lg font-black text-white">Projeto de site</p>
+              <p className="mt-2 text-sm leading-relaxed text-brand-muted">
+                Para entrega pontual, com valor fechado, prazo, progresso e link finalizado.
+              </p>
+              <p className="mt-4 text-sm font-bold text-brand-green">Pontual • Com prazo • Com progresso</p>
+            </button>
+          </div>
+        ) : (
         <form onSubmit={addProject} className="space-y-5 p-5">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nome do projeto" name="name" required />
@@ -101,21 +141,11 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
               </select>
             </label>
-            <label className="block">
+            <input type="hidden" name="billingType" value={newProjectBillingType} />
+            <div className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo do projeto</span>
-              <select
-                name="billingType"
-                value={newProjectBillingType}
-                onChange={(event) => setNewProjectBillingType(event.target.value as Project['billingType'])}
-                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
-              >
-                {billingTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <p className="font-bold text-white">{selectedProjectType === 'traffic' ? 'Tráfego recorrente' : 'Site pontual'}</p>
+            </div>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
               <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
@@ -148,10 +178,11 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             <textarea name="nextAction" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
           </label>
           <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
-            <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
+            <button type="button" onClick={() => setSelectedProjectType(null)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Voltar</button>
             <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar projeto</button>
           </div>
         </form>
+        )}
       </Modal>
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
@@ -185,6 +216,9 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 <h2 className="text-lg font-bold text-white">{project.name}</h2>
                 <p className="mt-1 text-sm text-brand-muted">
                   {project.company || 'Sem empresa'} • {project.ownerName || 'Sem responsável'} • {project.role}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-brand-soft">
+                  {project.projectType === 'traffic' ? 'Projeto de tráfego' : 'Projeto de site'}
                 </p>
                 <p className="mt-1 text-xs font-semibold text-brand-green">
                   {projectClients.length} cliente{projectClients.length === 1 ? '' : 's'} vinculado{projectClients.length === 1 ? '' : 's'}

@@ -55,6 +55,7 @@ export const loadData = (): CamplyData => {
       })),
       projects: parsed.projects.map((project) => ({
         ...project,
+        projectType: project.projectType ?? (project.billingType === 'recurring' ? 'traffic' : 'site'),
         clientId: project.clientId ?? parsed.clients[0]?.id ?? '',
         ownerName: project.ownerName ?? '',
         company: project.company ?? '',
