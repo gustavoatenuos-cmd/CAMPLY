@@ -43,10 +43,10 @@ export function FinanceView({ data, updateData }: FinanceViewProps) {
     <section className="h-full overflow-y-auto p-6 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-400">Financeiro</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Financeiro</p>
           <h1 className="mt-1 text-2xl font-black text-white">Recebimentos</h1>
         </div>
-        <button onClick={addReceivable} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950">
+        <button onClick={addReceivable} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
           <Plus size={18} />
           Novo recebimento
         </button>
@@ -56,23 +56,23 @@ export function FinanceView({ data, updateData }: FinanceViewProps) {
         <Total label="Atrasado" value={money(overdue)} tone="danger" />
         <Total label="Recebido" value={money(paid)} tone="good" />
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+      <div className="overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
         {data.receivables.map((item) => {
           const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
           return (
-            <div key={item.id} className="grid gap-3 border-b border-slate-800 p-4 text-sm last:border-b-0 md:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] md:items-center">
+            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 md:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] md:items-center">
               <p className="font-semibold text-white">{client?.name}</p>
-              <p className="text-slate-400">{item.description}</p>
-              <p className="text-slate-400">{formatDate(item.dueDate)}</p>
-              <p className="font-bold text-emerald-400">{money(item.amount)}</p>
+              <p className="text-brand-muted">{item.description}</p>
+              <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
+              <p className="font-bold text-brand-green">{money(item.amount)}</p>
               <div className="flex items-center gap-2">
-                <select value={item.status} onChange={(event) => setStatus(item.id, event.target.value as PaymentStatus)} className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white">
+                <select value={item.status} onChange={(event) => setStatus(item.id, event.target.value as PaymentStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
                   <option value="pending">{paymentStatusLabels.pending}</option>
                   <option value="overdue">{paymentStatusLabels.overdue}</option>
                   <option value="paid">{paymentStatusLabels.paid}</option>
                 </select>
                 {item.status !== 'paid' && (
-                  <button onClick={() => setStatus(item.id, 'paid')} className="rounded-md bg-emerald-400/10 p-1.5 text-emerald-400">
+                  <button onClick={() => setStatus(item.id, 'paid')} className="rounded-md bg-brand-green/10 p-1.5 text-brand-green">
                     <Check size={15} />
                   </button>
                 )}
@@ -86,10 +86,10 @@ export function FinanceView({ data, updateData }: FinanceViewProps) {
 }
 
 function Total({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'danger' | 'good' }) {
-  const color = tone === 'danger' ? 'text-rose-400' : tone === 'good' ? 'text-emerald-400' : 'text-white';
+  const color = tone === 'danger' ? 'text-rose-400' : tone === 'good' ? 'text-brand-green' : 'text-white';
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950 p-5">
-      <p className="text-sm text-slate-400">{label}</p>
+    <div className="rounded-xl border border-brand-line bg-brand-ink p-5">
+      <p className="text-sm text-brand-muted">{label}</p>
       <p className={`mt-3 text-2xl font-black ${color}`}>{value}</p>
     </div>
   );

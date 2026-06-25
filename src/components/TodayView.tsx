@@ -1,5 +1,6 @@
 import { AlertTriangle, Banknote, CheckCircle2, Megaphone, Plus, Target } from 'lucide-react';
 import { daysUntil, formatDate, makeId, money } from '../data/camplyStore';
+import { BrandLogo } from './BrandLogo';
 import { CamplyData, Insight, Task, ViewId } from '../types';
 
 interface TodayViewProps {
@@ -43,13 +44,17 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
 
   return (
     <section className="h-full overflow-y-auto p-6 lg:p-8">
+      <div className="mb-8 rounded-2xl border border-brand-line bg-brand-paper p-5 text-brand-ink shadow-brand">
+        <BrandLogo />
+      </div>
+
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-emerald-400">Central do dia</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Central do dia</p>
           <h1 className="mt-2 text-3xl font-black text-white">Esta é a operação agora.</h1>
-          <p className="mt-2 text-slate-400">Prioridades, cobranças, campanhas e projetos que precisam de decisão.</p>
+          <p className="mt-2 text-brand-muted">Prioridades, cobranças, campanhas e projetos que precisam de decisão.</p>
         </div>
-        <button onClick={addTask} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950">
+        <button onClick={addTask} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
           <Plus size={18} />
           Nova tarefa rápida
         </button>
@@ -67,10 +72,10 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           <Panel title="Prioridades do assistente" button="Ver inteligência" onClick={() => setActiveView('intelligence')}>
             <div className="space-y-3">
               {insights.slice(0, 4).map((insight) => (
-                <div key={insight.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                <div key={insight.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
                   <p className="font-semibold text-white">{insight.title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-400">{insight.description}</p>
-                  <p className="mt-3 text-sm font-semibold text-emerald-400">{insight.recommendation}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-brand-muted">{insight.description}</p>
+                  <p className="mt-3 text-sm font-semibold text-brand-green">{insight.recommendation}</p>
                 </div>
               ))}
             </div>
@@ -82,12 +87,12 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                 const client = data.clients.find((item) => item.id === campaign.clientId);
                 const percent = campaign.budget ? Math.min(100, Math.round((campaign.spent / campaign.budget) * 100)) : 0;
                 return (
-                  <div key={campaign.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-                    <p className="text-xs text-slate-500">{client?.name}</p>
+                  <div key={campaign.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
+                    <p className="text-xs text-brand-muted">{client?.name}</p>
                     <h3 className="mt-1 font-bold text-white">{campaign.name}</h3>
-                    <p className="mt-2 text-sm text-slate-400">{campaign.nextAction}</p>
-                    <div className="mt-4 h-2 rounded-full bg-slate-800">
-                      <div className="h-2 rounded-full bg-emerald-400" style={{ width: `${percent}%` }} />
+                    <p className="mt-2 text-sm text-brand-muted">{campaign.nextAction}</p>
+                    <div className="mt-4 h-2 rounded-full bg-brand-surface2">
+                      <div className="h-2 rounded-full bg-brand-green" style={{ width: `${percent}%` }} />
                     </div>
                   </div>
                 );
@@ -100,11 +105,11 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           <Panel title="Tarefas abertas" button="Projetos" onClick={() => setActiveView('projects')}>
             <div className="space-y-2">
               {openTasks.slice(0, 7).map((task) => (
-                <button key={task.id} onClick={() => toggleTask(task)} className="flex w-full items-center gap-3 rounded-lg border border-slate-800 bg-slate-900 p-3 text-left">
-                  <CheckCircle2 className="text-slate-500" size={18} />
+                <button key={task.id} onClick={() => toggleTask(task)} className="flex w-full items-center gap-3 rounded-lg border border-brand-line bg-brand-surface p-3 text-left">
+                  <CheckCircle2 className="text-brand-muted" size={18} />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-white">{task.title}</p>
-                    <p className="text-xs text-slate-500">{formatDate(task.dueDate)} • {task.area}</p>
+                    <p className="text-xs text-brand-muted">{formatDate(task.dueDate)} • {task.area}</p>
                   </div>
                 </button>
               ))}
@@ -116,12 +121,12 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
               {pendingPayments.map((item) => {
                 const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
                 return (
-                  <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-900 p-3">
+                  <div key={item.id} className="flex items-center justify-between rounded-lg bg-brand-surface p-3">
                     <div>
                       <p className="text-sm font-semibold text-white">{client?.name}</p>
-                      <p className="text-xs text-slate-500">{formatDate(item.dueDate)} • {item.status}</p>
+                      <p className="text-xs text-brand-muted">{formatDate(item.dueDate)} • {item.status}</p>
                     </div>
-                    <p className="text-sm font-bold text-emerald-400">{money(item.amount)}</p>
+                    <p className="text-sm font-bold text-brand-green">{money(item.amount)}</p>
                   </div>
                 );
               })}
@@ -134,20 +139,20 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
 }
 
 const Metric = ({ icon: Icon, label, value, tone = 'default' }: { icon: typeof Target; label: string; value: string; tone?: 'default' | 'warning' }) => (
-  <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+  <div className="rounded-xl border border-brand-line bg-brand-surface p-5">
     <div className="flex items-center justify-between">
-      <p className="text-sm text-slate-400">{label}</p>
-      <Icon className={tone === 'warning' ? 'text-amber-300' : 'text-emerald-400'} size={19} />
+      <p className="text-sm text-brand-muted">{label}</p>
+      <Icon className={tone === 'warning' ? 'text-amber-300' : 'text-brand-green'} size={19} />
     </div>
     <p className="mt-4 text-2xl font-black text-white">{value}</p>
   </div>
 );
 
 const Panel = ({ title, button, onClick, children }: { title: string; button: string; onClick: () => void; children: React.ReactNode }) => (
-  <div className="rounded-xl border border-slate-800 bg-slate-950 p-5">
+  <div className="rounded-xl border border-brand-line bg-brand-ink p-5">
     <div className="mb-4 flex items-center justify-between">
       <h2 className="text-lg font-bold text-white">{title}</h2>
-      <button onClick={onClick} className="text-sm font-semibold text-emerald-400 hover:underline">{button}</button>
+      <button onClick={onClick} className="text-sm font-semibold text-brand-green hover:underline">{button}</button>
     </div>
     {children}
   </div>

@@ -1,4 +1,5 @@
 import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, Sparkles, Users } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
 const items = [
@@ -18,15 +19,9 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps) {
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-950">
-      <div className="border-b border-slate-800 p-5">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 font-black text-slate-950">C</div>
-          <div>
-            <h1 className="text-xl font-black text-white">Camply</h1>
-            <p className="text-xs text-slate-400">Do clique ao cliente</p>
-          </div>
-        </div>
+    <aside className="flex h-screen w-72 shrink-0 flex-col border-r border-brand-line bg-brand-ink">
+      <div className="border-b border-brand-line p-5">
+        <BrandLogo inverted />
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
@@ -35,7 +30,7 @@ export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps)
             key={item.id}
             onClick={() => setActiveView(item.id)}
             className={`flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-medium transition ${
-              activeView === item.id ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+              activeView === item.id ? 'bg-brand-green text-brand-ink' : 'text-brand-soft hover:bg-white/5 hover:text-white'
             }`}
           >
             <span className="flex items-center gap-3">
@@ -49,7 +44,7 @@ export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps)
         ))}
       </nav>
 
-      <div className="border-t border-slate-800 p-4 text-xs leading-relaxed text-slate-400">
+      <div className="border-t border-brand-line p-4 text-xs leading-relaxed text-brand-muted">
         Assistente para organizar campanhas, clientes, recebimentos e projetos do dia.
       </div>
     </aside>

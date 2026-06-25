@@ -24,7 +24,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 text-white">
+    <div className="flex h-screen overflow-hidden bg-brand-ink text-white">
       <Sidebar activeView={activeView} setActiveView={setActiveView} alertCount={insights.filter((item) => item.level !== 'good').length} />
       <main className="min-w-0 flex-1 overflow-hidden">
         {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
