@@ -18,7 +18,7 @@ export function CreativeCriticView({ data }: Props) {
 
   // Auto-select first active integration
   useEffect(() => {
-    supabase.from('meta_integrations').select('*').eq('status', 'active').maybeSingle().then(({ data: int }) => {
+    supabase!.from('meta_integrations').select('*').eq('status', 'active').maybeSingle().then(({ data: int }) => {
       if (int) setActiveAccount(int.account_id || '');
     });
   }, []);
@@ -37,7 +37,7 @@ export function CreativeCriticView({ data }: Props) {
       const targetId = activeCampaign || activeAccount;
       const type = activeCampaign ? 'campaign' : 'adaccount';
       
-      const { data: fetchRes, error: fetchErr } = await supabase.functions.invoke('meta-fetch-creatives', {
+      const { data: fetchRes, error: fetchErr } = await supabase!.functions.invoke('meta-fetch-creatives', {
         body: { targetId, type }
       });
       
@@ -51,7 +51,7 @@ export function CreativeCriticView({ data }: Props) {
       // 2. Call the Critic Agent
       const scopeName = activeCampaign ? data.campaigns.find(c => c.id === activeCampaign)?.name || activeCampaign : 'Conta Completa';
       
-      const { data: agentRes, error: agentErr } = await supabase.functions.invoke('meta-creative-critic', {
+      const { data: agentRes, error: agentErr } = await supabase!.functions.invoke('meta-creative-critic', {
         body: { adsData: ads, kpi, scopeName }
       });
       
