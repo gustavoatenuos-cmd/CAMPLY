@@ -37,9 +37,14 @@ export function FinanceView({ data }: FinanceViewProps) {
         {data.clients.map((client) => {
           const clientTotal = client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
           const monthlyTotal = normalizeMonthlyInvestment(clientTotal, client.adInvestmentPeriod);
+          const project = data.projects.find((item) => item.id === client.projectId);
           return (
             <div key={client.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_0.7fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] xl:items-center">
-              <p className="font-semibold text-white">{clientDisplayName(client)}</p>
+              <div>
+                <p className="font-semibold text-white">{clientDisplayName(client)}</p>
+                {project && <p className="mt-1 text-xs font-semibold text-brand-green">Projeto: {project.name}</p>}
+                {client.company && <p className="mt-1 text-xs text-brand-muted">Responsável: {client.name}</p>}
+              </div>
               <p className="text-brand-muted">{periodLabel(client.adInvestmentPeriod)}</p>
               <p className="text-brand-muted">{money(client.adInvestmentMeta)}</p>
               <p className="text-brand-muted">{money(client.adInvestmentGoogle)}</p>
