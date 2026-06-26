@@ -4,6 +4,7 @@ import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } fro
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
+import { ClientFormModal } from './ClientFormModal';
 
 interface PersonalFinanceViewProps {
   data: CamplyData;
@@ -12,6 +13,7 @@ interface PersonalFinanceViewProps {
 
 export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const forecast = buildFinancialForecast(data);
   const pending = data.receivables.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0);
   const overdue = data.receivables.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0);
@@ -207,7 +209,13 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           forecast.items.slice(0, 12).map((item) => (
             <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
               <div>
-                <p className="font-semibold text-white">{item.title}</p>
+                <button 
+                  onClick={() => item.clientId && setEditingClientId(item.clientId)}
+                  className="font-semibold text-white hover:text-brand-green transition-colors text-left"
+                  title="Ver configuração do cliente"
+                >
+                  {item.title}
+                </button>
                 <p className="mt-1 text-xs text-brand-muted">{item.description}</p>
               </div>
               <p className="text-brand-muted">{item.projectName || 'Cliente direto'}</p>
@@ -352,6 +360,14 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           );
         })}
       </div>
+
+      <ClientFormModal
+        data={data}
+        updateData={updateData}
+        editingClient={data.clients.find(c => c.id === editingClientId)}
+        open={!!editingClientId}
+        onClose={() => setEditingClientId(null)}
+      />
     </section>
   );
 }
