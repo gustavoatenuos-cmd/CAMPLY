@@ -1,4 +1,4 @@
-import { ExternalLink, Plus, Save } from 'lucide-react';
+import { Edit3, ExternalLink, Plus, Save } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, normalizeMonthlyInvestment, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
@@ -12,7 +12,9 @@ interface ProjectsViewProps {
 export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedProjectType, setSelectedProjectType] = useState<ProjectType | null>(null);
-  const newProjectBillingType: Project['billingType'] = selectedProjectType === 'site' ? 'one_time' : 'recurring';
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const editingProject = data.projects.find((project) => project.id === editingProjectId);
+  const projectBillingType: Project['billingType'] = editingProject?.billingType ?? (selectedProjectType === 'site' ? 'one_time' : 'recurring');
   const groupedClients = data.clients.filter((client) => client.projectId);
   const recurringRevenue = groupedClients
     .filter((client) => client.managementFeeType === 'recurring')
@@ -21,14 +23,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
     .filter((client) => client.managementFeeType === 'one_time')
     .reduce((sum, client) => sum + client.monthlyFee, 0);
 
-  const addProject = (event: FormEvent<HTMLFormElement>) => {
+  const saveProject = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
     const project: Project = {
-      id: makeId('project'),
-      projectType: selectedProjectType ?? 'traffic',
+      id: editingProject?.id ?? makeId('project'),
+      projectType: selectedProjectType ?? editingProject?.projectType ?? 'traffic',
       clientId: String(form.get('clientId') ?? ''),
       ownerName: String(form.get('ownerName') ?? ''),
       company: String(form.get('company') ?? ''),
@@ -36,10 +38,10 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
       name,
       role: String(form.get('role') ?? ''),
       status: String(form.get('status') ?? 'active') as ProjectStatus,
-      progress: newProjectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
-      dueDate: newProjectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-      amountCharged: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
-      amountReceived: newProjectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
+      progress: projectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
+      dueDate: projectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
+      amountCharged: projectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
+      amountReceived: projectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
       deliveredUrl: String(form.get('deliveredUrl') ?? ''),
       visibility: String(form.get('visibility') ?? 'private') as Project['visibility'],
       nextAction: String(form.get('nextAction') ?? ''),
@@ -47,12 +49,16 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
 
     updateData((current) => ({
       ...current,
-      projects: [project, ...current.projects],
+      projects: editingProject
+        ? current.projects.map((item) => (item.id === editingProject.id ? project : item))
+        : [project, ...current.projects],
       activityLogs: [
         createActivityLog({
-          action: 'project_created',
-          title: `Projeto criado: ${project.name}`,
-          description: `${project.projectType === 'traffic' ? 'Projeto de tráfego recorrente' : 'Projeto de site pontual'} cadastrado para a operação.`,
+          action: editingProject ? 'project_updated' : 'project_created',
+          title: editingProject ? `Projeto editado: ${project.name}` : `Projeto criado: ${project.name}`,
+          description: editingProject
+            ? 'Dados principais do projeto foram atualizados.'
+            : `${project.projectType === 'traffic' ? 'Projeto de tráfego recorrente' : 'Projeto de site pontual'} cadastrado para a operação.`,
           projectId: project.id,
           clientId: project.clientId,
           campaignId: '',
@@ -64,6 +70,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
     }));
     setModalOpen(false);
     setSelectedProjectType(null);
+    setEditingProjectId(null);
     event.currentTarget.reset();
   };
 
@@ -126,16 +133,25 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Projetos</p>
           <h1 className="mt-1 text-2xl font-black text-white">Projetos e parcerias</h1>
         </div>
-        <button onClick={() => setModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink">
+        <button
+          onClick={() => {
+            setEditingProjectId(null);
+            setSelectedProjectType(null);
+            setModalOpen(true);
+          }}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-3 text-sm font-bold text-brand-ink"
+        >
           <Plus size={18} />
           Novo projeto
         </button>
       </div>
 
       <Modal
-        title={selectedProjectType ? 'Novo projeto' : 'Escolha o modelo do projeto'}
+        title={editingProject ? 'Editar projeto' : selectedProjectType ? 'Novo projeto' : 'Escolha o modelo do projeto'}
         description={
-          selectedProjectType
+          editingProject
+            ? 'Atualize os dados principais, status, entrega, link e próxima ação do projeto.'
+            : selectedProjectType
             ? selectedProjectType === 'traffic'
               ? 'Projeto de tráfego é recorrente e funciona como guarda-chuva para clientes vinculados.'
               : 'Projeto de site é pontual, com prazo, progresso e valor próprio.'
@@ -145,9 +161,10 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
         onClose={() => {
           setModalOpen(false);
           setSelectedProjectType(null);
+          setEditingProjectId(null);
         }}
       >
-        {!selectedProjectType ? (
+        {!selectedProjectType && !editingProject ? (
           <div className="grid gap-4 p-5 md:grid-cols-2">
             <button
               onClick={() => setSelectedProjectType('traffic')}
@@ -171,45 +188,45 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             </button>
           </div>
         ) : (
-        <form onSubmit={addProject} className="space-y-5 p-5">
+        <form key={editingProject?.id ?? selectedProjectType ?? 'new-project'} onSubmit={saveProject} className="space-y-5 p-5">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Nome do projeto" name="name" required />
-            <Field label="Contratante / responsável" name="ownerName" placeholder="Ex: João" />
-            <Field label="Empresa do projeto" name="company" placeholder="Ex: SPX" />
-            <Field label="Papel / tipo de entrega" name="role" placeholder="Ex: landing page, funil, loja, automação" />
+            <Field label="Nome do projeto" name="name" defaultValue={editingProject?.name} required />
+            <Field label="Contratante / responsável" name="ownerName" defaultValue={editingProject?.ownerName} placeholder="Ex: João" />
+            <Field label="Empresa do projeto" name="company" defaultValue={editingProject?.company} placeholder="Ex: SPX" />
+            <Field label="Papel / tipo de entrega" name="role" defaultValue={editingProject?.role} placeholder="Ex: landing page, funil, loja, automação" />
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente principal / contratante</span>
-              <select name="clientId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select name="clientId" defaultValue={editingProject?.clientId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Sem cliente</option>
                 {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
               </select>
             </label>
-            <input type="hidden" name="billingType" value={newProjectBillingType} />
+            <input type="hidden" name="billingType" value={projectBillingType} />
             <div className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo do projeto</span>
-              <p className="font-bold text-white">{selectedProjectType === 'traffic' ? 'Tráfego recorrente' : 'Site pontual'}</p>
+              <p className="font-bold text-white">{(selectedProjectType ?? editingProject?.projectType) === 'traffic' ? 'Tráfego recorrente' : 'Site pontual'}</p>
             </div>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
-              <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select name="status" defaultValue={editingProject?.status ?? 'active'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="active">{projectStatusLabels.active}</option>
                 <option value="planning">{projectStatusLabels.planning}</option>
                 <option value="waiting">{projectStatusLabels.waiting}</option>
                 <option value="done">{projectStatusLabels.done}</option>
               </select>
             </label>
-            {newProjectBillingType === 'one_time' && (
+            {projectBillingType === 'one_time' && (
               <>
-                <Field label="Progresso (%)" name="progress" type="number" min="0" max="100" defaultValue="0" />
-                <Field label="Prazo" name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
-                <MoneyField label="Valor cobrado" name="amountCharged" />
-                <MoneyField label="Valor recebido" name="amountReceived" />
+                <Field label="Progresso (%)" name="progress" type="number" min="0" max="100" defaultValue={editingProject?.progress ?? 0} />
+                <Field label="Prazo" name="dueDate" type="date" defaultValue={editingProject?.dueDate || new Date().toISOString().slice(0, 10)} />
+                <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={editingProject?.amountCharged} />
+                <MoneyField label="Valor recebido" name="amountReceived" defaultValue={editingProject?.amountReceived} />
               </>
             )}
-            <Field label="Link finalizado" name="deliveredUrl" type="url" placeholder="https://..." />
+            <Field label="Link finalizado" name="deliveredUrl" type="url" defaultValue={editingProject?.deliveredUrl} placeholder="https://..." />
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Visibilidade</span>
-              <select name="visibility" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select name="visibility" defaultValue={editingProject?.visibility ?? 'private'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="private">Privado</option>
                 <option value="portfolio">Portfólio</option>
                 <option value="public">Público</option>
@@ -218,11 +235,25 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
           </div>
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Próxima ação</span>
-            <textarea name="nextAction" rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+            <textarea name="nextAction" defaultValue={editingProject?.nextAction} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
           </label>
           <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
-            <button type="button" onClick={() => setSelectedProjectType(null)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Voltar</button>
-            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar projeto</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (editingProject) {
+                  setModalOpen(false);
+                  setEditingProjectId(null);
+                  setSelectedProjectType(null);
+                } else {
+                  setSelectedProjectType(null);
+                }
+              }}
+              className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft"
+            >
+              {editingProject ? 'Cancelar' : 'Voltar'}
+            </button>
+            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">{editingProject ? 'Salvar alterações' : 'Salvar projeto'}</button>
           </div>
         </form>
         )}
@@ -267,12 +298,25 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                   {projectClients.length} cliente{projectClients.length === 1 ? '' : 's'} vinculado{projectClients.length === 1 ? '' : 's'}
                 </p>
               </div>
-              <select value={project.status} onChange={(event) => setStatus(project.id, event.target.value as ProjectStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
-                <option value="planning">{projectStatusLabels.planning}</option>
-                <option value="active">{projectStatusLabels.active}</option>
-                <option value="waiting">{projectStatusLabels.waiting}</option>
-                <option value="done">{projectStatusLabels.done}</option>
-              </select>
+              <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                <select value={project.status} onChange={(event) => setStatus(project.id, event.target.value as ProjectStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
+                  <option value="planning">{projectStatusLabels.planning}</option>
+                  <option value="active">{projectStatusLabels.active}</option>
+                  <option value="waiting">{projectStatusLabels.waiting}</option>
+                  <option value="done">{projectStatusLabels.done}</option>
+                </select>
+                <button
+                  onClick={() => {
+                    setEditingProjectId(project.id);
+                    setSelectedProjectType(project.projectType);
+                    setModalOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold text-brand-soft transition hover:border-brand-green hover:text-white"
+                >
+                  <Edit3 size={14} />
+                  Editar
+                </button>
+              </div>
             </div>
 
             {project.billingType === 'one_time' && (
