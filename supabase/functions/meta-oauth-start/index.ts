@@ -23,7 +23,8 @@ serve(async (req) => {
     // if (authError || !user) throw new Error('Unauthorized')
     
     // For MVP/testing assuming an unknown user or mocked id if user is null
-    const userId = user?.id || 'gustavo-camply' // Replace with your standard mock or throw error
+    if (authError || !user) { throw new Error('Unauthorized'); }
+    const userId = user.id; // Replace with your standard mock or throw error
 
     // Generate random state hash to prevent CSRF
     const array = new Uint8Array(16);

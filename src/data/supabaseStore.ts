@@ -2,21 +2,26 @@ import { CamplyData } from '../types';
 import { normalizeData } from './camplyStore';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
-const WORKSPACE_ID = 'gustavo-camply';
-
 type WorkspaceRow = {
   id: string;
   data: CamplyData;
   updated_at: string;
 };
 
+const getUserId = async (): Promise<string | null> => {
+  const { data } = await supabase!.auth.getSession();
+  return data.session?.user.id || null;
+};
+
 export const loadRemoteData = async (): Promise<CamplyData | null> => {
   if (!isSupabaseConfigured || !supabase) return null;
+  const userId = await getUserId();
+  if (!userId) return null;
 
   const { data, error } = await supabase
     .from('camply_workspace')
     .select('data')
-    .eq('id', WORKSPACE_ID)
+    .eq('id', userId)
     .maybeSingle<Pick<WorkspaceRow, 'data'>>();
 
   if (error) {
@@ -29,9 +34,11 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
 
 export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
   if (!isSupabaseConfigured || !supabase) return false;
+  const userId = await getUserId();
+  if (!userId) return false;
 
   const { error } = await supabase.from('camply_workspace').upsert({
-    id: WORKSPACE_ID,
+    id: userId,
     data,
     updated_at: new Date().toISOString(),
   });

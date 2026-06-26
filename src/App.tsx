@@ -1,32 +1,51 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { AUTH_STORAGE_KEY } from './auth';
-import { ActivityView } from './components/ActivityView';
-import { AgentSettingsView } from './components/AgentSettingsView';
-import { AuthGate } from './components/AuthGate';
-import { CampaignsView } from './components/CampaignsView';
-import { ClientsView } from './components/ClientsView';
-import { FinanceView } from './components/FinanceView';
-import { IntelligenceView } from './components/IntelligenceView';
-import { AgentChatView } from './components/AgentChatView';
-import { MetaIntegrationView } from './components/MetaIntegrationView';
-import { PersonalFinanceView } from './components/PersonalFinanceView';
-import { ProjectsView } from './components/ProjectsView';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
-import { TodayView } from './components/TodayView';
+import { AuthGate } from './components/AuthGate';
 import { buildInsights, loadData, saveData } from './data/camplyStore';
 import { loadRemoteData, saveRemoteData } from './data/supabaseStore';
+import { supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
 
+const ActivityView = React.lazy(() => import('./components/ActivityView').then(m => ({ default: m.ActivityView })));
+const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
+const CampaignsView = React.lazy(() => import('./components/CampaignsView').then(m => ({ default: m.CampaignsView })));
+const ClientsView = React.lazy(() => import('./components/ClientsView').then(m => ({ default: m.ClientsView })));
+const FinanceView = React.lazy(() => import('./components/FinanceView').then(m => ({ default: m.FinanceView })));
+const IntelligenceView = React.lazy(() => import('./components/IntelligenceView').then(m => ({ default: m.IntelligenceView })));
+const AgentChatView = React.lazy(() => import('./components/AgentChatView').then(m => ({ default: m.AgentChatView })));
+const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegrationView').then(m => ({ default: m.MetaIntegrationView })));
+const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
+const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
+const TodayView = React.lazy(() => import('./components/TodayView').then(m => ({ default: m.TodayView })));
+
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(() => window.sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true');
+  const [authenticated, setAuthenticated] = useState(false);
+  const [session, setSession] = useState<any>(null);
   const [activeView, setActiveView] = useState<ViewId>('today');
   const [data, setData] = useState<CamplyData>(() => loadData());
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
   const [claudeLoading, setClaudeLoading] = useState(false);
+
+  useEffect(() => {
+    supabase?.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthenticated(!!session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase!.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -121,17 +140,19 @@ export default function App() {
     <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-brand-ink text-white xl:flex-row">
       <Sidebar activeView={activeView} setActiveView={setActiveView} alertCount={agentAlertCount} />
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
-        {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
-        {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
-        {activeView === 'mediaFinance' && <FinanceView data={data} />}
-        {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
-        {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
-        {activeView === 'activity' && <ActivityView data={data} />}
-        {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
-        {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
-        {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
-        {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
+        <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
+          {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
+          {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
+          {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
+          {activeView === 'mediaFinance' && <FinanceView data={data} />}
+          {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
+          {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
+          {activeView === 'activity' && <ActivityView data={data} />}
+          {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
+          {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
+          {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
+          {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
+        </Suspense>
       </main>
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
     </div>

@@ -19,7 +19,8 @@ serve(async (req) => {
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
     
-    const userId = user?.id || 'gustavo-camply' 
+    if (authError || !user) { throw new Error('Unauthorized'); }
+    const userId = user.id; 
 
     // Get active integration
     const { data: integration, error: intError } = await supabaseClient
