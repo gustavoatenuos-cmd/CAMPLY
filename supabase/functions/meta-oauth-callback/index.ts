@@ -1,0 +1,137 @@
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeaders } from '../_shared/cors.ts'
+import { encryptToken } from '../_shared/crypto.ts'
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    const { code, state } = await req.json();
+
+    if (!code || !state) {
+      throw new Error('Code or State missing');
+    }
+
+    // 1. Verify state hash in database
+    const { data: stateData, error: stateError } = await supabaseClient
+      .from('meta_oauth_states')
+      .select('*')
+      .eq('state_hash', state)
+      .is('used_at', null)
+      .single();
+
+    if (stateError || !stateData) {
+      throw new Error('Invalid or expired state parameter');
+    }
+
+    // Verify expiration
+    if (new Date() > new Date(stateData.expires_at)) {
+      throw new Error('State hash expired');
+    }
+
+    // Mark as used
+    await supabaseClient
+      .from('meta_oauth_states')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', stateData.id);
+
+    // 2. Exchange code for user access token
+    const appId = Deno.env.get('META_APP_ID');
+    const appSecret = Deno.env.get('META_APP_SECRET');
+    
+    if (!appId || !appSecret) throw new Error('Meta credentials missing from env');
+
+    const tokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    tokenUrl.searchParams.append('client_id', appId);
+    tokenUrl.searchParams.append('redirect_uri', stateData.redirect_uri);
+    tokenUrl.searchParams.append('client_secret', appSecret);
+    tokenUrl.searchParams.append('code', code);
+
+    const tokenRes = await fetch(tokenUrl.toString());
+    const tokenData = await tokenRes.json();
+
+    if (!tokenRes.ok) {
+      throw new Error(`Token exchange failed: ${tokenData.error?.message}`);
+    }
+
+    let accessToken = tokenData.access_token;
+
+    // 3. Exchange short-lived token for long-lived token
+    const longTokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    longTokenUrl.searchParams.append('grant_type', 'fb_exchange_token');
+    longTokenUrl.searchParams.append('client_id', appId);
+    longTokenUrl.searchParams.append('client_secret', appSecret);
+    longTokenUrl.searchParams.append('fb_exchange_token', accessToken);
+
+    const longTokenRes = await fetch(longTokenUrl.toString());
+    const longTokenData = await longTokenRes.json();
+
+    if (longTokenRes.ok && longTokenData.access_token) {
+      accessToken = longTokenData.access_token;
+    }
+
+    // 4. Fetch user profile
+    const meUrl = new URL('https://graph.facebook.com/v19.0/me');
+    meUrl.searchParams.append('access_token', accessToken);
+    
+    const meRes = await fetch(meUrl.toString());
+    const meData = await meRes.json();
+
+    if (!meRes.ok) throw new Error('Failed to fetch user profile');
+
+    // 5. Encrypt token
+    const encryptedToken = await encryptToken(accessToken);
+
+    // 6. Save or Update Integration
+    const { data: existingInt, error: searchError } = await supabaseClient
+      .from('meta_integrations')
+      .select('id')
+      .eq('user_id', stateData.user_id)
+      .eq('meta_user_id', meData.id)
+      .single();
+
+    if (existingInt) {
+      await supabaseClient
+        .from('meta_integrations')
+        .update({
+          access_token_encrypted: encryptedToken,
+          meta_user_name: meData.name,
+          granted_scopes: stateData.scopes,
+          status: 'active',
+          last_validated_at: new Date().toISOString(),
+        })
+        .eq('id', existingInt.id);
+    } else {
+      await supabaseClient
+        .from('meta_integrations')
+        .insert({
+          user_id: stateData.user_id,
+          meta_user_id: meData.id,
+          meta_user_name: meData.name,
+          access_token_encrypted: encryptedToken,
+          granted_scopes: stateData.scopes,
+          status: 'active',
+          last_validated_at: new Date().toISOString(),
+        });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})

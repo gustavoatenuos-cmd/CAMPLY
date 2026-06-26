@@ -1,4 +1,4 @@
-import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare } from 'lucide-react';
+import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare, Facebook } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
@@ -13,6 +13,7 @@ const items = [
   { id: 'activity', label: 'Histórico', icon: History },
   { id: 'intelligence', label: 'Inteligência', icon: Sparkles },
   { id: 'agentSettings', label: 'Config. Agente', icon: Settings },
+  { id: 'metaIntegration', label: 'Integração Meta', icon: Facebook },
 ] satisfies Array<{ id: ViewId; label: string; icon: typeof CalendarCheck }>;
 
 interface SidebarProps {

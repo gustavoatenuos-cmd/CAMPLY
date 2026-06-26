@@ -8,6 +8,7 @@ import { ClientsView } from './components/ClientsView';
 import { FinanceView } from './components/FinanceView';
 import { IntelligenceView } from './components/IntelligenceView';
 import { AgentChatView } from './components/AgentChatView';
+import { MetaIntegrationView } from './components/MetaIntegrationView';
 import { PersonalFinanceView } from './components/PersonalFinanceView';
 import { ProjectsView } from './components/ProjectsView';
 import { Sidebar } from './components/Sidebar';
@@ -130,6 +131,7 @@ export default function App() {
         {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
         {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
         {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
+        {activeView === 'metaIntegration' && <MetaIntegrationView />}
       </main>
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
     </div>
