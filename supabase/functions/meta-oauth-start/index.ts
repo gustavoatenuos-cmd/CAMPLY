@@ -35,7 +35,7 @@ serve(async (req) => {
 
     if (!appId) throw new Error('META_APP_ID missing');
 
-    const scopes = ['ads_read', 'business_management', 'pages_show_list', 'pages_read_engagement'];
+    const scopes = ['ads_read', 'ads_management', 'business_management', 'pages_show_list', 'pages_read_engagement'];
 
     // Save state hash
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins

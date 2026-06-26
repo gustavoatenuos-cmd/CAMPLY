@@ -76,6 +76,23 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
     // }
   };
 
+  const handleSyncAds = async (adAccountId: string) => {
+    // try {
+    //   setIsLoading(true);
+    //   const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
+    //     body: { adAccountId }
+    //   });
+    //   if (error) throw error;
+    //   alert(`Sucesso! ${data.ads?.length || 0} anúncios ativos sincronizados.`);
+    //   console.log(data.ads);
+    // } catch (e: any) {
+    //   setError(e.message);
+    // } finally {
+    //   setIsLoading(false);
+    // }
+    alert('Simulação: sincronizando anúncios ativos da conta ' + adAccountId);
+  };
+
   return (
     <section className="flex h-full flex-col bg-brand-ink">
       <div className="flex items-center justify-between border-b border-brand-line bg-brand-surface p-5">
@@ -182,9 +199,14 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
                         </div>
                       </div>
                       {asset.asset_type === 'adaccount' && (
-                        <button className="rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft hover:bg-brand-surface hover:text-white">
-                          Sincronizar Campanhas
-                        </button>
+                        <div className="flex gap-2">
+                          <button className="rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft hover:bg-brand-surface hover:text-white">
+                            Campanhas
+                          </button>
+                          <button onClick={() => handleSyncAds(asset.asset_id)} className="rounded-lg bg-brand-green/10 px-3 py-1.5 text-xs font-bold text-brand-green hover:bg-brand-green/20">
+                            Sync Anúncios e Insights
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))
