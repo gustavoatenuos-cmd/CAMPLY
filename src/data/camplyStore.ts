@@ -59,6 +59,7 @@ export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
       billingType: project.billingType ?? 'one_time',
       amountCharged: project.amountCharged ?? 0,
       amountReceived: project.amountReceived ?? 0,
+      paymentStatus: project.paymentStatus ?? inferProjectPaymentStatus(project.amountCharged ?? 0, project.amountReceived ?? 0),
       deliveredUrl: project.deliveredUrl ?? '',
       visibility: project.visibility ?? 'private',
     })),
@@ -72,6 +73,11 @@ export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
       actor: log.actor ?? 'Gustavo',
     })),
   };
+};
+
+export const inferProjectPaymentStatus = (amountCharged: number, amountReceived: number): PaymentStatus => {
+  if (amountCharged > 0 && amountReceived >= amountCharged) return 'paid';
+  return 'pending';
 };
 
 export const loadData = (): CamplyData => {

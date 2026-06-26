@@ -1,8 +1,8 @@
 import { Edit3, ExternalLink, Plus, Save } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { createActivityLog, formatDate, makeId, money, normalizeMonthlyInvestment, projectStatusLabels } from '../data/camplyStore';
+import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money, normalizeMonthlyInvestment, paymentStatusLabels, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
-import { CamplyData, Project, ProjectStatus, ProjectType } from '../types';
+import { CamplyData, PaymentStatus, Project, ProjectStatus, ProjectType } from '../types';
 
 interface ProjectsViewProps {
   data: CamplyData;
@@ -28,6 +28,8 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
+    const amountCharged = projectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0);
+    const amountReceived = projectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0);
     const project: Project = {
       id: editingProject?.id ?? makeId('project'),
       projectType: selectedProjectType ?? editingProject?.projectType ?? 'traffic',
@@ -40,8 +42,11 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
       status: String(form.get('status') ?? 'active') as ProjectStatus,
       progress: projectBillingType === 'recurring' ? 0 : Number(form.get('progress') ?? 0),
       dueDate: projectBillingType === 'recurring' ? '' : String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-      amountCharged: projectBillingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? 0),
-      amountReceived: projectBillingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? 0),
+      amountCharged,
+      amountReceived,
+      paymentStatus: projectBillingType === 'recurring'
+        ? 'pending'
+        : (String(form.get('paymentStatus') ?? inferProjectPaymentStatus(amountCharged, amountReceived)) as PaymentStatus),
       deliveredUrl: String(form.get('deliveredUrl') ?? ''),
       visibility: String(form.get('visibility') ?? 'private') as Project['visibility'],
       nextAction: String(form.get('nextAction') ?? ''),
@@ -102,11 +107,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
     const form = new FormData(event.currentTarget);
     const amountCharged = project.billingType === 'recurring' ? 0 : Number(form.get('amountCharged') ?? project.amountCharged);
     const amountReceived = project.billingType === 'recurring' ? 0 : Number(form.get('amountReceived') ?? project.amountReceived);
+    const paymentStatus = project.billingType === 'recurring'
+      ? project.paymentStatus
+      : (String(form.get('paymentStatus') ?? inferProjectPaymentStatus(amountCharged, amountReceived)) as PaymentStatus);
     const deliveredUrl = String(form.get('deliveredUrl') ?? project.deliveredUrl);
     updateData((current) => ({
       ...current,
       projects: current.projects.map((item) =>
-        item.id === project.id ? { ...item, amountCharged, amountReceived, deliveredUrl } : item,
+        item.id === project.id ? { ...item, amountCharged, amountReceived, paymentStatus, deliveredUrl } : item,
       ),
       activityLogs: [
         createActivityLog({
@@ -114,7 +122,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
           title: `Projeto atualizado: ${project.name}`,
           description: project.billingType === 'recurring'
             ? 'Link entregue ou dados complementares foram atualizados.'
-            : `Valores atualizados: cobrado ${money(amountCharged)}, recebido ${money(amountReceived)}.`,
+            : `Valores atualizados: cobrado ${money(amountCharged)}, recebido ${money(amountReceived)} e financeiro ${paymentStatusLabels[paymentStatus]}.`,
           projectId: project.id,
           clientId: project.clientId,
           campaignId: '',
@@ -221,6 +229,13 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 <Field label="Prazo" name="dueDate" type="date" defaultValue={editingProject?.dueDate || new Date().toISOString().slice(0, 10)} />
                 <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={editingProject?.amountCharged} />
                 <MoneyField label="Valor recebido" name="amountReceived" defaultValue={editingProject?.amountReceived} />
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-brand-soft">Status do pagamento</span>
+                  <select name="paymentStatus" defaultValue={editingProject?.paymentStatus ?? 'pending'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                    <option value="pending">{paymentStatusLabels.pending}</option>
+                    <option value="paid">{paymentStatusLabels.paid}</option>
+                  </select>
+                </label>
               </>
             )}
             <Field label="Link finalizado" name="deliveredUrl" type="url" defaultValue={editingProject?.deliveredUrl} placeholder="https://..." />
@@ -281,7 +296,11 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
           }, 0);
           const projectAmount = project.billingType === 'recurring' ? recurringTotal + oneTimeTotal : project.amountCharged;
           const projectReceived = project.billingType === 'recurring' ? 0 : project.amountReceived;
-          const openAmount = project.billingType === 'recurring' ? recurringTotal : Math.max(0, projectAmount - projectReceived);
+          const openAmount = project.billingType === 'recurring'
+            ? recurringTotal
+            : project.paymentStatus === 'paid'
+              ? 0
+              : Math.max(0, projectAmount - projectReceived);
 
           return (
           <article key={project.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
@@ -358,6 +377,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               </div>
               {project.billingType === 'one_time' && (
                 <div className="rounded-lg bg-brand-surface p-3">
+                  <p className="text-xs text-brand-muted">Status financeiro</p>
+                  <p className={`mt-1 font-semibold ${project.paymentStatus === 'paid' ? 'text-brand-green' : 'text-amber-200'}`}>
+                    {paymentStatusLabels[project.paymentStatus]}
+                  </p>
+                </div>
+              )}
+              {project.billingType === 'one_time' && (
+                <div className="rounded-lg bg-brand-surface p-3">
                   <p className="text-xs text-brand-muted">Prazo</p>
                   <p className="mt-1 font-semibold text-white">{project.dueDate ? formatDate(project.dueDate) : 'Sem prazo'}</p>
                 </div>
@@ -368,14 +395,21 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               </div>
             </div>
 
-            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 xl:grid-cols-[1fr_1fr_1.4fr_auto] xl:items-end">
+            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 xl:grid-cols-[1fr_1fr_1fr_1.4fr_auto] xl:items-end">
               {project.billingType === 'one_time' ? (
                 <>
                   <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={project.amountCharged} />
                   <MoneyField label="Valor recebido" name="amountReceived" defaultValue={project.amountReceived} />
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-semibold text-brand-soft">Pagamento</span>
+                    <select name="paymentStatus" defaultValue={project.paymentStatus ?? 'pending'} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                      <option value="pending">{paymentStatusLabels.pending}</option>
+                      <option value="paid">{paymentStatusLabels.paid}</option>
+                    </select>
+                  </label>
                 </>
               ) : (
-                <div className="rounded-lg border border-brand-line bg-brand-ink p-3 text-sm text-brand-muted xl:col-span-2">
+                <div className="rounded-lg border border-brand-line bg-brand-ink p-3 text-sm text-brand-muted xl:col-span-3">
                   Projeto recorrente: valores vêm automaticamente dos clientes vinculados.
                 </div>
               )}

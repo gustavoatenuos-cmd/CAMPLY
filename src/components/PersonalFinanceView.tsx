@@ -14,7 +14,10 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
   const pending = data.receivables.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0);
   const overdue = data.receivables.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0);
   const paid = data.receivables.filter((item) => item.status === 'paid').reduce((sum, item) => sum + item.amount, 0);
-  const projectsToReceive = data.projects.reduce((sum, project) => sum + Math.max(0, project.amountCharged - project.amountReceived), 0);
+  const projectsToReceive = data.projects.reduce((sum, project) => {
+    if (project.paymentStatus === 'paid') return sum;
+    return sum + Math.max(0, project.amountCharged - project.amountReceived);
+  }, 0);
 
   const addReceivable = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,7 +168,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         </div>
         {data.projects.map((project) => {
           const client = data.clients.find((clientItem) => clientItem.id === project.clientId);
-          const remaining = Math.max(0, project.amountCharged - project.amountReceived);
+          const remaining = project.paymentStatus === 'paid' ? 0 : Math.max(0, project.amountCharged - project.amountReceived);
           return (
             <div key={project.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
               <p className="font-semibold text-white">{project.name}</p>

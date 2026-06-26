@@ -75,6 +75,7 @@ export interface Project {
   dueDate: string;
   amountCharged: number;
   amountReceived: number;
+  paymentStatus: PaymentStatus;
   deliveredUrl: string;
   visibility: 'private' | 'portfolio' | 'public';
   nextAction: string;
