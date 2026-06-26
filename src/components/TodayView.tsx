@@ -197,10 +197,19 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const showCampaignSelector = taskArea === 'tráfego' && selectedClientId && clientCampaigns.length > 0;
 
   const activeAlerts = data.agentAlerts?.filter(a => a.status === 'active') || [];
-  const atrasados = activeAlerts.filter(a => a.title.includes('Atrasad')).length;
-  const urgentes = activeAlerts.filter(a => a.title.includes('Hoje')).length;
-  const parados = activeAlerts.filter(a => a.title.includes('Parad')).length;
-  const atencao = activeAlerts.filter(a => a.title.includes('Atenção')).length;
+  const alertsAtrasados = activeAlerts.filter(a => a.title.includes('Atrasad'));
+  const alertsUrgentes = activeAlerts.filter(a => a.title.includes('Hoje'));
+  const alertsParados = activeAlerts.filter(a => a.title.includes('Parad'));
+  const alertsAtencao = activeAlerts.filter(a => a.title.includes('Atenção') || a.title.includes('Crítica'));
+
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const toggleExpand = (card: string) => setExpandedCard(expandedCard === card ? null : card);
+
+  // Métricas de campanha
+  const totalSpent = data.campaigns.reduce((s, c) => s + c.spent, 0);
+  const totalBudget = data.campaigns.reduce((s, c) => s + c.budget, 0);
+  const totalResults = data.campaigns.reduce((s, c) => s + (c.results || 0), 0);
+  const avgCPA = totalResults > 0 ? totalSpent / totalResults : 0;
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -208,52 +217,143 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         <BrandLogo />
       </div>
 
-      {activeAlerts.length > 0 && (
-        <div className="mb-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-5 shadow-lg">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-lg font-black text-white">
-              <ShieldAlert className="text-red-500" />
-              Resumo Operacional (Agente de IA)
-            </h2>
-            <button 
-              onClick={() => setActiveView('intelligence')}
-              className="text-sm font-bold text-brand-green hover:underline"
-            >
-              Ver todos os alertas &rarr;
-            </button>
+      {/* ===== DASHBOARD CENTRAL ===== */}
+      <div className="mb-8 rounded-2xl border border-brand-line bg-brand-ink p-5 shadow-lg">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-black text-white">
+            <ShieldAlert className="text-brand-green" size={22} />
+            Dashboard Operacional
+          </h2>
+          <button 
+            onClick={() => setActiveView('intelligence')}
+            className="text-sm font-bold text-brand-green hover:underline"
+          >
+            Central completa &rarr;
+          </button>
+        </div>
+
+        {/* Alert Cards - Clicáveis */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <button onClick={() => toggleExpand('atrasados')} className={`rounded-xl border p-4 text-left transition hover:scale-[1.02] ${expandedCard === 'atrasados' ? 'border-red-500 bg-red-500/15 ring-1 ring-red-500/30' : 'border-brand-line bg-brand-surface hover:border-red-500/50'}`}>
+            <div className="flex items-center gap-2 text-red-500 mb-1">
+              <AlertCircle size={16} />
+              <span className="font-semibold text-xs">Atrasados</span>
+            </div>
+            <p className="text-3xl font-black text-white">{alertsAtrasados.length}</p>
+            <p className="text-[10px] text-brand-muted mt-1">Clique para ver →</p>
+          </button>
+
+          <button onClick={() => toggleExpand('urgentes')} className={`rounded-xl border p-4 text-left transition hover:scale-[1.02] ${expandedCard === 'urgentes' ? 'border-amber-500 bg-amber-500/15 ring-1 ring-amber-500/30' : 'border-brand-line bg-brand-surface hover:border-amber-500/50'}`}>
+            <div className="flex items-center gap-2 text-amber-500 mb-1">
+              <AlertTriangle size={16} />
+              <span className="font-semibold text-xs">Urgentes (Hoje)</span>
+            </div>
+            <p className="text-3xl font-black text-white">{alertsUrgentes.length}</p>
+            <p className="text-[10px] text-brand-muted mt-1">Clique para ver →</p>
+          </button>
+
+          <button onClick={() => toggleExpand('parados')} className={`rounded-xl border p-4 text-left transition hover:scale-[1.02] ${expandedCard === 'parados' ? 'border-slate-400 bg-slate-400/15 ring-1 ring-slate-400/30' : 'border-brand-line bg-brand-surface hover:border-slate-400/50'}`}>
+            <div className="flex items-center gap-2 text-slate-400 mb-1">
+              <Clock size={16} />
+              <span className="font-semibold text-xs">Parados</span>
+            </div>
+            <p className="text-3xl font-black text-white">{alertsParados.length}</p>
+            <p className="text-[10px] text-brand-muted mt-1">Clique para ver →</p>
+          </button>
+
+          <button onClick={() => toggleExpand('atencao')} className={`rounded-xl border p-4 text-left transition hover:scale-[1.02] ${expandedCard === 'atencao' ? 'border-brand-green bg-brand-green/10 ring-1 ring-brand-green/30' : 'border-brand-line bg-brand-surface hover:border-brand-green/50'}`}>
+            <div className="flex items-center gap-2 text-brand-green mb-1">
+              <Bell size={16} />
+              <span className="font-semibold text-xs">Em Atenção</span>
+            </div>
+            <p className="text-3xl font-black text-white">{alertsAtencao.length}</p>
+            <p className="text-[10px] text-brand-muted mt-1">Clique para ver →</p>
+          </button>
+        </div>
+
+        {/* Expanded Alert List */}
+        {expandedCard && (() => {
+          const alertMap: Record<string, { items: typeof activeAlerts; color: string; label: string }> = {
+            atrasados: { items: alertsAtrasados, color: 'border-red-500/30 bg-red-500/5', label: 'Itens Atrasados' },
+            urgentes: { items: alertsUrgentes, color: 'border-amber-500/30 bg-amber-500/5', label: 'Itens Urgentes (Hoje)' },
+            parados: { items: alertsParados, color: 'border-slate-400/30 bg-slate-400/5', label: 'Itens Parados' },
+            atencao: { items: alertsAtencao, color: 'border-brand-green/30 bg-brand-green/5', label: 'Em Atenção' },
+          };
+          const { items, color, label } = alertMap[expandedCard];
+          return (
+            <div className={`mt-4 rounded-xl border p-4 ${color}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-white">{label} ({items.length})</h3>
+                <button onClick={() => setExpandedCard(null)} className="text-xs text-brand-muted hover:text-white">✕ Fechar</button>
+              </div>
+              {items.length === 0 ? (
+                <p className="text-sm text-brand-muted text-center py-3">Nenhum item nesta categoria. ✅</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {items.map(alert => {
+                    const client = alert.clientId ? data.clients.find(c => c.id === alert.clientId) : null;
+                    return (
+                      <div key={alert.id} className="flex items-start gap-3 rounded-lg border border-brand-line/50 bg-brand-surface/50 p-3">
+                        <ShieldAlert size={14} className="text-red-400 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{alert.title}</span>
+                            <span className="rounded-full bg-brand-surface px-2 py-0.5 text-[9px] font-bold uppercase text-brand-muted">{alert.relatedEntityType}</span>
+                          </div>
+                          <p className="text-xs text-brand-muted mt-0.5">{alert.message}</p>
+                          {client && <p className="text-[10px] text-brand-soft mt-1">Cliente: {clientDisplayName(client)}</p>}
+                          {alert.suggestedAction && (
+                            <p className="text-[10px] text-brand-green mt-1">💡 {alert.suggestedAction}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Métricas Operacionais */}
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Campanhas Ativas</p>
+            <p className="text-xl font-black text-white mt-1">{activeCampaigns.length}</p>
           </div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
-              <div className="flex items-center gap-2 text-red-500 mb-2">
-                <AlertCircle size={18} />
-                <span className="font-semibold text-sm">Atrasados</span>
-              </div>
-              <p className="text-3xl font-black text-white">{atrasados}</p>
-            </div>
-            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
-              <div className="flex items-center gap-2 text-amber-500 mb-2">
-                <AlertTriangle size={18} />
-                <span className="font-semibold text-sm">Urgentes (Hoje)</span>
-              </div>
-              <p className="text-3xl font-black text-white">{urgentes}</p>
-            </div>
-            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
-              <div className="flex items-center gap-2 text-brand-muted mb-2">
-                <Clock size={18} />
-                <span className="font-semibold text-sm">Parados</span>
-              </div>
-              <p className="text-3xl font-black text-white">{parados}</p>
-            </div>
-            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
-              <div className="flex items-center gap-2 text-brand-green mb-2">
-                <Bell size={18} />
-                <span className="font-semibold text-sm">Em Atenção</span>
-              </div>
-              <p className="text-3xl font-black text-white">{atencao}</p>
-            </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Total Gasto</p>
+            <p className="text-xl font-black text-white mt-1">{money(totalSpent)}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Resultados</p>
+            <p className="text-xl font-black text-white mt-1">{totalResults}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">CPA Médio</p>
+            <p className="text-xl font-black text-white mt-1">{avgCPA > 0 ? money(avgCPA) : '—'}</p>
           </div>
         </div>
-      )}
+
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Projetos Abertos</p>
+            <p className="text-xl font-black text-white mt-1">{data.projects.filter(p => p.status !== 'done').length}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Tarefas Abertas</p>
+            <p className="text-xl font-black text-white mt-1">{openTasks.length}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">A Receber</p>
+            <p className="text-xl font-black text-brand-green mt-1">{money(amountToReceive)}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Clientes Ativos</p>
+            <p className="text-xl font-black text-white mt-1">{data.clients.filter(c => c.status === 'active').length}</p>
+          </div>
+        </div>
+      </div>
 
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
