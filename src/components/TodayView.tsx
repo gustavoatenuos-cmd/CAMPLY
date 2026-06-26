@@ -271,7 +271,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           </button>
         </div>
 
-        {/* Expanded Alert List */}
+        {/* Expanded Alert List - ACIONÁVEL */}
         {expandedCard && (() => {
           const alertMap: Record<string, { items: typeof activeAlerts; color: string; label: string }> = {
             atrasados: { items: alertsAtrasados, color: 'border-red-500/30 bg-red-500/5', label: 'Itens Atrasados' },
@@ -280,6 +280,79 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             atencao: { items: alertsAtencao, color: 'border-brand-green/30 bg-brand-green/5', label: 'Em Atenção' },
           };
           const { items, color, label } = alertMap[expandedCard];
+
+          const resolveAlert = (alertId: string) => {
+            updateData((d) => ({
+              ...d,
+              agentAlerts: d.agentAlerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a),
+            }));
+          };
+
+          const completeTask = (taskId: string, alertId: string) => {
+            updateData((d) => ({
+              ...d,
+              tasks: d.tasks.map(t => t.id === taskId ? { ...t, done: true } : t),
+              agentAlerts: d.agentAlerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a),
+              activityLogs: [
+                createActivityLog({
+                  action: 'task_completed',
+                  title: `Tarefa concluída via Dashboard`,
+                  description: `Tarefa resolvida direto pelo painel operacional.`,
+                  projectId: '', clientId: '', campaignId: '', receivableId: '', taskId,
+                }),
+                ...d.activityLogs,
+              ],
+            }));
+          };
+
+          const logCampaignOptimization = (campaignId: string, alertId: string) => {
+            const now = new Date().toISOString();
+            const nextDate = new Date();
+            nextDate.setDate(nextDate.getDate() + 3);
+            updateData((d) => ({
+              ...d,
+              campaigns: d.campaigns.map(c => c.id === campaignId ? {
+                ...c,
+                lastOptimizedAt: now,
+                updatedAt: now,
+                lastActivityAt: now,
+                nextAction: `Próxima revisão: ${nextDate.toLocaleDateString('pt-BR')}`,
+              } : c),
+              agentAlerts: d.agentAlerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a),
+              activityLogs: [
+                createActivityLog({
+                  action: 'campaign_status_changed',
+                  title: `Otimização registrada via Dashboard`,
+                  description: `Campanha otimizada. Próxima revisão agendada para ${nextDate.toLocaleDateString('pt-BR')}.`,
+                  projectId: '', clientId: '', campaignId, receivableId: '', taskId: '',
+                }),
+                ...d.activityLogs,
+              ],
+            }));
+          };
+
+          const updateProjectActivity = (projectId: string, alertId: string) => {
+            const now = new Date().toISOString();
+            updateData((d) => ({
+              ...d,
+              projects: d.projects.map(p => p.id === projectId ? {
+                ...p,
+                updatedAt: now,
+                lastActivityAt: now,
+              } : p),
+              agentAlerts: d.agentAlerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a),
+              activityLogs: [
+                createActivityLog({
+                  action: 'project_updated',
+                  title: `Projeto atualizado via Dashboard`,
+                  description: `Atividade registrada direto pelo painel operacional.`,
+                  projectId, clientId: '', campaignId: '', receivableId: '', taskId: '',
+                }),
+                ...d.activityLogs,
+              ],
+            }));
+          };
+
           return (
             <div className={`mt-4 rounded-xl border p-4 ${color}`}>
               <div className="flex items-center justify-between mb-3">
@@ -289,22 +362,120 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
               {items.length === 0 ? (
                 <p className="text-sm text-brand-muted text-center py-3">Nenhum item nesta categoria. ✅</p>
               ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
+                <div className="space-y-3 max-h-80 overflow-y-auto">
                   {items.map(alert => {
                     const client = alert.clientId ? data.clients.find(c => c.id === alert.clientId) : null;
+                    const relatedTask = alert.relatedEntityType === 'task' ? data.tasks.find(t => t.id === alert.relatedEntityId) : null;
+                    const relatedCampaign = alert.relatedEntityType === 'campaign' ? data.campaigns.find(c => c.id === alert.relatedEntityId) : null;
+                    const relatedProject = alert.relatedEntityType === 'project' ? data.projects.find(p => p.id === alert.relatedEntityId) : null;
+
                     return (
-                      <div key={alert.id} className="flex items-start gap-3 rounded-lg border border-brand-line/50 bg-brand-surface/50 p-3">
-                        <ShieldAlert size={14} className="text-red-400 mt-0.5 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-white">{alert.title}</span>
-                            <span className="rounded-full bg-brand-surface px-2 py-0.5 text-[9px] font-bold uppercase text-brand-muted">{alert.relatedEntityType}</span>
+                      <div key={alert.id} className="rounded-lg border border-brand-line/50 bg-brand-surface/80 p-4">
+                        <div className="flex items-start gap-3">
+                          <ShieldAlert size={16} className="text-red-400 mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-white">{alert.title}</span>
+                              <span className="rounded-full bg-brand-surface px-2 py-0.5 text-[9px] font-bold uppercase text-brand-muted">{alert.relatedEntityType}</span>
+                            </div>
+                            <p className="text-xs text-brand-muted mt-1">{alert.message}</p>
+                            {client && <p className="text-[10px] text-brand-soft mt-1">Cliente: {clientDisplayName(client)}</p>}
+
+                            {/* === AÇÕES POR TIPO === */}
+
+                            {/* TAREFA: Concluir ou reagendar */}
+                            {relatedTask && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => completeTask(relatedTask.id, alert.id)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3 py-1.5 text-xs font-bold text-brand-ink transition hover:brightness-110"
+                                >
+                                  <CheckCircle2 size={14} />
+                                  Concluir tarefa
+                                </button>
+                                <button
+                                  onClick={() => resolveAlert(alert.id)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft transition hover:text-white hover:border-brand-green"
+                                >
+                                  <Clock size={14} />
+                                  Dispensar alerta
+                                </button>
+                              </div>
+                            )}
+
+                            {/* CAMPANHA: Registrar otimização + ir para campanhas */}
+                            {relatedCampaign && (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-3 text-xs text-brand-soft">
+                                  <span>Última otimização: <strong className="text-white">{relatedCampaign.lastOptimizedAt ? new Date(relatedCampaign.lastOptimizedAt).toLocaleDateString('pt-BR') : 'Nunca'}</strong></span>
+                                  <span>•</span>
+                                  <span>Próxima ação: <strong className="text-white">{relatedCampaign.nextAction || 'Não definida'}</strong></span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() => logCampaignOptimization(relatedCampaign.id, alert.id)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3 py-1.5 text-xs font-bold text-brand-ink transition hover:brightness-110"
+                                  >
+                                    <CheckCircle2 size={14} />
+                                    Registrar otimização feita
+                                  </button>
+                                  <button
+                                    onClick={() => setActiveView('campaigns')}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft transition hover:text-white hover:border-brand-green"
+                                  >
+                                    <Megaphone size={14} />
+                                    Abrir no Kanban
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* PROJETO: Atualizar atividade + ir para projetos */}
+                            {relatedProject && (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-3 text-xs text-brand-soft">
+                                  <span>Prazo: <strong className={`${new Date(relatedProject.dueDate) < new Date() ? 'text-red-400' : 'text-white'}`}>{formatDate(relatedProject.dueDate)}</strong></span>
+                                  <span>•</span>
+                                  <span>Próxima ação: <strong className="text-white">{relatedProject.nextAction || 'Não definida'}</strong></span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() => updateProjectActivity(relatedProject.id, alert.id)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3 py-1.5 text-xs font-bold text-brand-ink transition hover:brightness-110"
+                                  >
+                                    <CheckCircle2 size={14} />
+                                    Registrar atividade
+                                  </button>
+                                  <button
+                                    onClick={() => setActiveView('projects')}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft transition hover:text-white hover:border-brand-green"
+                                  >
+                                    <Target size={14} />
+                                    Abrir projetos
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* CLIENTE: Dispensar + ver cliente */}
+                            {alert.relatedEntityType === 'client' && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => resolveAlert(alert.id)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3 py-1.5 text-xs font-bold text-brand-ink transition hover:brightness-110"
+                                >
+                                  <CheckCircle2 size={14} />
+                                  Resolver pendências
+                                </button>
+                                <button
+                                  onClick={() => setActiveView('clients')}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft transition hover:text-white hover:border-brand-green"
+                                >
+                                  Ver cliente
+                                </button>
+                              </div>
+                            )}
                           </div>
-                          <p className="text-xs text-brand-muted mt-0.5">{alert.message}</p>
-                          {client && <p className="text-[10px] text-brand-soft mt-1">Cliente: {clientDisplayName(client)}</p>}
-                          {alert.suggestedAction && (
-                            <p className="text-[10px] text-brand-green mt-1">💡 {alert.suggestedAction}</p>
-                          )}
                         </div>
                       </div>
                     );
