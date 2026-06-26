@@ -55,7 +55,7 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
   };
 
   return (
-    <div className="min-h-screen bg-brand-ink text-white">
+    <div className="min-h-screen bg-black text-white">
       <Hero 
         title="Gestão de Tráfego Inteligente"
         subtitle="Otimize suas campanhas e aumente a produtividade com soluções intuitivas. Segurança, velocidade e simplicidade em uma única plataforma."

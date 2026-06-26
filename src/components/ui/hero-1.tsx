@@ -20,7 +20,7 @@ export function Hero({
       className="relative mx-auto w-full pt-20 px-6 text-center md:px-8 
       min-h-screen overflow-hidden 
       bg-[linear-gradient(to_bottom,#fff,#ffffff_50%,#e8e8e8_88%)] 
-      dark:bg-[linear-gradient(to_bottom,#000,#0000_30%,#172133_78%,#111827_99%_50%)]"
+      dark:bg-[linear-gradient(to_bottom,#000,#0000_30%,#898e8e_78%,#ffffff_99%_50%)]"
     >
       {/* Grid BG */}
       <div
@@ -37,8 +37,8 @@ export function Hero({
         h-[500px] w-[700px] md:h-[500px] md:w-[1100px] lg:h-[750px] lg:w-[140%] 
         -translate-x-1/2 rounded-[100%] border-[#B48CDE] bg-white dark:bg-black 
         bg-[radial-gradient(closest-side,#fff_82%,#000000)] 
-        dark:bg-[radial-gradient(closest-side,#000_82%,#22C55E_20%,#ffffff)] 
-        animate-fade-up opacity-40 dark:border-[#22C55E]"
+        dark:bg-[radial-gradient(closest-side,#000_82%,#ffffff)] 
+        animate-fade-up"
       />
 
       <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center">
@@ -46,9 +46,9 @@ export function Hero({
         {eyebrow && (
           <a href="#" className="group mb-8">
             <span
-              className="text-sm text-gray-600 dark:text-brand-green font-geist mx-auto px-5 py-2 
+              className="text-sm text-gray-600 dark:text-gray-400 font-geist mx-auto px-5 py-2 
               bg-gradient-to-tr from-zinc-300/5 via-gray-400/5 to-transparent 
-              border-[2px] border-gray-300/20 dark:border-brand-green/30 dark:bg-brand-green/10
+              border-[2px] border-gray-300/20 dark:border-white/5 
               rounded-3xl w-fit tracking-tight uppercase flex items-center justify-center"
             >
               {eyebrow}
