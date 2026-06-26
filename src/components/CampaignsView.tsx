@@ -5,6 +5,7 @@ import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
 import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
+import { clientDisplayName } from './ClientsView';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -69,7 +70,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         createActivityLog({
           action: 'campaign_created',
           title: `Campanha criada: ${campaign.name}`,
-          description: `${campaign.platform} para ${client.name}, objetivo ${campaign.objective}.`,
+          description: `${campaign.platform} para ${clientDisplayName(client)}, objetivo ${campaign.objective}.`,
           projectId: client.projectId,
           clientId: client.id,
           campaignId: campaign.id,
@@ -183,7 +184,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                   {...dragProvided.dragHandleProps}
                                   className={`rounded-lg border border-brand-line bg-brand-surface p-4 ${snapshot.isDragging ? 'border-brand-green' : ''}`}
                                 >
-                                  <p className="text-xs text-brand-muted">{client?.name}</p>
+                                  <p className="text-xs text-brand-muted">{clientDisplayName(client)}</p>
                                   <h3 className="mt-1 font-bold text-white">{campaign.name}</h3>
                                   <p className="mt-2 line-clamp-2 text-sm text-brand-muted">{campaign.nextAction}</p>
                                   <div className="mt-4 flex items-center justify-between text-xs text-brand-muted">

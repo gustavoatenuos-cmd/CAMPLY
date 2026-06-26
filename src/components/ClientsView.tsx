@@ -217,13 +217,14 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
           const monthlyAds = normalizeMonthlyInvestment(totalAds, client.adInvestmentPeriod);
           const project = data.projects.find((item) => item.id === client.projectId);
+          const displayCompany = client.company || client.segment || client.name || 'Sem empresa informada';
           return (
             <article key={client.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-bold text-white">{client.name}</h2>
-                  <p className="mt-1 text-sm text-brand-muted">{client.company || client.segment || 'Sem empresa informada'}</p>
+                  <h2 className="text-lg font-bold text-white">{displayCompany}</h2>
                   {project && <p className="mt-1 text-xs font-semibold text-brand-green">Projeto: {project.name}</p>}
+                  {client.company && <p className="mt-1 text-xs text-brand-muted">Responsável: {client.name}</p>}
                 </div>
                 <select value={client.status} onChange={(event) => setStatus(client.id, event.target.value as ClientStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
                   <option value="active">Ativo</option>
@@ -297,6 +298,11 @@ function periodLabel(period: InvestmentPeriod) {
   if (period === 'daily') return 'dia';
   if (period === 'weekly') return 'semana';
   return 'mês';
+}
+
+export function clientDisplayName(client?: { name: string; company: string; segment: string }) {
+  if (!client) return 'Cliente';
+  return client.company || client.segment || client.name;
 }
 
 function Header({ eyebrow, title, action, onAction }: { eyebrow: string; title: string; action: string; onAction: () => void }) {

@@ -2,6 +2,7 @@ import { Activity, CalendarDays, Filter, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { money } from '../data/camplyStore';
 import { ActivityAction, ActivityLog, CamplyData } from '../types';
+import { clientDisplayName } from './ClientsView';
 
 interface ActivityViewProps {
   data: CamplyData;
@@ -169,7 +170,7 @@ function ActivityRow({ log, data }: { log: ActivityLog; data: CamplyData }) {
         <p className="mt-1 text-sm leading-relaxed text-brand-muted">{log.description}</p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {project && <Tag label={`Projeto: ${project.name}`} />}
-          {client && <Tag label={`Cliente: ${client.name}`} />}
+          {client && <Tag label={`Cliente: ${clientDisplayName(client)}`} />}
           {campaign && <Tag label={`Campanha: ${campaign.name}`} />}
           {receivable && <Tag label={`Valor: ${money(receivable.amount)}`} />}
         </div>

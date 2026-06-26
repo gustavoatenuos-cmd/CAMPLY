@@ -3,6 +3,7 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
+import { clientDisplayName } from './ClientsView';
 
 interface PersonalFinanceViewProps {
   data: CamplyData;
@@ -40,7 +41,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
       activityLogs: [
         createActivityLog({
           action: 'receivable_created',
-          title: `Recebimento criado: ${client.name}`,
+          title: `Recebimento criado: ${clientDisplayName(client)}`,
           description: `${receivable.description || 'Cobrança'} no valor de ${money(receivable.amount)} com vencimento em ${formatDate(receivable.dueDate)}.`,
           projectId: client.projectId,
           clientId: client.id,
@@ -65,7 +66,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         ? [
             createActivityLog({
               action: 'receivable_status_changed',
-              title: status === 'paid' ? `Pagamento recebido: ${client?.name ?? 'Cliente'}` : `Status financeiro alterado: ${client?.name ?? 'Cliente'}`,
+              title: status === 'paid' ? `Pagamento recebido: ${clientDisplayName(client)}` : `Status financeiro alterado: ${clientDisplayName(client)}`,
               description: `${receivable.description || 'Recebível'} de ${money(receivable.amount)} foi marcado como ${paymentStatusLabels[status]}.`,
               projectId: client?.projectId ?? '',
               clientId: receivable.clientId,
@@ -141,7 +142,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
           return (
             <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] xl:items-center">
-              <p className="font-semibold text-white">{client?.name}</p>
+              <p className="font-semibold text-white">{clientDisplayName(client)}</p>
               <p className="text-brand-muted">{item.description}</p>
               <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
               <p className="font-bold text-brand-green">{money(item.amount)}</p>
@@ -172,7 +173,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           return (
             <div key={project.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
               <p className="font-semibold text-white">{project.name}</p>
-              <p className="text-brand-muted">{client?.name}</p>
+              <p className="text-brand-muted">{clientDisplayName(client)}</p>
               <p className="text-brand-muted">{money(project.amountCharged)}</p>
               <p className="text-brand-muted">{money(project.amountReceived)}</p>
               <p className="font-bold text-brand-green">{money(remaining)}</p>

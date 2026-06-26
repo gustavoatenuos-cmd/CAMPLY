@@ -1,5 +1,6 @@
 import { money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { CamplyData, InvestmentPeriod } from '../types';
+import { clientDisplayName } from './ClientsView';
 
 interface FinanceViewProps {
   data: CamplyData;
@@ -38,7 +39,7 @@ export function FinanceView({ data }: FinanceViewProps) {
           const monthlyTotal = normalizeMonthlyInvestment(clientTotal, client.adInvestmentPeriod);
           return (
             <div key={client.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_0.7fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] xl:items-center">
-              <p className="font-semibold text-white">{client.name}</p>
+              <p className="font-semibold text-white">{clientDisplayName(client)}</p>
               <p className="text-brand-muted">{periodLabel(client.adInvestmentPeriod)}</p>
               <p className="text-brand-muted">{money(client.adInvestmentMeta)}</p>
               <p className="text-brand-muted">{money(client.adInvestmentGoogle)}</p>

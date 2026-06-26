@@ -4,6 +4,7 @@ import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId } from '../types';
+import { clientDisplayName } from './ClientsView';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -147,7 +148,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                 const percent = campaign.budget ? Math.min(100, Math.round((campaign.spent / campaign.budget) * 100)) : 0;
                 return (
                   <div key={campaign.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
-                    <p className="text-xs text-brand-muted">{client?.name}</p>
+                    <p className="text-xs text-brand-muted">{clientDisplayName(client)}</p>
                     <h3 className="mt-1 font-bold text-white">{campaign.name}</h3>
                     <p className="mt-2 text-sm text-brand-muted">{campaign.nextAction}</p>
                     <div className="mt-4 h-2 rounded-full bg-brand-surface2">
@@ -182,7 +183,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                 return (
                   <div key={item.id} className="flex items-center justify-between rounded-lg bg-brand-surface p-3">
                     <div>
-                      <p className="text-sm font-semibold text-white">{client?.name}</p>
+                      <p className="text-sm font-semibold text-white">{clientDisplayName(client)}</p>
                       <p className="text-xs text-brand-muted">{formatDate(item.dueDate)} • {item.status}</p>
                     </div>
                     <p className="text-sm font-bold text-brand-green">{money(item.amount)}</p>
