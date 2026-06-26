@@ -1,7 +1,7 @@
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
-import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image, Plus, ShieldAlert } from 'lucide-react';
+import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image, Plus, ShieldAlert, History } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money } from '../data/camplyStore';
+import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money, formatDate } from '../data/camplyStore';
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
 import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
@@ -281,6 +281,30 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                 <textarea name="nextAction" defaultValue={editingCampaign.nextAction} rows={3} placeholder="Descreva o que precisa ser feito ou testado na próxima otimização" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
               </label>
             </div>
+
+            {(() => {
+              const campaignLogs = data.activityLogs.filter(log => log.campaignId === editingCampaign.id);
+              if (campaignLogs.length === 0) return null;
+              
+              return (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-2 border-b border-brand-line pb-2">
+                    <History size={16} className="text-brand-muted" />
+                    <h4 className="font-semibold text-white">Histórico de Movimentação</h4>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-3 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
+                    {campaignLogs.map(log => (
+                      <div key={log.id} className="relative pl-4 border-l-2 border-brand-line">
+                        <div className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-brand-green" />
+                        <p className="text-xs font-bold text-white">{log.title}</p>
+                        <p className="text-[10px] text-brand-muted mt-0.5">{log.description}</p>
+                        <p className="text-[9px] text-brand-soft mt-1">{new Date(log.createdAt).toLocaleString('pt-BR')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
               <button type="button" onClick={() => setEditingCampaignId(null)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
