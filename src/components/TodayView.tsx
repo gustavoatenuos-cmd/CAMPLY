@@ -16,6 +16,8 @@ interface TodayViewProps {
 export function TodayView({ data, insights, updateData, setActiveView }: TodayViewProps) {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskType, setTaskType] = useState<TaskType>('otimizacao');
+  const [taskArea, setTaskArea] = useState<TaskArea>('geral');
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [hasFinance, setHasFinance] = useState(false);
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
@@ -88,8 +90,13 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
       }));
     }
 
+    const campaignId = form.get('campaignId') as string | null;
+
     if (taskType === 'otimizacao' && area === 'tráfego' && clientId) {
-      const existingCampaign = data.campaigns.find(c => c.clientId === clientId);
+      const existingCampaign = campaignId && campaignId !== 'new' 
+        ? data.campaigns.find(c => c.id === campaignId) 
+        : (!campaignId ? data.campaigns.find(c => c.clientId === clientId) : undefined);
+        
       if (existingCampaign) {
         newLogs.push(createActivityLog({
           action: 'campaign_status_changed',
@@ -182,7 +189,12 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     event.currentTarget.reset();
     setHasFinance(false);
     setTaskType('otimizacao');
+    setTaskArea('geral');
+    setSelectedClientId('');
   };
+
+  const clientCampaigns = data.campaigns.filter(c => c.clientId === selectedClientId);
+  const showCampaignSelector = taskArea === 'tráfego' && selectedClientId && clientCampaigns.length > 0;
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -221,7 +233,12 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Área</span>
-              <select name="area" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select 
+                name="area" 
+                value={taskArea}
+                onChange={(e) => setTaskArea(e.target.value as TaskArea)}
+                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
+              >
                 <option value="tráfego">Tráfego Pago</option>
                 <option value="site">Site / Web</option>
                 <option value="financeiro">Financeiro</option>
@@ -232,13 +249,33 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
 
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente (Opcional)</span>
-            <select name="clientId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+            <select 
+              name="clientId" 
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
+            >
               <option value="">Selecione o cliente...</option>
               {data.clients.map(c => (
                 <option key={c.id} value={c.id}>{clientDisplayName(c)}</option>
               ))}
             </select>
           </label>
+
+          {showCampaignSelector && (
+            <label className="block animate-in fade-in slide-in-from-top-2 duration-300">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Vincular a qual campanha?</span>
+              <select 
+                name="campaignId" 
+                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
+              >
+                {clientCampaigns.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                <option value="new">Criar uma nova campanha (+)</option>
+              </select>
+            </label>
+          )}
 
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">O que será feito? (Título da tarefa)</span>
