@@ -37,42 +37,41 @@ serve(async (req) => {
     const accessToken = await decryptToken(integration.access_token_encrypted)
     const appSecret = Deno.env.get('META_APP_SECRET')!
 
-    // Fetch Active Ads
-    const adsData = await fetchMetaGraph({
-      endpoint: `/${adAccountId}/ads`,
+    // Fetch Active Campaigns
+    const campaignsData = await fetchMetaGraph({
+      endpoint: `/${adAccountId}/campaigns`,
       accessToken,
       appSecret,
       params: { 
-        fields: 'id,name,status,creative',
-        filtering: JSON.stringify([{ field: 'status', operator: 'IN', value: ['ACTIVE'] }]),
+        fields: 'id,name,status,objective,daily_budget,lifetime_budget',
+        filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
         limit: '50'
       }
     });
 
-    const activeAds = adsData.data || [];
+    const activeCampaigns = campaignsData.data || [];
     
-    // Fetch Insights for each Ad
-    // Optimization: Depending on volume, this could be batched, but for simplicity we fetch sequentially or in small parallel batches.
-    const adsWithInsights = await Promise.all(activeAds.map(async (ad: any) => {
+    // Fetch Insights for each Campaign
+    const campaignsWithInsights = await Promise.all(activeCampaigns.map(async (campaign: any) => {
       try {
         const insightsData = await fetchMetaGraph({
-          endpoint: `/${ad.id}/insights`,
+          endpoint: `/${campaign.id}/insights`,
           accessToken,
           appSecret,
           params: {
-            fields: 'impressions,clicks,spend,ctr,cpc',
-            date_preset: 'maximum' // Or last_30d, today, etc based on CRM needs
+            fields: 'impressions,clicks,spend,cpc,cpa,actions',
+            date_preset: 'maximum' 
           }
         });
         
         return {
-          ...ad,
+          ...campaign,
           insights: insightsData.data && insightsData.data.length > 0 ? insightsData.data[0] : null
         };
       } catch (err) {
-        console.warn(`Failed to fetch insights for ad ${ad.id}:`, err.message);
+        console.warn(`Failed to fetch insights for campaign ${campaign.id}:`, err.message);
         return {
-          ...ad,
+          ...campaign,
           insights: null
         };
       }
@@ -81,13 +80,13 @@ serve(async (req) => {
     // Log sync
     await supabaseClient.from('meta_sync_logs').insert({
       integration_id: integration.id,
-      sync_type: 'ads_and_insights',
-      endpoint: `/${adAccountId}/ads`,
+      sync_type: 'campaigns_and_insights',
+      endpoint: `/${adAccountId}/campaigns`,
       status: 'success',
-      metadata: { ads_count: adsWithInsights.length }
+      metadata: { campaigns_count: campaignsWithInsights.length }
     });
 
-    return new Response(JSON.stringify({ success: true, ads: adsWithInsights }), {
+    return new Response(JSON.stringify({ success: true, campaigns: campaignsWithInsights }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })

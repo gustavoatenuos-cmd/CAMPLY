@@ -2,16 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { Facebook, Link as LinkIcon, Unlink, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+import { CamplyData, Client, Campaign } from '../types';
+
 interface MetaIntegrationViewProps {
-  // Pass the supabase client if available or handle it internally
+  data: CamplyData;
+  updateData: (updater: (data: CamplyData) => CamplyData) => void;
 }
 
-export function MetaIntegrationView({}: MetaIntegrationViewProps) {
+export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewProps) {
   const [integration, setIntegration] = useState<any>(null);
   const [assets, setAssets] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncedCampaigns, setSyncedCampaigns] = useState<any[]>([]);
+  const [importingCampaign, setImportingCampaign] = useState<any | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   const checkStatus = async () => {
     try {
@@ -89,13 +95,44 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
         body: { adAccountId }
       });
       if (error) throw error;
-      alert(`Sucesso! ${data.ads?.length || 0} anúncios ativos sincronizados.`);
-      console.log(data.ads);
+      setSyncedCampaigns(data.campaigns || []);
+      alert(`Sucesso! ${data.campaigns?.length || 0} campanhas ativas sincronizadas.`);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleImport = () => {
+    if (!importingCampaign || !selectedClientId) return;
+
+    const newCampaign: Campaign = {
+      id: crypto.randomUUID(),
+      clientId: selectedClientId,
+      name: importingCampaign.name,
+      platform: 'Meta Ads',
+      status: 'live',
+      objective: importingCampaign.objective || 'Outro',
+      budget: parseFloat(importingCampaign.daily_budget || importingCampaign.lifetime_budget || '0') / 100, // Meta uses cents
+      spent: parseFloat(importingCampaign.insights?.spend || '0'),
+      lastOptimizedAt: new Date().toISOString(),
+      nextAction: 'Monitorar resultados e otimizar',
+      priority: 'medium',
+      results: parseInt(importingCampaign.insights?.actions || importingCampaign.insights?.clicks || '0'),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+    };
+
+    updateData((prev) => ({
+      ...prev,
+      campaigns: [...prev.campaigns, newCampaign],
+    }));
+
+    setImportingCampaign(null);
+    setSelectedClientId('');
+    alert('Campanha importada com sucesso para o CRM!');
   };
 
   return (
@@ -205,11 +242,8 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
                       </div>
                       {asset.asset_type === 'adaccount' && (
                         <div className="flex gap-2">
-                          <button className="rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-soft hover:bg-brand-surface hover:text-white">
-                            Campanhas
-                          </button>
                           <button onClick={() => handleSyncAds(asset.asset_id)} className="rounded-lg bg-brand-green/10 px-3 py-1.5 text-xs font-bold text-brand-green hover:bg-brand-green/20">
-                            Sync Anúncios e Insights
+                            Sincronizar Campanhas da Meta
                           </button>
                         </div>
                       )}
@@ -217,6 +251,33 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
                   ))
                 )}
               </div>
+              
+              {/* Synced Campaigns List */}
+              {syncedCampaigns.length > 0 && (
+                <div className="border-t border-brand-line bg-brand-ink/50 p-6">
+                  <h4 className="text-sm font-bold text-white mb-4">Campanhas Prontas para Importação</h4>
+                  <div className="space-y-3">
+                    {syncedCampaigns.map((camp, idx) => {
+                      const isImported = data.campaigns.some(c => c.name === camp.name && c.platform === 'Meta Ads');
+                      return (
+                        <div key={idx} className="flex items-center justify-between rounded-lg border border-brand-line bg-brand-surface p-4">
+                          <div>
+                            <p className="font-bold text-white">{camp.name}</p>
+                            <p className="text-xs text-brand-soft">Gasto: R$ {parseFloat(camp.insights?.spend || '0').toFixed(2)} • Meta ID: {camp.id}</p>
+                          </div>
+                          <button
+                            disabled={isImported}
+                            onClick={() => setImportingCampaign(camp)}
+                            className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {isImported ? 'Já Importada' : 'Importar'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -236,6 +297,49 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
 
         </div>
       </div>
+
+      {/* Import Modal */}
+      {importingCampaign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-brand-line bg-brand-surface p-6 shadow-2xl">
+            <h2 className="text-xl font-bold text-white">Importar Campanha</h2>
+            <p className="mt-2 text-sm text-brand-muted">
+              Você está importando a campanha <strong>{importingCampaign.name}</strong>.
+              A qual cliente do CRM ela pertence?
+            </p>
+
+            <div className="mt-6">
+              <label className="mb-2 block text-sm font-semibold text-brand-soft">Cliente</label>
+              <select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
+              >
+                <option value="" disabled>Selecione um cliente...</option>
+                {data.clients.map(client => (
+                  <option key={client.id} value={client.id}>{client.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => { setImportingCampaign(null); setSelectedClientId(''); }}
+                className="flex-1 rounded-lg px-4 py-3 font-bold text-brand-soft hover:bg-brand-ink"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!selectedClientId}
+                className="flex-1 rounded-lg bg-brand-green px-4 py-3 font-bold text-brand-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Confirmar Importação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

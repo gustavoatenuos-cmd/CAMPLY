@@ -131,7 +131,7 @@ export default function App() {
         {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
         {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
         {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
-        {activeView === 'metaIntegration' && <MetaIntegrationView />}
+        {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
       </main>
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
     </div>

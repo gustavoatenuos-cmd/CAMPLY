@@ -14,10 +14,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { code, state } = await req.json();
+    const url = new URL(req.url);
+    const code = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
 
     if (!code || !state) {
-      throw new Error('Code or State missing');
+      throw new Error('Code or State missing in URL parameters');
     }
 
     // 1. Verify state hash in database
@@ -123,9 +125,14 @@ serve(async (req) => {
         });
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
+    // 7. Redirect back to frontend
+    const appBaseUrl = Deno.env.get('APP_BASE_URL') || 'https://camply-ten.vercel.app';
+    return new Response(null, {
+      status: 302,
+      headers: {
+        ...corsHeaders,
+        Location: `${appBaseUrl}?meta_sync=success`
+      },
     })
 
   } catch (error) {
