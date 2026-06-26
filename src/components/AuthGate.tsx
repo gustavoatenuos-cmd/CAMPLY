@@ -61,33 +61,26 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
         subtitle="Otimize suas campanhas e aumente a produtividade com soluções intuitivas. Segurança, velocidade e simplicidade em uma única plataforma."
         eyebrow="Camply CRM"
       >
-        <div className="flex justify-center w-full mt-2">
-          <section className="w-full max-w-md rounded-2xl border border-brand-line bg-brand-surface p-6 shadow-brand text-left">
-            <div className="mb-6 text-center flex flex-col items-center">
-              <BrandLogo inverted />
-              <p className="mt-4 text-sm leading-relaxed text-brand-muted">
-                Acesso restrito ao painel operacional.
-              </p>
-            </div>
-
-            <form onSubmit={submit} className="space-y-6">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-brand-soft">Senha de Acesso Mestre</span>
+        <div className="flex justify-center w-full mt-4">
+          <section className="w-full max-w-sm text-center">
+            <form onSubmit={submit} className="space-y-4 flex flex-col items-center">
+              <div className="w-full relative">
                 <input
                   type="password"
+                  placeholder="Senha de Acesso Mestre"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
+                  className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-white outline-none transition focus:border-white/50 text-center placeholder:text-gray-400 backdrop-blur-sm"
                   autoFocus
                   required
                 />
-              </label>
+              </div>
 
-              {error && <p className="text-sm font-semibold text-rose-400 text-center">{error}</p>}
+              {error && <p className="text-sm font-medium text-rose-400 text-center">{error}</p>}
 
               <button
                 disabled={loading}
-                className="w-full rounded-lg bg-brand-green px-4 py-3 font-bold text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
+                className="w-fit md:w-52 rounded-full bg-white px-8 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-70 mt-2"
               >
                 {loading ? 'Validando...' : 'Acessar painel'}
               </button>
