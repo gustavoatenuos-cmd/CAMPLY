@@ -198,3 +198,92 @@ function generateLocalSummary(data: CamplyData): ClaudeAgentResponse {
     recommended_actions: actions.length > 0 ? actions : ['Verificar alertas na central de inteligência'],
   };
 }
+
+// ============================================================
+// CHAT & COMANDOS (VOZ/TEXTO)
+// ============================================================
+
+export interface ChatAction {
+  type: 'create_task' | 'create_campaign' | 'create_project' | 'create_client' | 'update_task' | 'none';
+  payload?: any;
+  reply_text: string;
+}
+
+export async function processChatCommand(userInput: string, data: CamplyData): Promise<ChatAction> {
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
+    return {
+      type: 'none',
+      reply_text: 'O Claude não está configurado. Por favor, adicione sua chave de API para usar comandos inteligentes.',
+    };
+  }
+
+  // Resumo do CRM para contexto
+  const clientsCtx = data.clients.map(c => ({ id: c.id, name: c.name, status: c.status }));
+  const campaignsCtx = data.campaigns.map(c => ({ id: c.id, name: c.name, status: c.status }));
+
+  const CHAT_SYSTEM_PROMPT = `Você é o assistente virtual do CRM Camply.
+Sua missão é interpretar a solicitação do usuário e transformá-la em uma ação estruturada no sistema.
+
+O usuário pode pedir para criar clientes, campanhas, projetos ou tarefas.
+Você tem acesso à lista atual de clientes: ${JSON.stringify(clientsCtx)}
+E campanhas: ${JSON.stringify(campaignsCtx)}
+
+REGRAS:
+1. Retorne SEMPRE um JSON válido, sem markdown antes ou depois.
+2. Formato esperado:
+{
+  "type": "create_client" | "create_campaign" | "create_task" | "create_project" | "none",
+  "payload": { ...dados necessários para a ação... },
+  "reply_text": "Mensagem curta em português confirmando o que foi feito ou pedindo mais detalhes."
+}
+3. Se não entender ou se faltar informação crítica, use type: "none" e pergunte amigavelmente.
+4. Para "create_campaign", exija pelo menos o nome e tente inferir o cliente (ou use o ID do cliente se reconhecer o nome). Se não souber o cliente, pergunte.
+5. Seja muito prestativo e pareça um assistente humano em "reply_text".`;
+
+  try {
+    const response = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: CHAT_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: userInput,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('API request failed');
+    }
+
+    const result = await response.json();
+    const text = result.content?.[0]?.text;
+
+    if (!text) throw new Error('No text returned');
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]) as ChatAction;
+    }
+
+    throw new Error('Could not parse JSON action');
+  } catch (error) {
+    console.error('[ClaudeService] Chat error:', error);
+    return {
+      type: 'none',
+      reply_text: 'Desculpe, tive um problema ao processar seu comando. Tente novamente em instantes.',
+    };
+  }
+}

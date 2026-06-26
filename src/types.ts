@@ -1,4 +1,4 @@
-export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings';
+export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';

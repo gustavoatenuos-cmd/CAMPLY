@@ -1,9 +1,10 @@
-import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users } from 'lucide-react';
+import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
 const items = [
   { id: 'today', label: 'Hoje', icon: CalendarCheck },
+  { id: 'agentChat', label: 'Chat IA (Voz)', icon: BotMessageSquare },
   { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
   { id: 'clients', label: 'Clientes', icon: Users },
   { id: 'mediaFinance', label: 'Verbas de mídia', icon: Banknote },
