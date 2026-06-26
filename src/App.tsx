@@ -21,6 +21,7 @@ const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegratio
 const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 const TodayView = React.lazy(() => import('./components/TodayView').then(m => ({ default: m.TodayView })));
+const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -151,6 +152,7 @@ export default function App() {
           {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
           {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
           {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
+          {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
           {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
         </Suspense>
       </main>

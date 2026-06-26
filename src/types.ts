@@ -1,4 +1,4 @@
-export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat' | 'metaIntegration';
+export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat' | 'metaIntegration' | 'creativeCritic';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';
@@ -208,4 +208,18 @@ export interface Insight {
   title: string;
   description: string;
   recommendation: string;
+}
+
+// ===================== CREATIVE CRITIC =====================
+
+export interface CreativeCriticResponse {
+  summary: string;
+  selected_scope: string;
+  top_creatives: Array<{ name: string; reason: string; metrics: string }>;
+  underperformers: Array<{ name: string; reason: string; metrics: string }>;
+  winner_patterns: string[];
+  losing_patterns: string[];
+  variant_briefs: Array<{ source_ad: string; headline: string; primary_text: string; format: string; insight: string }>;
+  data_gaps: string[];
+  next_actions: string[];
 }

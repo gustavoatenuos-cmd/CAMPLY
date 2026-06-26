@@ -6,6 +6,7 @@ const items = [
   { id: 'today', label: 'Hoje', icon: CalendarCheck },
   { id: 'agentChat', label: 'Chat IA (Voz)', icon: BotMessageSquare },
   { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
+  { id: 'creativeCritic', label: 'Lab. Criativo', icon: Sparkles },
   { id: 'clients', label: 'Clientes', icon: Users },
   { id: 'mediaFinance', label: 'Verbas de mídia', icon: Banknote },
   { id: 'projects', label: 'Projetos', icon: BriefcaseBusiness },

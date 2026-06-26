@@ -1,22 +1,14 @@
 import { CamplyData, AgentAlert } from '../types';
+import { supabase } from './supabase';
 
 // ============================================================
 // CLAUDE AI SERVICE - Camada de inteligência interpretativa
 // ============================================================
-// O Claude NÃO é responsável pela lógica crítica.
-// Ele recebe os alertas já calculados pelo backend (agentEngine)
-// e gera resumos humanos, explicações e sugestões de próxima ação.
-// ============================================================
-
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-
-// A chave deve ser configurada via variável de ambiente
-function getApiKey(): string | null {
-  return (import.meta.env.VITE_CLAUDE_API_KEY as string) || null;
-}
 
 export function isClaudeConfigured(): boolean {
-  return !!getApiKey();
+  // Now relies on backend secret, so we assume true for the frontend 
+  // or we can just always attempt and fallback if it fails.
+  return true;
 }
 
 // Estrutura de entrada para o Claude (contexto estruturado)
@@ -88,44 +80,23 @@ FORMATO DE RESPOSTA (JSON):
 }`;
 
 export async function generateAgentSummary(data: CamplyData): Promise<ClaudeAgentResponse | null> {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
-    // Fallback local quando não há API key configurada
-    return generateLocalSummary(data);
-  }
-
   const context = buildContext(data);
 
   try {
-    const response = await fetch(CLAUDE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 512,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
-          },
-        ],
-      }),
+    const { data: responseData, error } = await supabase!.functions.invoke('claude-proxy', {
+      body: {
+        systemPrompt: SYSTEM_PROMPT,
+        userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
+        maxTokens: 512
+      }
     });
 
-    if (!response.ok) {
-      console.warn('[ClaudeService] API error, falling back to local summary');
+    if (error || responseData?.isError) {
+      console.warn('[ClaudeService] Error or unconfigured, falling back to local summary:', error || responseData?.error);
       return generateLocalSummary(data);
     }
 
-    const result = await response.json();
-    const text = result.content?.[0]?.text;
+    const text = responseData.result?.content?.[0]?.text;
 
     if (!text) {
       return generateLocalSummary(data);
@@ -210,16 +181,6 @@ export interface ChatAction {
 }
 
 export async function processChatCommand(userInput: string, data: CamplyData): Promise<ChatAction> {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
-    return {
-      type: 'none',
-      reply_text: 'O Claude não está configurado. Por favor, adicione sua chave de API para usar comandos inteligentes.',
-    };
-  }
-
-  // Resumo do CRM para contexto
   const clientsCtx = data.clients.map(c => ({ id: c.id, name: c.name, status: c.status }));
   const campaignsCtx = data.campaigns.map(c => ({ id: c.id, name: c.name, status: c.status }));
 
@@ -243,34 +204,19 @@ REGRAS:
 5. Seja muito prestativo e pareça um assistente humano em "reply_text".`;
 
   try {
-    const response = await fetch(CLAUDE_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        system: CHAT_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: userInput,
-          },
-        ],
-      }),
+    const { data: responseData, error } = await supabase!.functions.invoke('claude-proxy', {
+      body: {
+        systemPrompt: CHAT_SYSTEM_PROMPT,
+        userMessage: userInput,
+        maxTokens: 1024
+      }
     });
 
-    if (!response.ok) {
-      throw new Error('API request failed');
+    if (error || responseData?.isError) {
+      throw new Error(responseData?.error || error?.message || 'API request failed');
     }
 
-    const result = await response.json();
-    const text = result.content?.[0]?.text;
-
+    const text = responseData.result?.content?.[0]?.text;
     if (!text) throw new Error('No text returned');
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -283,7 +229,7 @@ REGRAS:
     console.error('[ClaudeService] Chat error:', error);
     return {
       type: 'none',
-      reply_text: 'Desculpe, tive um problema ao processar seu comando. Tente novamente em instantes.',
+      reply_text: 'Desculpe, tive um problema ao processar seu comando (verifique se a API Key da Anthropic está configurada nos secrets). Tente novamente em instantes.',
     };
   }
 }
