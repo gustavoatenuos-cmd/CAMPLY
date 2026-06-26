@@ -33,6 +33,9 @@ export const initialData: CamplyData = {
   projects: [],
   tasks: [],
   activityLogs: [],
+  agentRules: [],
+  agentAlerts: [],
+  agentLogs: [],
 };
 
 export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
@@ -63,6 +66,11 @@ export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
       deliveredUrl: project.deliveredUrl ?? '',
       visibility: project.visibility ?? 'private',
     })),
+    tasks: parsed.tasks.map((task) => ({
+      ...task,
+      hasFinance: task.hasFinance ?? false,
+      financeAmount: task.financeAmount,
+    })),
     activityLogs: (parsed.activityLogs ?? []).map((log) => ({
       ...log,
       projectId: log.projectId ?? '',
@@ -72,6 +80,9 @@ export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
       taskId: log.taskId ?? '',
       actor: log.actor ?? 'Gustavo',
     })),
+    agentRules: parsed.agentRules || [],
+    agentAlerts: parsed.agentAlerts || [],
+    agentLogs: parsed.agentLogs || [],
   };
 };
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, Banknote, CheckCircle2, Megaphone, Plus, Target } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
@@ -196,11 +196,64 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const clientCampaigns = data.campaigns.filter(c => c.clientId === selectedClientId);
   const showCampaignSelector = taskArea === 'tráfego' && selectedClientId && clientCampaigns.length > 0;
 
+  const activeAlerts = data.agentAlerts?.filter(a => a.status === 'active') || [];
+  const atrasados = activeAlerts.filter(a => a.title.includes('Atrasad')).length;
+  const urgentes = activeAlerts.filter(a => a.title.includes('Hoje')).length;
+  const parados = activeAlerts.filter(a => a.title.includes('Parad')).length;
+  const atencao = activeAlerts.filter(a => a.title.includes('Atenção')).length;
+
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-8 rounded-2xl border border-brand-line bg-brand-paper p-5 text-brand-ink shadow-brand">
         <BrandLogo />
       </div>
+
+      {activeAlerts.length > 0 && (
+        <div className="mb-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-5 shadow-lg">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-black text-white">
+              <ShieldAlert className="text-red-500" />
+              Resumo Operacional (Agente de IA)
+            </h2>
+            <button 
+              onClick={() => setActiveView('intelligence')}
+              className="text-sm font-bold text-brand-green hover:underline"
+            >
+              Ver todos os alertas &rarr;
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
+              <div className="flex items-center gap-2 text-red-500 mb-2">
+                <AlertCircle size={18} />
+                <span className="font-semibold text-sm">Atrasados</span>
+              </div>
+              <p className="text-3xl font-black text-white">{atrasados}</p>
+            </div>
+            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
+              <div className="flex items-center gap-2 text-amber-500 mb-2">
+                <AlertTriangle size={18} />
+                <span className="font-semibold text-sm">Urgentes (Hoje)</span>
+              </div>
+              <p className="text-3xl font-black text-white">{urgentes}</p>
+            </div>
+            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
+              <div className="flex items-center gap-2 text-brand-muted mb-2">
+                <Clock size={18} />
+                <span className="font-semibold text-sm">Parados</span>
+              </div>
+              <p className="text-3xl font-black text-white">{parados}</p>
+            </div>
+            <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
+              <div className="flex items-center gap-2 text-brand-green mb-2">
+                <Bell size={18} />
+                <span className="font-semibold text-sm">Em Atenção</span>
+              </div>
+              <p className="text-3xl font-black text-white">{atencao}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>

@@ -28,6 +28,9 @@ export interface Client {
   adInvestmentTikTok: number;
   status: ClientStatus;
   notes: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastActivityAt?: string;
 }
 
 export interface Campaign {
@@ -46,6 +49,9 @@ export interface Campaign {
   targetResults?: number;
   targetCPA?: number;
   results?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  lastActivityAt?: string;
 }
 
 export type MetaCampaignObjective =
@@ -64,6 +70,8 @@ export interface Receivable {
   dueDate: string;
   status: PaymentStatus;
   paidAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Project {
@@ -85,6 +93,9 @@ export interface Project {
   deliveredUrl: string;
   visibility: 'private' | 'portfolio' | 'public';
   nextAction: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastActivityAt?: string;
 }
 
 export type TaskArea = 'tráfego' | 'site' | 'financeiro' | 'geral';
@@ -100,6 +111,9 @@ export interface Task {
   hasFinance?: boolean;
   financeAmount?: number;
   done: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  lastActivityAt?: string;
 }
 
 export type ActivityAction =
@@ -131,6 +145,51 @@ export interface ActivityLog {
   createdAt: string;
 }
 
+// ===================== AGENT TYPES =====================
+
+export type EntityType = 'client' | 'campaign' | 'project' | 'task';
+export type SeverityLevel = 'critical' | 'warning' | 'info' | 'good';
+
+export interface AgentRule {
+  id: string;
+  name: string;
+  description: string;
+  entityType: EntityType;
+  conditionType: 'deadline_today' | 'overdue' | 'idle_days' | 'attention_required' | 'many_pending';
+  thresholdValue?: number;
+  thresholdUnit?: 'days' | 'hours' | 'count';
+  severity: SeverityLevel;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentAlert {
+  id: string;
+  relatedEntityId: string;
+  relatedEntityType: EntityType;
+  clientId?: string;
+  title: string;
+  message: string;
+  severity: SeverityLevel;
+  status: 'active' | 'dismissed' | 'resolved';
+  suggestedAction?: string;
+  triggeredAt: string;
+  readAt?: string;
+}
+
+export interface AgentActivityLog {
+  id: string;
+  relatedEntityId: string;
+  relatedEntityType: EntityType;
+  analysisType: string;
+  classification: string;
+  reason: string;
+  createdAt: string;
+}
+
+// ===================== CAMPLY DATA =====================
+
 export interface CamplyData {
   clients: Client[];
   campaigns: Campaign[];
@@ -138,6 +197,9 @@ export interface CamplyData {
   projects: Project[];
   tasks: Task[];
   activityLogs: ActivityLog[];
+  agentRules: AgentRule[];
+  agentAlerts: AgentAlert[];
+  agentLogs: AgentActivityLog[];
 }
 
 export interface Insight {

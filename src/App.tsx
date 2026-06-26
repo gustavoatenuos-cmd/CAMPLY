@@ -13,6 +13,7 @@ import { TodayView } from './components/TodayView';
 import { buildInsights, loadData, saveData } from './data/camplyStore';
 import { loadRemoteData, saveRemoteData } from './data/supabaseStore';
 import { CamplyData, ViewId } from './types';
+import { runAgentEngine } from './lib/agentEngine';
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(() => window.sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true');
@@ -50,10 +51,37 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [authenticated, data, remoteLoaded]);
 
+  // Executar o Agente Operacional ao carregar os dados
+  useEffect(() => {
+    if (!authenticated || !remoteLoaded) return;
+    setData((current) => {
+      const { newAlerts, newLogs } = runAgentEngine(current);
+      if (newAlerts.length > 0 || newLogs.length > 0) {
+        return {
+          ...current,
+          agentAlerts: [...newAlerts, ...current.agentAlerts],
+          agentLogs: [...newLogs, ...current.agentLogs],
+        };
+      }
+      return current;
+    });
+  }, [authenticated, remoteLoaded]);
+
   const insights = useMemo(() => buildInsights(data), [data]);
 
   const updateData = (updater: (data: CamplyData) => CamplyData) => {
-    setData((current) => updater(current));
+    setData((current) => {
+      const next = updater(current);
+      const { newAlerts, newLogs } = runAgentEngine(next);
+      if (newAlerts.length > 0 || newLogs.length > 0) {
+        return {
+          ...next,
+          agentAlerts: [...newAlerts, ...next.agentAlerts],
+          agentLogs: [...newLogs, ...next.agentLogs],
+        };
+      }
+      return next;
+    });
   };
 
   if (!authenticated) {

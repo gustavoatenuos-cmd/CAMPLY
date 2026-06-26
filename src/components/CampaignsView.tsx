@@ -1,5 +1,5 @@
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
-import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image, Plus } from 'lucide-react';
+import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image, Plus, ShieldAlert } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money } from '../data/camplyStore';
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
@@ -328,6 +328,13 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                   </div>
                                   
                                   <h3 className="mt-1 font-bold text-white">{campaign.name}</h3>
+
+                                  {data.agentAlerts?.some(a => a.relatedEntityId === campaign.id && a.status === 'active') && (
+                                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-400/10 px-2 py-1 rounded-full w-fit">
+                                      <ShieldAlert size={12} />
+                                      Alerta da IA
+                                    </div>
+                                  )}
                                   
                                   {campaign.activeCreatives ? (
                                     <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-sky-300 bg-sky-400/10 w-fit px-2 py-0.5 rounded-full">

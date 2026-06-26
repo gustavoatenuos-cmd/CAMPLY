@@ -1,4 +1,4 @@
-import { Edit3, ExternalLink, Plus, Save } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ChevronDown, ChevronUp, Edit3, Image, Link, Megaphone, Plus, Save, Search, ShieldAlert, X, ExternalLink } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money, normalizeMonthlyInvestment, paymentStatusLabels, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
@@ -315,6 +315,12 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 <p className="mt-1 text-xs font-semibold text-brand-green">
                   {projectClients.length} cliente{projectClients.length === 1 ? '' : 's'} vinculado{projectClients.length === 1 ? '' : 's'}
                 </p>
+                {data.agentAlerts?.some(a => a.relatedEntityId === project.id && a.status === 'active') && (
+                  <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-400/10 px-2 py-1 rounded-full w-fit">
+                    <ShieldAlert size={12} />
+                    Alerta da IA
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 flex-col gap-2 sm:items-end">
                 <select value={project.status} onChange={(event) => setStatus(project.id, event.target.value as ProjectStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
