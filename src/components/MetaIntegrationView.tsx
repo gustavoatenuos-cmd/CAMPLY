@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Facebook, Link as LinkIcon, Unlink, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface MetaIntegrationViewProps {
   // Pass the supabase client if available or handle it internally
@@ -12,22 +13,22 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // In a real implementation, you would use your initialized supabaseClient here
-  // For this UI scaffolding, we simulate the state or assume window.supabase exists.
-  
   const checkStatus = async () => {
-    // try {
-    //   setIsLoading(true);
-    //   const { data, error } = await supabase.functions.invoke('meta-validate-token');
-    //   if (data && data.status === 'active') {
-    //     setIntegration(data.integration);
-    //     // fetch assets as well
-    //   }
-    // } catch (e: any) {
-    //   setError(e.message);
-    // } finally {
-    //   setIsLoading(false);
-    // }
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase!.functions.invoke('meta-validate-token');
+      if (data && data.status === 'active') {
+        setIntegration(data.integration);
+        // Opcional: buscar os assets automaticamente ao carregar
+        const { data: assetData } = await supabase!.from('meta_assets').select('*').eq('integration_id', data.integration.id);
+        if (assetData) setAssets(assetData);
+      }
+    } catch (e: any) {
+      console.error(e);
+      // Fail silently for status check to not block UI
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -35,62 +36,66 @@ export function MetaIntegrationView({}: MetaIntegrationViewProps) {
   }, []);
 
   const handleConnect = async () => {
-    // try {
-    //   setIsLoading(true);
-    //   const { data, error } = await supabase.functions.invoke('meta-oauth-start');
-    //   if (error) throw error;
-    //   if (data?.url) {
-    //     window.location.href = data.url;
-    //   }
-    // } catch (e: any) {
-    //   setError(e.message);
-    //   setIsLoading(false);
-    // }
+    try {
+      setIsLoading(true);
+      setError(null);
+      const { data, error } = await supabase!.functions.invoke('meta-oauth-start');
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+    } catch (e: any) {
+      setError('Erro ao conectar: ' + e.message);
+      setIsLoading(false);
+    }
   };
 
   const handleDisconnect = async () => {
     if (!confirm('Tem certeza que deseja desconectar a conta do Facebook? Isso parará todas as sincronizações.')) return;
     
-    // try {
-    //   setIsLoading(true);
-    //   await supabase.functions.invoke('meta-disconnect');
-    //   setIntegration(null);
-    //   setAssets([]);
-    // } catch (e: any) {
-    //   setError(e.message);
-    // } finally {
-    //   setIsLoading(false);
-    // }
+    try {
+      setIsLoading(true);
+      await supabase!.functions.invoke('meta-disconnect');
+      setIntegration(null);
+      setAssets([]);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSyncAssets = async () => {
-    // try {
-    //   setIsSyncing(true);
-    //   const { data, error } = await supabase.functions.invoke('meta-list-assets');
-    //   if (error) throw error;
-    //   setAssets(data.assets || []);
-    // } catch (e: any) {
-    //   setError(e.message);
-    // } finally {
-    //   setIsSyncing(false);
-    // }
+    try {
+      setIsSyncing(true);
+      setError(null);
+      const { data, error } = await supabase!.functions.invoke('meta-list-assets');
+      if (error) throw error;
+      if (data?.assets) {
+        setAssets(data.assets);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSyncAds = async (adAccountId: string) => {
-    // try {
-    //   setIsLoading(true);
-    //   const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
-    //     body: { adAccountId }
-    //   });
-    //   if (error) throw error;
-    //   alert(`Sucesso! ${data.ads?.length || 0} anúncios ativos sincronizados.`);
-    //   console.log(data.ads);
-    // } catch (e: any) {
-    //   setError(e.message);
-    // } finally {
-    //   setIsLoading(false);
-    // }
-    alert('Simulação: sincronizando anúncios ativos da conta ' + adAccountId);
+    try {
+      setIsLoading(true);
+      setError(null);
+      const { data, error } = await supabase!.functions.invoke('meta-sync-ads', {
+        body: { adAccountId }
+      });
+      if (error) throw error;
+      alert(`Sucesso! ${data.ads?.length || 0} anúncios ativos sincronizados.`);
+      console.log(data.ads);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
