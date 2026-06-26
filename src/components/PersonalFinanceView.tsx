@@ -1,9 +1,9 @@
-import { Check, Plus } from 'lucide-react';
+import { CalendarClock, Check, Plus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
-import { clientDisplayName } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from './ClientsView';
 
 interface PersonalFinanceViewProps {
   data: CamplyData;
@@ -12,13 +12,11 @@ interface PersonalFinanceViewProps {
 
 export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const forecast = buildFinancialForecast(data);
   const pending = data.receivables.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0);
   const overdue = data.receivables.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0);
   const paid = data.receivables.filter((item) => item.status === 'paid').reduce((sum, item) => sum + item.amount, 0);
-  const projectsToReceive = data.projects.reduce((sum, project) => {
-    if (project.paymentStatus === 'paid') return sum;
-    return sum + Math.max(0, project.amountCharged - project.amountReceived);
-  }, 0);
+  const projectsToReceive = forecast.items.filter((item) => item.source === 'project' && item.status !== 'paid').reduce((sum, item) => sum + item.amount, 0);
 
   const addReceivable = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -105,7 +103,11 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente</span>
               <select name="clientId" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Selecione</option>
-                {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                {data.clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {clientOptionLabel(client)}
+                  </option>
+                ))}
               </select>
             </label>
             <Field label="Descrição" name="description" placeholder="Ex: mensalidade, setup, parcela do projeto" required />
@@ -128,10 +130,44 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
       </Modal>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Total label="Mensalidades pendentes" value={money(pending)} />
-        <Total label="Atrasado" value={money(overdue)} tone="danger" />
+        <Total label="Previsto este mês" value={money(forecast.currentMonthTotal)} />
+        <Total label="Atrasado" value={money(overdue + forecast.overdueTotal)} tone="danger" />
         <Total label="Projetos a receber" value={money(projectsToReceive)} />
         <Total label="Recebido" value={money(paid)} tone="good" />
+      </div>
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Total label="Mensalidades pendentes" value={money(pending + forecast.currentMonthPending)} />
+        <Total label="Próximos 30 dias" value={money(forecast.next30DaysTotal)} />
+        <Total label="Próximo mês" value={money(forecast.nextMonthTotal)} />
+        <Total label="Próximos 3 meses" value={money(forecast.nextThreeMonthsTotal)} />
+      </div>
+
+      <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
+        <div className="flex items-center gap-2 border-b border-brand-line p-4">
+          <CalendarClock size={17} className="text-brand-green" />
+          <h2 className="font-bold text-white">Previsão automática de recebimentos</h2>
+        </div>
+        {forecast.items.length === 0 ? (
+          <div className="p-5 text-sm text-brand-muted">
+            Cadastre mensalidades recorrentes nos clientes ou projetos pontuais para o sistema montar a previsão.
+          </div>
+        ) : (
+          forecast.items.slice(0, 12).map((item) => (
+            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
+              <div>
+                <p className="font-semibold text-white">{item.title}</p>
+                <p className="mt-1 text-xs text-brand-muted">{item.description}</p>
+              </div>
+              <p className="text-brand-muted">{item.projectName || 'Cliente direto'}</p>
+              <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
+              <p className="font-bold text-brand-green">{money(item.amount)}</p>
+              <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${forecastStatusClass(item.status)}`}>
+                {forecastStatusLabel(item.status)}
+              </span>
+            </div>
+          ))
+        )}
       </div>
 
       <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
@@ -214,4 +250,149 @@ function Total({ label, value, tone = 'default' }: { label: string; value: strin
       <p className={`mt-3 text-2xl font-black ${color}`}>{value}</p>
     </div>
   );
+}
+
+type ForecastStatus = PaymentStatus | 'upcoming';
+
+type ForecastItem = {
+  id: string;
+  source: 'client' | 'project';
+  title: string;
+  description: string;
+  projectName: string;
+  amount: number;
+  dueDate: string;
+  status: ForecastStatus;
+};
+
+function buildFinancialForecast(data: CamplyData) {
+  const today = normalizeDate(new Date());
+  const currentMonthKey = monthKey(toLocalISODate(today));
+  const nextMonthKeyValue = monthKey(addMonths(today, 1));
+  const clientItems = data.clients.flatMap((client): ForecastItem[] => {
+    if (client.status !== 'active' || client.monthlyFee <= 0) return [];
+
+    const project = data.projects.find((item) => item.id === client.projectId);
+    const dueDay = client.dueDay || today.getDate();
+    const monthsToProject = client.managementFeeType === 'recurring' ? [0, 1, 2] : [0];
+
+    return monthsToProject.map((monthOffset) => {
+      const dueDate = dueDateForMonth(addMonths(today, monthOffset), dueDay);
+      const paidReceivable = data.receivables.some(
+        (receivable) =>
+          receivable.clientId === client.id &&
+          receivable.status === 'paid' &&
+          monthKey(receivable.dueDate) === monthKey(dueDate),
+      );
+
+      return {
+        id: `client-${client.id}-${monthKey(dueDate)}`,
+        source: 'client',
+        title: clientDisplayName(client),
+        description: client.managementFeeType === 'recurring'
+          ? `Mensalidade recorrente - vence dia ${dueDay}`
+          : 'Serviço pontual cadastrado no cliente',
+        projectName: project?.name || '',
+        amount: client.monthlyFee,
+        dueDate,
+        status: paidReceivable ? 'paid' : inferForecastStatus(dueDate, today, currentMonthKey),
+      };
+    });
+  });
+
+  const projectItems = data.projects
+    .filter((project) => project.billingType === 'one_time' && project.paymentStatus !== 'paid')
+    .map((project): ForecastItem => {
+      const amount = Math.max(0, project.amountCharged - project.amountReceived);
+      const dueDate = project.dueDate || toLocalISODate(today);
+      return {
+        id: `project-${project.id}`,
+        source: 'project',
+        title: project.company || project.name,
+        description: `Projeto pontual - ${project.name}`,
+        projectName: project.ownerName || 'Projeto direto',
+        amount,
+        dueDate,
+        status: inferForecastStatus(dueDate, today, currentMonthKey),
+      };
+    })
+    .filter((item) => item.amount > 0);
+
+  const items = [...clientItems, ...projectItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const openItems = items.filter((item) => item.status !== 'paid');
+
+  return {
+    items,
+    currentMonthTotal: sumForecast(openItems.filter((item) => monthKey(item.dueDate) === currentMonthKey)),
+    currentMonthPending: sumForecast(openItems.filter((item) => item.source === 'client' && item.status === 'pending' && monthKey(item.dueDate) === currentMonthKey)),
+    overdueTotal: sumForecast(openItems.filter((item) => item.status === 'overdue')),
+    next30DaysTotal: sumForecast(
+      openItems.filter((item) => {
+        const days = daysBetween(today, parseLocalDate(item.dueDate));
+        return days >= 0 && days <= 30;
+      }),
+    ),
+    nextMonthTotal: sumForecast(openItems.filter((item) => monthKey(item.dueDate) === nextMonthKeyValue)),
+    nextThreeMonthsTotal: sumForecast(openItems),
+  };
+}
+
+function forecastStatusLabel(status: ForecastStatus) {
+  if (status === 'paid') return 'Pago';
+  if (status === 'overdue') return 'Atrasado';
+  if (status === 'upcoming') return 'Próximo mês';
+  return 'Pendente';
+}
+
+function forecastStatusClass(status: ForecastStatus) {
+  if (status === 'paid') return 'bg-brand-green/10 text-brand-green';
+  if (status === 'overdue') return 'bg-rose-500/10 text-rose-300';
+  if (status === 'upcoming') return 'bg-sky-400/10 text-sky-200';
+  return 'bg-amber-400/10 text-amber-200';
+}
+
+function inferForecastStatus(dueDate: string, today: Date, currentMonthKey: string): ForecastStatus {
+  const parsedDueDate = parseLocalDate(dueDate);
+  if (parsedDueDate.getTime() < today.getTime()) return 'overdue';
+  return monthKey(dueDate) === currentMonthKey ? 'pending' : 'upcoming';
+}
+
+function sumForecast(items: ForecastItem[]) {
+  return items.reduce((sum, item) => sum + item.amount, 0);
+}
+
+function dueDateForMonth(date: Date, preferredDay: number) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const safeDay = Math.min(Math.max(preferredDay, 1), lastDay);
+  return toLocalISODate(new Date(year, month, safeDay));
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function monthKey(value: string | Date) {
+  return typeof value === 'string' ? value.slice(0, 7) : toLocalISODate(value).slice(0, 7);
+}
+
+function daysBetween(start: Date, end: Date) {
+  const day = 24 * 60 * 60 * 1000;
+  return Math.round((normalizeDate(end).getTime() - normalizeDate(start).getTime()) / day);
+}
+
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return normalizeDate(new Date(year, (month || 1) - 1, day || 1));
+}
+
+function normalizeDate(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function toLocalISODate(date: Date) {
+  const normalized = normalizeDate(date);
+  normalized.setMinutes(normalized.getMinutes() - normalized.getTimezoneOffset());
+  return normalized.toISOString().slice(0, 10);
 }

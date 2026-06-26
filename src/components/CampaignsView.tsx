@@ -5,7 +5,7 @@ import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
 import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
-import { clientDisplayName } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from './ClientsView';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -112,7 +112,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
               <select name="clientId" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Selecione</option>
                 {data.clients.map((client) => (
-                  <option key={client.id} value={client.id}>{client.name}</option>
+                  <option key={client.id} value={client.id}>{clientOptionLabel(client)}</option>
                 ))}
               </select>
             </label>

@@ -305,6 +305,11 @@ export function clientDisplayName(client?: { name: string; company: string; segm
   return client.company || client.segment || client.name;
 }
 
+export function clientOptionLabel(client: { name: string; company: string; segment: string }) {
+  const display = clientDisplayName(client);
+  return client.name && client.name !== display ? `${display} (${client.name})` : display;
+}
+
 function Header({ eyebrow, title, action, onAction }: { eyebrow: string; title: string; action: string; onAction: () => void }) {
   return (
     <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

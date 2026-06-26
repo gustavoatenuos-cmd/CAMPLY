@@ -2,7 +2,7 @@ import { Activity, CalendarDays, Filter, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { money } from '../data/camplyStore';
 import { ActivityAction, ActivityLog, CamplyData } from '../types';
-import { clientDisplayName } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from './ClientsView';
 
 interface ActivityViewProps {
   data: CamplyData;
@@ -114,7 +114,7 @@ export function ActivityView({ data }: ActivityViewProps) {
           <select value={clientId} onChange={(event) => setClientId(event.target.value)} className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-white outline-none focus:border-brand-green">
             <option value="">Todos os clientes</option>
             {data.clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
+              <option key={client.id} value={client.id}>{clientOptionLabel(client)}</option>
             ))}
           </select>
         </div>

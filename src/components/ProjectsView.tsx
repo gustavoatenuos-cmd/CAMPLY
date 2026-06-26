@@ -3,6 +3,7 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money, normalizeMonthlyInvestment, paymentStatusLabels, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Project, ProjectStatus, ProjectType } from '../types';
+import { clientOptionLabel } from './ClientsView';
 
 interface ProjectsViewProps {
   data: CamplyData;
@@ -206,7 +207,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente principal / contratante</span>
               <select name="clientId" defaultValue={editingProject?.clientId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Sem cliente</option>
-                {data.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                {data.clients.map((client) => <option key={client.id} value={client.id}>{clientOptionLabel(client)}</option>)}
               </select>
             </label>
             <input type="hidden" name="billingType" value={projectBillingType} />
