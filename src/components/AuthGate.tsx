@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { BrandLogo } from './BrandLogo';
 import { supabase } from '../lib/supabase';
+import { Hero } from './ui/hero-1';
 
 interface AuthGateProps {
   onUnlock: () => void;
@@ -49,64 +50,73 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
   };
 
   return (
-    <main className="grid min-h-screen place-items-center bg-brand-ink p-6 text-white">
-      <section className="w-full max-w-md rounded-2xl border border-brand-line bg-brand-surface p-6 shadow-brand">
-        <div className="mb-8">
-          <BrandLogo inverted />
-          <p className="mt-5 text-sm leading-relaxed text-brand-muted">
-            Acesso restrito ao painel operacional.
-          </p>
-        </div>
+    <div className="min-h-screen bg-brand-ink text-white">
+      <Hero 
+        title="Gestão de Tráfego Inteligente"
+        subtitle="Otimize suas campanhas e aumente a produtividade com soluções intuitivas. Segurança, velocidade e simplicidade em uma única plataforma."
+        eyebrow="Camply CRM"
+        ctaLabel="Acessar o Painel"
+        ctaHref="#login"
+      />
+      <main id="login" className="grid place-items-center py-20 px-6">
+        <section className="w-full max-w-md rounded-2xl border border-brand-line bg-brand-surface p-6 shadow-brand">
+          <div className="mb-8">
+            <BrandLogo inverted />
+            <p className="mt-5 text-sm leading-relaxed text-brand-muted">
+              Acesso restrito ao painel operacional.
+            </p>
+          </div>
 
-        <div className="mb-6 flex gap-4 border-b border-brand-line pb-2">
-          <button 
-            className={`font-semibold ${isLogin ? 'text-white' : 'text-brand-soft'}`}
-            onClick={() => { setIsLogin(true); setError(''); setMessage(''); }}
-          >
-            Login
-          </button>
-          <button 
-            className={`font-semibold ${!isLogin ? 'text-white' : 'text-brand-soft'}`}
-            onClick={() => { setIsLogin(false); setError(''); setMessage(''); }}
-          >
-            Criar Conta
-          </button>
-        </div>
+          <div className="mb-6 flex gap-4 border-b border-brand-line pb-2">
+            <button 
+              className={`font-semibold ${isLogin ? 'text-white' : 'text-brand-soft'}`}
+              onClick={() => { setIsLogin(true); setError(''); setMessage(''); }}
+            >
+              Login
+            </button>
+            <button 
+              className={`font-semibold ${!isLogin ? 'text-white' : 'text-brand-soft'}`}
+              onClick={() => { setIsLogin(false); setError(''); setMessage(''); }}
+            >
+              Criar Conta
+            </button>
+          </div>
 
-        <form onSubmit={submit} className="space-y-4">
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-brand-soft">E-mail</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
-              autoFocus
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-brand-soft">Senha</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
-              required
-            />
-          </label>
+          <form onSubmit={submit} className="space-y-4">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">E-mail</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
+                autoFocus
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Senha</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded-lg border border-brand-line bg-brand-ink px-4 py-3 text-white outline-none transition focus:border-brand-green"
+                required
+              />
+            </label>
 
-          {error && <p className="text-sm font-semibold text-rose-400">{error}</p>}
-          {message && <p className="text-sm font-semibold text-brand-green">{message}</p>}
+            {error && <p className="text-sm font-semibold text-rose-400">{error}</p>}
+            {message && <p className="text-sm font-semibold text-brand-green">{message}</p>}
 
-          <button
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-green px-4 py-3 font-bold text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
-          >
-            {loading ? 'Processando...' : isLogin ? 'Acessar painel' : 'Registrar'}
-          </button>
-        </form>
-      </section>
-    </main>
+            <button
+              disabled={loading}
+              className="w-full rounded-lg bg-brand-green px-4 py-3 font-bold text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
+            >
+              {loading ? 'Processando...' : isLogin ? 'Acessar painel' : 'Registrar'}
+            </button>
+          </form>
+        </section>
+      </main>
+    </div>
   );
 }

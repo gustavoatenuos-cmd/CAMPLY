@@ -4,6 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        primary: {
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
+        },
         brand: {
           green: '#22C55E',
           deep: '#0F7A5A',
@@ -18,6 +24,20 @@ export default {
       },
       boxShadow: {
         brand: '0 14px 34px rgba(15, 122, 90, 0.22)',
+      },
+      keyframes: {
+        "fade-in": {
+          "0%": { opacity: "0", transform: "translateY(20px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "fade-up": {
+          "0%": { opacity: "0", transform: "translateY(40px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 1s ease-out forwards",
+        "fade-up": "fade-up 1s ease-out forwards",
       },
     },
   },
