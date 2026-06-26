@@ -42,6 +42,10 @@ export interface Campaign {
   lastOptimizedAt: string;
   nextAction: string;
   priority: Priority;
+  activeCreatives?: number;
+  targetResults?: number;
+  targetCPA?: number;
+  results?: number;
 }
 
 export type MetaCampaignObjective =
@@ -59,6 +63,7 @@ export interface Receivable {
   amount: number;
   dueDate: string;
   status: PaymentStatus;
+  paidAt?: string;
 }
 
 export interface Project {
@@ -76,16 +81,24 @@ export interface Project {
   amountCharged: number;
   amountReceived: number;
   paymentStatus: PaymentStatus;
+  paidAt?: string;
   deliveredUrl: string;
   visibility: 'private' | 'portfolio' | 'public';
   nextAction: string;
 }
 
+export type TaskArea = 'tráfego' | 'site' | 'financeiro' | 'geral';
+export type TaskType = 'otimizacao' | 'novo_projeto' | 'novo_cliente' | 'outro';
+
 export interface Task {
   id: string;
   title: string;
   dueDate: string;
-  area: 'campanhas' | 'clientes' | 'financeiro' | 'projetos';
+  area: TaskArea;
+  taskType: TaskType;
+  clientId?: string;
+  hasFinance?: boolean;
+  financeAmount?: number;
   done: boolean;
 }
 

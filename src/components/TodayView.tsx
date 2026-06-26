@@ -3,7 +3,7 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
-import { CamplyData, Insight, Task, ViewId } from '../types';
+import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
 
 interface TodayViewProps {
@@ -15,6 +15,8 @@ interface TodayViewProps {
 
 export function TodayView({ data, insights, updateData, setActiveView }: TodayViewProps) {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [taskType, setTaskType] = useState<TaskType>('otimizacao');
+  const [hasFinance, setHasFinance] = useState(false);
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
@@ -46,32 +48,140 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     const form = new FormData(event.currentTarget);
     const title = String(form.get('title') ?? '').trim();
     if (!title) return;
+
+    const area = String(form.get('area') ?? 'geral') as TaskArea;
+    const clientId = String(form.get('clientId') ?? '');
+    const financeAmountStr = String(form.get('financeAmount') ?? '');
+    const financeAmount = financeAmountStr ? Number(financeAmountStr.replace(/\D/g, '')) / 100 : undefined;
+
     const task: Task = {
       id: makeId('task'),
       title,
       dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
-      area: String(form.get('area') ?? 'campanhas') as Task['area'],
+      area,
+      taskType,
+      clientId: clientId || undefined,
+      hasFinance,
+      financeAmount,
       done: false,
     };
-    updateData((current) => ({
-      ...current,
-      tasks: [task, ...current.tasks],
-      activityLogs: [
-        createActivityLog({
-          action: 'task_created',
-          title: `Tarefa criada: ${task.title}`,
-          description: `Nova tarefa adicionada para ${formatDate(task.dueDate)} na área de ${task.area}.`,
-          projectId: '',
-          clientId: '',
-          campaignId: '',
-          receivableId: '',
-          taskId: task.id,
-        }),
-        ...current.activityLogs,
-      ],
-    }));
+
+    let newReceivable: Receivable | undefined;
+    let newCampaign: Campaign | undefined;
+    let newProject: Project | undefined;
+    let newLogs: any[] = [];
+
+    if (hasFinance && clientId && financeAmount) {
+      newReceivable = {
+        id: makeId('recv'),
+        clientId,
+        description: `Lançamento via Tarefa: ${title}`,
+        amount: financeAmount,
+        dueDate: task.dueDate,
+        status: 'pending'
+      };
+      newLogs.push(createActivityLog({
+        action: 'receivable_created',
+        title: 'Financeiro gerado',
+        description: `O valor de ${money(financeAmount)} foi lançado pendente via tarefa.`,
+        projectId: '', clientId, campaignId: '', receivableId: newReceivable.id, taskId: task.id,
+      }));
+    }
+
+    if (taskType === 'otimizacao' && area === 'tráfego' && clientId) {
+      const existingCampaign = data.campaigns.find(c => c.clientId === clientId);
+      if (existingCampaign) {
+        newLogs.push(createActivityLog({
+          action: 'campaign_status_changed',
+          title: 'Otimização Registrada',
+          description: `A tarefa "${title}" marcou uma otimização na campanha.`,
+          projectId: '', clientId, campaignId: existingCampaign.id, receivableId: '', taskId: task.id,
+        }));
+      } else {
+        const client = data.clients.find(c => c.id === clientId);
+        newCampaign = {
+          id: makeId('camp'),
+          clientId,
+          name: `Tráfego ${client?.company || ''}`,
+          platform: 'Meta Ads',
+          status: 'setup',
+          objective: 'Tráfego',
+          budget: 0,
+          spent: 0,
+          lastOptimizedAt: task.dueDate,
+          nextAction: 'Configuração inicial',
+          priority: 'medium'
+        };
+        newLogs.push(createActivityLog({
+          action: 'campaign_created',
+          title: 'Campanha criada automaticamente',
+          description: `Campanha criada via fluxo de tarefas para o cliente.`,
+          projectId: '', clientId, campaignId: newCampaign.id, receivableId: '', taskId: task.id,
+        }));
+      }
+    }
+
+    if (taskType === 'novo_projeto' && area === 'site' && clientId) {
+      const client = data.clients.find(c => c.id === clientId);
+      newProject = {
+        id: makeId('proj'),
+        projectType: 'site',
+        clientId,
+        ownerName: client?.company || '',
+        company: client?.company || '',
+        billingType: 'one_time',
+        name: title,
+        role: 'Desenvolvimento Web',
+        status: 'planning',
+        progress: 0,
+        dueDate: task.dueDate,
+        amountCharged: financeAmount || 0,
+        amountReceived: 0,
+        paymentStatus: 'pending',
+        deliveredUrl: '',
+        visibility: 'private',
+        nextAction: 'Reunião de briefing'
+      };
+      newLogs.push(createActivityLog({
+        action: 'project_created',
+        title: 'Projeto de site criado',
+        description: `Projeto inicializado automaticamente pela Central do Dia.`,
+        projectId: newProject.id, clientId, campaignId: '', receivableId: '', taskId: task.id,
+      }));
+    }
+
+    updateData((current) => {
+      const receivables = newReceivable ? [newReceivable, ...current.receivables] : current.receivables;
+      const campaigns = newCampaign ? [newCampaign, ...current.campaigns] : current.campaigns;
+      const projects = newProject ? [newProject, ...current.projects] : current.projects;
+      
+      return {
+        ...current,
+        tasks: [task, ...current.tasks],
+        receivables,
+        campaigns,
+        projects,
+        activityLogs: [
+          createActivityLog({
+            action: 'task_created',
+            title: `Tarefa criada: ${task.title}`,
+            description: `Nova tarefa adicionada para ${formatDate(task.dueDate)} na área de ${task.area}.`,
+            projectId: '',
+            clientId: clientId || '',
+            campaignId: '',
+            receivableId: '',
+            taskId: task.id,
+          }),
+          ...newLogs,
+          ...current.activityLogs,
+        ],
+      };
+    });
+
     setTaskModalOpen(false);
     event.currentTarget.reset();
+    setHasFinance(false);
+    setTaskType('otimizacao');
   };
 
   return (
@@ -94,28 +204,80 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
 
       <Modal title="Nova tarefa" description="Registre uma ação rápida para acompanhar na central do dia." open={taskModalOpen} onClose={() => setTaskModalOpen(false)}>
         <form onSubmit={addTask} className="space-y-5 p-5">
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-brand-soft">Tarefa</span>
-            <input name="title" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
-          </label>
           <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de Tarefa</span>
+              <select 
+                name="taskType" 
+                value={taskType} 
+                onChange={(e) => setTaskType(e.target.value as TaskType)}
+                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green"
+              >
+                <option value="otimizacao">Otimização</option>
+                <option value="novo_projeto">Início de novo projeto</option>
+                <option value="novo_cliente">Início de novo cliente</option>
+                <option value="outro">Outro</option>
+              </select>
+            </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Área</span>
               <select name="area" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
-                <option value="campanhas">Campanhas</option>
-                <option value="clientes">Clientes</option>
+                <option value="tráfego">Tráfego Pago</option>
+                <option value="site">Site / Web</option>
                 <option value="financeiro">Financeiro</option>
-                <option value="projetos">Projetos</option>
+                <option value="geral">Geral</option>
               </select>
             </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-brand-soft">Cliente (Opcional)</span>
+            <select name="clientId" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+              <option value="">Selecione o cliente...</option>
+              {data.clients.map(c => (
+                <option key={c.id} value={c.id}>{clientDisplayName(c)}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-brand-soft">O que será feito? (Título da tarefa)</span>
+            <input name="title" required className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Data</span>
               <input name="dueDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
             </label>
+            <div className="flex flex-col justify-end pb-2">
+              <label className="flex cursor-pointer items-center gap-3">
+                <input 
+                  type="checkbox" 
+                  checked={hasFinance} 
+                  onChange={(e) => setHasFinance(e.target.checked)}
+                  className="h-5 w-5 rounded border-brand-line bg-brand-surface accent-brand-green focus:ring-brand-green" 
+                />
+                <span className="text-sm font-semibold text-white">Envolve financeiro?</span>
+              </label>
+            </div>
           </div>
+
+          {hasFinance && (
+            <label className="block animate-in fade-in slide-in-from-top-2 duration-300">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Valor (R$)</span>
+              <input 
+                name="financeAmount" 
+                required 
+                placeholder="R$ 0,00"
+                className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" 
+              />
+            </label>
+          )}
+
           <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
-            <button type="button" onClick={() => setTaskModalOpen(false)} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft">Cancelar</button>
-            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">Salvar tarefa</button>
+            <button type="button" onClick={() => { setTaskModalOpen(false); setHasFinance(false); }} className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft transition-colors hover:bg-brand-surface hover:text-white">Cancelar</button>
+            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink transition-transform hover:scale-105">Salvar tarefa</button>
           </div>
         </form>
       </Modal>

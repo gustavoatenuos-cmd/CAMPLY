@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Plus } from 'lucide-react';
+import { CalendarClock, Check, Plus, CheckCircle2, Pencil } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
@@ -32,6 +32,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
       amount,
       dueDate: String(form.get('dueDate') ?? new Date().toISOString().slice(0, 10)),
       status: String(form.get('status') ?? 'pending') as PaymentStatus,
+      paidAt: String(form.get('status') ?? 'pending') === 'paid' ? new Date().toISOString().slice(0, 10) : undefined,
     };
     updateData((current) => ({
       ...current,
@@ -57,9 +58,10 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
   const setStatus = (id: string, status: PaymentStatus) => {
     const receivable = data.receivables.find((item) => item.id === id);
     const client = data.clients.find((item) => item.id === receivable?.clientId);
+    const paidAt = status === 'paid' ? new Date().toISOString().slice(0, 10) : undefined;
     updateData((current) => ({
       ...current,
-      receivables: current.receivables.map((item) => (item.id === id ? { ...item, status } : item)),
+      receivables: current.receivables.map((item) => (item.id === id ? { ...item, status, paidAt } : item)),
       activityLogs: receivable
         ? [
             createActivityLog({
@@ -76,6 +78,55 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           ]
         : current.activityLogs,
     }));
+  };
+
+  const updateForecastItem = (item: ForecastItem, updates: { status?: PaymentStatus; amount?: number }) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const newStatus = updates.status !== undefined ? updates.status : (item.status === 'upcoming' ? 'pending' : item.status);
+    const newAmount = updates.amount !== undefined ? updates.amount : item.amount;
+    const isPaid = newStatus === 'paid';
+    
+    if (item.source === 'client' && item.clientId) {
+      if (item.receivableId) {
+        updateData((current) => ({
+          ...current,
+          receivables: current.receivables.map(r => r.id === item.receivableId ? { 
+             ...r, 
+             status: newStatus, 
+             amount: newAmount,
+             paidAt: isPaid && !r.paidAt ? todayStr : r.paidAt 
+          } : r)
+        }));
+      } else {
+        const receivable: Receivable = {
+          id: makeId('recv'),
+          clientId: item.clientId,
+          description: item.description,
+          amount: newAmount,
+          dueDate: item.dueDate,
+          status: newStatus,
+          paidAt: isPaid ? todayStr : undefined,
+        };
+        updateData((current) => ({
+          ...current,
+          receivables: [receivable, ...current.receivables]
+        }));
+      }
+    } else if (item.source === 'project' && item.projectId) {
+      updateData((current) => ({
+        ...current,
+        projects: current.projects.map(p => 
+          p.id === item.projectId 
+            ? { 
+                ...p, 
+                paymentStatus: newStatus, 
+                ...(updates.amount !== undefined ? { amountCharged: p.amountReceived + newAmount } : {}),
+                paidAt: isPaid && !p.paidAt ? todayStr : p.paidAt 
+              } 
+            : p
+        )
+      }));
+    }
   };
 
   return (
@@ -105,7 +156,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
                 <option value="">Selecione</option>
                 {data.clients.map((client) => (
                   <option key={client.id} value={client.id}>
-                    {clientOptionLabel(client)}
+                    {clientOptionLabel(client, data.projects)}
                   </option>
                 ))}
               </select>
@@ -160,11 +211,45 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
                 <p className="mt-1 text-xs text-brand-muted">{item.description}</p>
               </div>
               <p className="text-brand-muted">{item.projectName || 'Cliente direto'}</p>
-              <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
-              <p className="font-bold text-brand-green">{money(item.amount)}</p>
-              <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${forecastStatusClass(item.status)}`}>
-                {forecastStatusLabel(item.status)}
-              </span>
+              <div>
+                <p className="text-brand-muted">Vence: {formatDate(item.dueDate)}</p>
+                {item.paidAt && <p className="mt-1 text-xs font-semibold text-brand-green">Pago: {formatDate(item.paidAt)}</p>}
+              </div>
+              <div className="group flex items-center gap-2">
+                <p className="font-bold text-brand-green">{money(item.amount)}</p>
+                <button 
+                  onClick={() => {
+                    const val = window.prompt(`Novo valor para ${item.title}:`, item.amount.toString());
+                    if (val !== null) {
+                      const num = parseFloat(val.replace(',', '.'));
+                      if (!isNaN(num) && num >= 0) {
+                        updateForecastItem(item, { amount: num });
+                      }
+                    }
+                  }}
+                  className="p-1 text-brand-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100"
+                  title="Editar valor faturado deste mês"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <select 
+                  value={item.status} 
+                  onChange={(e) => updateForecastItem(item, { status: e.target.value as PaymentStatus })}
+                  className={`rounded-md border border-brand-line px-2 py-1 text-xs font-bold outline-none ${
+                    item.status === 'paid' ? 'bg-brand-green/20 text-brand-green' : 
+                    item.status === 'overdue' ? 'bg-red-500/20 text-red-500' : 
+                    item.status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' :
+                    'bg-amber-500/20 text-amber-500'
+                  }`}
+                >
+                  {item.status === 'upcoming' && <option value="upcoming">Próximo mês</option>}
+                  <option value="pending">Pendente</option>
+                  <option value="overdue">Atrasado</option>
+                  <option value="paid">Pago</option>
+                </select>
+              </div>
             </div>
           ))
         )}
@@ -180,7 +265,10 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
             <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] xl:items-center">
               <p className="font-semibold text-white">{clientDisplayName(client)}</p>
               <p className="text-brand-muted">{item.description}</p>
-              <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
+              <div>
+                <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
+                {item.paidAt && <p className="mt-1 text-xs font-semibold text-brand-green">Pago: {formatDate(item.paidAt)}</p>}
+              </div>
               <p className="font-bold text-brand-green">{money(item.amount)}</p>
               <div className="flex items-center gap-2">
                 <select value={item.status} onChange={(event) => setStatus(item.id, event.target.value as PaymentStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
@@ -203,16 +291,63 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         <div className="border-b border-brand-line p-4">
           <h2 className="font-bold text-white">Projetos vinculados ao financeiro</h2>
         </div>
+        <div className="hidden grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] gap-3 border-b border-brand-line bg-brand-surface/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-brand-soft xl:grid">
+          <p>Projeto</p>
+          <p>Cliente Principal</p>
+          <p>Soma Total</p>
+          <p>Taxa Recebida</p>
+          <p>A Receber / Recorrência</p>
+        </div>
         {data.projects.map((project) => {
-          const client = data.clients.find((clientItem) => clientItem.id === project.clientId);
-          const remaining = project.paymentStatus === 'paid' ? 0 : Math.max(0, project.amountCharged - project.amountReceived);
+          const primaryClient = data.clients.find((clientItem) => clientItem.id === project.clientId);
+          const projectClients = data.clients.filter((client) => client.projectId === project.id);
+          
+          const recurringTotal = projectClients
+            .filter((client) => client.managementFeeType === 'recurring')
+            .reduce((sum, client) => sum + client.monthlyFee, 0);
+          const oneTimeTotal = projectClients
+            .filter((client) => client.managementFeeType === 'one_time')
+            .reduce((sum, client) => sum + client.monthlyFee, 0);
+            
+          const projectAmount = project.billingType === 'recurring' ? recurringTotal + oneTimeTotal + project.amountCharged : project.amountCharged;
+          const remainingProjectFee = project.paymentStatus === 'paid' ? 0 : Math.max(0, project.amountCharged - project.amountReceived);
+          
+          const remainingTotal = project.billingType === 'recurring' 
+            ? recurringTotal + remainingProjectFee
+            : remainingProjectFee;
+
           return (
-            <div key={project.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
-              <p className="font-semibold text-white">{project.name}</p>
-              <p className="text-brand-muted">{clientDisplayName(client)}</p>
-              <p className="text-brand-muted">{money(project.amountCharged)}</p>
-              <p className="text-brand-muted">{money(project.amountReceived)}</p>
-              <p className="font-bold text-brand-green">{money(remaining)}</p>
+            <div key={project.id} className="border-b border-brand-line last:border-b-0">
+              <div className="grid gap-3 p-4 text-sm xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
+                <div>
+                  <p className="font-semibold text-white">{project.name}</p>
+                  <p className="text-xs text-brand-muted">{project.billingType === 'recurring' ? 'Trabalho recorrente' : 'Entrega pontual'}</p>
+                </div>
+                <p className="text-brand-muted">{clientDisplayName(primaryClient)}</p>
+                <p className="text-brand-muted">{money(projectAmount)}</p>
+                <p className="text-brand-muted">{money(project.amountReceived)}</p>
+                <p className="font-bold text-brand-green">{money(remainingTotal)}</p>
+              </div>
+              
+              {project.billingType === 'recurring' && (projectClients.length > 0 || project.amountCharged > 0) && (
+                <div className="bg-brand-ink p-4 pt-0">
+                  <div className="mt-1 rounded-lg border border-brand-line bg-brand-surface p-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand-soft">Composição do projeto recorrente</p>
+                    {projectClients.map(client => (
+                      <div key={client.id} className="flex justify-between py-1.5 text-sm border-b border-brand-line/50 last:border-0">
+                        <span className="text-brand-muted">{clientDisplayName(client)}</span>
+                        <span className="font-semibold text-white">{money(client.monthlyFee)} {client.managementFeeType === 'recurring' ? '/mês' : '(pontual)'}</span>
+                      </div>
+                    ))}
+                    {project.amountCharged > 0 && (
+                      <div className="flex justify-between py-1.5 text-sm border-b border-brand-line/50 last:border-0">
+                        <span className="text-brand-muted">Taxa fixa do projeto ({project.name})</span>
+                        <span className="font-semibold text-white">{money(project.amountCharged)} {project.paymentStatus === 'paid' ? `(Paga${project.paidAt ? ` em ${formatDate(project.paidAt)}` : ''})` : '(Pendente)'}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -257,12 +392,16 @@ type ForecastStatus = PaymentStatus | 'upcoming';
 type ForecastItem = {
   id: string;
   source: 'client' | 'project';
+  receivableId?: string;
+  clientId?: string;
+  projectId?: string;
   title: string;
   description: string;
   projectName: string;
   amount: number;
   dueDate: string;
   status: ForecastStatus;
+  paidAt?: string;
 };
 
 function buildFinancialForecast(data: CamplyData) {
@@ -278,45 +417,51 @@ function buildFinancialForecast(data: CamplyData) {
 
     return monthsToProject.map((monthOffset) => {
       const dueDate = dueDateForMonth(addMonths(today, monthOffset), dueDay);
-      const paidReceivable = data.receivables.some(
+      const existingReceivable = data.receivables.find(
         (receivable) =>
           receivable.clientId === client.id &&
-          receivable.status === 'paid' &&
           monthKey(receivable.dueDate) === monthKey(dueDate),
       );
 
       return {
         id: `client-${client.id}-${monthKey(dueDate)}`,
         source: 'client',
+        receivableId: existingReceivable?.id,
+        clientId: client.id,
+        projectId: project?.id,
         title: clientDisplayName(client),
         description: client.managementFeeType === 'recurring'
           ? `Mensalidade recorrente - vence dia ${dueDay}`
           : 'Serviço pontual cadastrado no cliente',
         projectName: project?.name || '',
-        amount: client.monthlyFee,
-        dueDate,
-        status: paidReceivable ? 'paid' : inferForecastStatus(dueDate, today, currentMonthKey),
+        amount: existingReceivable ? existingReceivable.amount : client.monthlyFee,
+        dueDate: existingReceivable ? existingReceivable.dueDate : dueDate,
+        paidAt: existingReceivable?.paidAt,
+        status: existingReceivable ? existingReceivable.status : inferForecastStatus(dueDate, today, currentMonthKey),
       };
     });
   });
 
   const projectItems = data.projects
-    .filter((project) => project.billingType === 'one_time' && project.paymentStatus !== 'paid')
+    .filter((project) => project.billingType === 'one_time')
     .map((project): ForecastItem => {
       const amount = Math.max(0, project.amountCharged - project.amountReceived);
       const dueDate = project.dueDate || toLocalISODate(today);
       return {
         id: `project-${project.id}`,
         source: 'project',
+        projectId: project.id,
+        clientId: project.clientId,
         title: project.company || project.name,
         description: `Projeto pontual - ${project.name}`,
         projectName: project.ownerName || 'Projeto direto',
         amount,
         dueDate,
-        status: inferForecastStatus(dueDate, today, currentMonthKey),
+        paidAt: project.paidAt,
+        status: project.paymentStatus === 'paid' ? 'paid' : inferForecastStatus(dueDate, today, currentMonthKey),
       };
     })
-    .filter((item) => item.amount > 0);
+    .filter((item) => item.amount > 0 || item.status === 'paid');
 
   const items = [...clientItems, ...projectItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const openItems = items.filter((item) => item.status !== 'paid');

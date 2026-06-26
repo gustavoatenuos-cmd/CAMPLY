@@ -114,7 +114,7 @@ export function ActivityView({ data }: ActivityViewProps) {
           <select value={clientId} onChange={(event) => setClientId(event.target.value)} className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-white outline-none focus:border-brand-green">
             <option value="">Todos os clientes</option>
             {data.clients.map((client) => (
-              <option key={client.id} value={client.id}>{clientOptionLabel(client)}</option>
+              <option key={client.id} value={client.id}>{clientOptionLabel(client, data.projects)}</option>
             ))}
           </select>
         </div>

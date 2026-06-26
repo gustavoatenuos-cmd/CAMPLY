@@ -305,8 +305,17 @@ export function clientDisplayName(client?: { name: string; company: string; segm
   return client.company || client.segment || client.name;
 }
 
-export function clientOptionLabel(client: { name: string; company: string; segment: string }) {
+export function clientOptionLabel(
+  client: { name: string; company: string; segment: string; projectId?: string },
+  projects?: { id: string; name: string }[]
+) {
   const display = clientDisplayName(client);
+  if (projects && client.projectId) {
+    const project = projects.find((p) => p.id === client.projectId);
+    if (project) {
+      return `${display} (${project.name})`;
+    }
+  }
   return client.name && client.name !== display ? `${display} (${client.name})` : display;
 }
 
