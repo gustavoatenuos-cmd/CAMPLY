@@ -95,6 +95,8 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
         body: { adAccountId }
       });
       if (error) throw error;
+      if (data?.isError) throw new Error(data.error);
+      
       setSyncedCampaigns(data.campaigns || []);
       alert(`Sucesso! ${data.campaigns?.length || 0} campanhas ativas sincronizadas.`);
     } catch (e: any) {
