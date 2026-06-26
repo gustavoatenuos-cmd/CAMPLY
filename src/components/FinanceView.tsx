@@ -18,14 +18,14 @@ export function FinanceView({ data }: FinanceViewProps) {
   const total = totals.meta + totals.google + totals.youtube + totals.tiktok;
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Financeiro</p>
           <h1 className="mt-1 text-2xl font-black text-white">Verbas de mídia dos clientes</h1>
         </div>
       </div>
-      <div className="mb-6 grid gap-4 md:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Total label="Total mensal estimado" value={money(total)} />
         <Total label="Meta mensal" value={money(totals.meta)} />
         <Total label="Google mensal" value={money(totals.google)} />
@@ -37,7 +37,7 @@ export function FinanceView({ data }: FinanceViewProps) {
           const clientTotal = client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
           const monthlyTotal = normalizeMonthlyInvestment(clientTotal, client.adInvestmentPeriod);
           return (
-            <div key={client.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 md:grid-cols-[1fr_0.7fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] md:items-center">
+            <div key={client.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_0.7fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] xl:items-center">
               <p className="font-semibold text-white">{client.name}</p>
               <p className="text-brand-muted">{periodLabel(client.adInvestmentPeriod)}</p>
               <p className="text-brand-muted">{money(client.adInvestmentMeta)}</p>

@@ -120,7 +120,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   };
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Projetos</p>
@@ -228,14 +228,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
         )}
       </Modal>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Summary label="Projetos ativos" value={data.projects.filter((project) => project.status !== 'done').length.toString()} />
         <Summary label="Clientes em projetos" value={groupedClients.length.toString()} />
         <Summary label="Recorrência dos clientes" value={`${money(recurringRevenue)}/mês`} highlight />
         <Summary label="Pontuais dos clientes" value={money(oneTimeRevenue)} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         {data.projects.map((project) => {
           const projectClients = data.clients.filter((client) => client.projectId === project.id);
           const recurringTotal = projectClients
@@ -324,14 +324,14 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               </div>
             </div>
 
-            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 md:grid-cols-[1fr_1fr_1.4fr_auto] md:items-end">
+            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 xl:grid-cols-[1fr_1fr_1.4fr_auto] xl:items-end">
               {project.billingType === 'one_time' ? (
                 <>
                   <MoneyField label="Valor cobrado" name="amountCharged" defaultValue={project.amountCharged} />
                   <MoneyField label="Valor recebido" name="amountReceived" defaultValue={project.amountReceived} />
                 </>
               ) : (
-                <div className="md:col-span-2 rounded-lg border border-brand-line bg-brand-ink p-3 text-sm text-brand-muted">
+                <div className="rounded-lg border border-brand-line bg-brand-ink p-3 text-sm text-brand-muted xl:col-span-2">
                   Projeto recorrente: valores vêm automaticamente dos clientes vinculados.
                 </div>
               )}

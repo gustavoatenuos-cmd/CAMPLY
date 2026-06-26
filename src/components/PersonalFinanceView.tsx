@@ -77,7 +77,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
   };
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Meu financeiro</p>
@@ -123,7 +123,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         </form>
       </Modal>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Total label="Mensalidades pendentes" value={money(pending)} />
         <Total label="Atrasado" value={money(overdue)} tone="danger" />
         <Total label="Projetos a receber" value={money(projectsToReceive)} />
@@ -137,7 +137,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         {data.receivables.map((item) => {
           const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
           return (
-            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 md:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] md:items-center">
+            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] xl:items-center">
               <p className="font-semibold text-white">{client?.name}</p>
               <p className="text-brand-muted">{item.description}</p>
               <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
@@ -167,7 +167,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           const client = data.clients.find((clientItem) => clientItem.id === project.clientId);
           const remaining = Math.max(0, project.amountCharged - project.amountReceived);
           return (
-            <div key={project.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 md:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] md:items-center">
+            <div key={project.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
               <p className="font-semibold text-white">{project.name}</p>
               <p className="text-brand-muted">{client?.name}</p>
               <p className="text-brand-muted">{money(project.amountCharged)}</p>

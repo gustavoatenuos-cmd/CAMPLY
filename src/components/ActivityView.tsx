@@ -68,7 +68,7 @@ export function ActivityView({ data }: ActivityViewProps) {
   const financialCount = data.activityLogs.filter((log) => log.action.startsWith('receivable')).length;
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Histórico</p>
@@ -77,7 +77,7 @@ export function ActivityView({ data }: ActivityViewProps) {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Summary label="Registros totais" value={data.activityLogs.length.toString()} />
         <Summary label="Ações hoje" value={todayCount.toString()} />
         <Summary label="Movimentos financeiros" value={financialCount.toString()} highlight />
@@ -88,7 +88,7 @@ export function ActivityView({ data }: ActivityViewProps) {
           <Filter size={17} className="text-brand-green" />
           Filtros
         </div>
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.9fr_0.9fr]">
+        <div className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr_0.9fr]">
           <label className="flex items-center gap-2 rounded-lg border border-brand-line bg-brand-surface px-3 py-2">
             <Search size={16} className="text-brand-muted" />
             <input
@@ -155,7 +155,7 @@ function ActivityRow({ log, data }: { log: ActivityLog; data: CamplyData }) {
   }).format(new Date(log.createdAt));
 
   return (
-    <article className="grid gap-3 p-4 md:grid-cols-[170px_1fr]">
+    <article className="grid gap-3 p-4 lg:grid-cols-[170px_1fr]">
       <div className="flex items-start gap-2 text-xs text-brand-muted">
         <CalendarDays size={15} className="mt-0.5 text-brand-green" />
         <span>{date}</span>

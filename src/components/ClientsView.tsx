@@ -91,7 +91,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
   };
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <Header
         eyebrow="Clientes"
         title="Base comercial"
@@ -209,7 +209,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           </div>
         </form>
       </Modal>
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
         {data.clients.map((client) => {
           const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id);
           const pending = data.receivables.filter((item) => item.clientId === client.id && item.status !== 'paid');
@@ -243,7 +243,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               </button>
               <p className="mt-5 flex items-center gap-2 text-sm text-brand-muted"><Mail size={15} /> {client.contact || 'Contato não informado'}</p>
               {client.structure && <p className="mt-3 text-sm leading-relaxed text-brand-muted">{client.structure}</p>}
-              <div className="mt-5 grid grid-cols-3 gap-2">
+              <div className="mt-5 grid gap-2 sm:grid-cols-3">
                 <Mini label={client.managementFeeType === 'recurring' ? 'Mensalidade' : 'Pontual'} value={money(client.monthlyFee)} />
                 <Mini label="Vence dia" value={client.dueDay.toString()} />
                 <Mini label="Campanhas" value={campaigns.length.toString()} />

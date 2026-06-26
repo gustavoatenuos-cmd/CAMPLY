@@ -68,9 +68,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-ink text-white">
+    <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-brand-ink text-white xl:flex-row">
       <Sidebar activeView={activeView} setActiveView={setActiveView} alertCount={insights.filter((item) => item.level !== 'good').length} />
-      <main className="min-w-0 flex-1 overflow-hidden">
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
         {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
         {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}

@@ -11,13 +11,13 @@ export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-6">
         <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Inteligência Camply</p>
         <h1 className="mt-1 text-2xl font-black text-white">Recomendações operacionais</h1>
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Signal icon={Sparkles} label="Alertas gerados" value={insights.length.toString()} />
         <Signal icon={CheckCircle2} label="Tarefas abertas" value={openTasks.toString()} />
         <Signal icon={TrendingUp} label="Campanhas ativas" value={activeCampaigns.toString()} />

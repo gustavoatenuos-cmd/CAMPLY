@@ -74,7 +74,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   };
 
   return (
-    <section className="h-full overflow-y-auto p-6 lg:p-8">
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
       <div className="mb-8 rounded-2xl border border-brand-line bg-brand-paper p-5 text-brand-ink shadow-brand">
         <BrandLogo />
       </div>
@@ -119,14 +119,14 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         </form>
       </Modal>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric icon={Megaphone} label="Campanhas ativas" value={activeCampaigns.length.toString()} />
         <Metric icon={AlertTriangle} label="Alertas" value={insights.filter((item) => item.level !== 'good').length.toString()} tone="warning" />
         <Metric icon={Banknote} label="A receber" value={money(amountToReceive)} />
         <Metric icon={Target} label="Projetos abertos" value={data.projects.filter((item) => item.status !== 'done').length.toString()} />
       </div>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="mt-8 grid gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
           <Panel title="Prioridades do assistente" button="Ver inteligência" onClick={() => setActiveView('intelligence')}>
             <div className="space-y-3">

@@ -85,7 +85,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
 
   return (
     <section className="flex h-full flex-col">
-      <header className="border-b border-brand-line bg-brand-ink px-6 py-5">
+      <header className="border-b border-brand-line bg-brand-ink px-4 py-4 sm:px-5 lg:px-6 lg:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Campanhas</p>
@@ -157,13 +157,13 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         </form>
       </Modal>
 
-      <div className="flex-1 overflow-x-auto p-5">
+      <div className="min-h-0 flex-1 overflow-x-auto p-4 sm:p-5">
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex h-full min-w-max gap-4">
             {campaignColumns.map((status) => {
               const cards = data.campaigns.filter((campaign) => campaign.status === status);
               return (
-                <div key={status} className="flex h-full w-[300px] flex-col rounded-xl border border-brand-line bg-brand-ink">
+                <div key={status} className="flex h-full w-[280px] flex-col rounded-xl border border-brand-line bg-brand-ink xl:w-[300px]">
                   <div className="flex items-center justify-between border-b border-brand-line p-4">
                     <h2 className="text-sm font-bold text-white">{campaignStatusLabels[status]}</h2>
                     <span className="rounded-full bg-brand-surface px-2 py-1 text-xs text-brand-muted">{cards.length}</span>

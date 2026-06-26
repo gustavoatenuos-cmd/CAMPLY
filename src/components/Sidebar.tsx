@@ -21,17 +21,17 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps) {
   return (
-    <aside className="flex h-screen w-72 shrink-0 flex-col border-r border-brand-line bg-brand-ink">
-      <div className="border-b border-brand-line p-5">
+    <aside className="flex w-full shrink-0 flex-col border-b border-brand-line bg-brand-ink xl:h-screen xl:w-72 xl:border-b-0 xl:border-r">
+      <div className="border-b border-brand-line p-3 sm:p-4 xl:p-5">
         <BrandLogo inverted />
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex gap-2 overflow-x-auto p-2 xl:block xl:flex-1 xl:space-y-1 xl:overflow-x-visible xl:p-3">
         {items.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveView(item.id)}
-            className={`flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-medium transition ${
+            className={`flex min-w-[132px] shrink-0 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition xl:w-full xl:min-w-0 xl:justify-between xl:gap-0 xl:py-3 ${
               activeView === item.id ? 'bg-brand-green text-brand-ink' : 'text-brand-soft hover:bg-white/5 hover:text-white'
             }`}
           >
@@ -46,7 +46,7 @@ export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps)
         ))}
       </nav>
 
-      <div className="border-t border-brand-line p-4 text-xs leading-relaxed text-brand-muted">
+      <div className="hidden border-t border-brand-line p-4 text-xs leading-relaxed text-brand-muted xl:block">
         Assistente para organizar campanhas, clientes, recebimentos e projetos do dia.
       </div>
     </aside>
