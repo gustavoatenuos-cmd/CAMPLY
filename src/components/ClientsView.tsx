@@ -1,5 +1,6 @@
-import { Edit3, Mail, Plus } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { Edit3, Mail, Plus, RefreshCw, Link as LinkIcon } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { createActivityLog, makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
@@ -13,7 +14,24 @@ interface ClientsViewProps {
 export function ClientsView({ data, updateData }: ClientsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [metaAdAccounts, setMetaAdAccounts] = useState<{id: string, name: string}[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const editingClient = data.clients.find((client) => client.id === editingClientId);
+
+  useEffect(() => {
+    async function fetchMetaAccounts() {
+      if (!supabase) return;
+      const { data, error } = await supabase
+        .from('meta_assets')
+        .select('asset_id, asset_name')
+        .eq('asset_type', 'adaccount');
+      if (!error && data) {
+        setMetaAdAccounts(data.map(d => ({ id: d.asset_id, name: d.asset_name })));
+      }
+    }
+    fetchMetaAccounts();
+  }, []);
 
   const saveClient = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,7 +57,58 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       adInvestmentTikTok: Number(form.get('adInvestmentTikTok') ?? 0),
       status: String(form.get('status') ?? 'lead') as ClientStatus,
       notes: String(form.get('notes') ?? ''),
+      metaAdAccountId: String(form.get('metaAdAccountId') ?? ''),
+      metaAdAccountName: metaAdAccounts.find(acc => acc.id === String(form.get('metaAdAccountId')))?.name,
     };
+
+    const isNewMetaLink = nextClient.metaAdAccountId && editingClient?.metaAdAccountId !== nextClient.metaAdAccountId;
+
+    if (isNewMetaLink && supabase) {
+      setIsSyncing(true);
+      // Fetch active campaigns from edge function
+      supabase.functions.invoke('meta-sync-ads', {
+        body: { adAccountId: nextClient.metaAdAccountId }
+      }).then(({ data, error }) => {
+        setIsSyncing(false);
+        if (data?.campaigns && Array.isArray(data.campaigns)) {
+          const fetchedCampaigns = data.campaigns.map((c: any) => ({
+            id: makeId('campaign'),
+            clientId: nextClient.id,
+            name: c.name,
+            platform: 'Meta Ads' as const,
+            status: 'active' as const,
+            objective: c.objective,
+            budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Graph API returns budget in cents usually, check docs but usually /100 or keep raw if small
+            spent: Number(c.insights?.spend || 0),
+            results: Number(c.insights?.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0),
+            activeCreatives: c.activeAdsData?.length || 0,
+            lastOptimizedAt: new Date().toISOString().slice(0, 10),
+            nextAction: '',
+            priority: 'medium' as const,
+            metaCampaignId: c.id,
+            activeAdsData: c.activeAdsData
+          }));
+          
+          updateData(curr => ({
+            ...curr,
+            campaigns: [...fetchedCampaigns, ...curr.campaigns],
+            activityLogs: [
+              createActivityLog({
+                action: 'campaign_created',
+                title: `${fetchedCampaigns.length} Campanhas importadas da Meta`,
+                description: `Foram sincronizadas as campanhas ativas da conta ${nextClient.metaAdAccountName}.`,
+                projectId: nextClient.projectId,
+                clientId: nextClient.id,
+                campaignId: '',
+                receivableId: '',
+                taskId: '',
+              }),
+              ...curr.activityLogs
+            ]
+          }));
+        }
+      });
+    }
 
     updateData((current) => ({
       ...current,
@@ -131,6 +200,20 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               </select>
             </label>
             <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft flex items-center gap-2"><LinkIcon size={14} className="text-[#0064e0]" /> Conta Meta Ads (Sincronização)</span>
+              <select name="metaAdAccountId" defaultValue={editingClient?.metaAdAccountId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Sem vínculo</option>
+                {metaAdAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de serviço</span>
               <select name="managementFeeType" defaultValue={editingClient?.managementFeeType ?? 'recurring'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 {billingTypes.map((type) => (
@@ -205,7 +288,10 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             >
               Cancelar
             </button>
-            <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">{editingClient ? 'Salvar alterações' : 'Salvar cliente'}</button>
+            <button disabled={isSyncing} className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink disabled:opacity-50 inline-flex items-center gap-2">
+              {isSyncing && <RefreshCw size={16} className="animate-spin" />}
+              {editingClient ? 'Salvar alterações' : 'Salvar cliente'}
+            </button>
           </div>
         </form>
       </Modal>

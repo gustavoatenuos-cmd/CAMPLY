@@ -1,6 +1,7 @@
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
-import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image, Plus, ShieldAlert, History } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image as ImageIcon, Plus, ShieldAlert, History, ExternalLink, Loader2 } from 'lucide-react';
+import { FormEvent, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money, formatDate } from '../data/camplyStore';
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
@@ -15,8 +16,29 @@ interface CampaignsViewProps {
 export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+  const [creativesModalCampaignId, setCreativesModalCampaignId] = useState<string | null>(null);
+  const [creativesData, setCreativesData] = useState<any[]>([]);
+  const [isLoadingCreatives, setIsLoadingCreatives] = useState(false);
 
   const editingCampaign = data.campaigns.find((c) => c.id === editingCampaignId);
+  const creativesCampaign = data.campaigns.find((c) => c.id === creativesModalCampaignId);
+
+  useEffect(() => {
+    if (creativesModalCampaignId && creativesCampaign?.metaCampaignId) {
+      setIsLoadingCreatives(true);
+      setCreativesData([]);
+      if (supabase) {
+        supabase.functions.invoke('meta-fetch-creatives', {
+          body: { targetId: creativesCampaign.metaCampaignId, type: 'campaign' }
+        }).then(({ data, error }) => {
+          setIsLoadingCreatives(false);
+          if (data?.ads) {
+            setCreativesData(data.ads);
+          }
+        });
+      }
+    }
+  }, [creativesModalCampaignId, creativesCampaign?.metaCampaignId]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -288,7 +310,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
               return (
                 <div className="space-y-4 pt-2">
                   <div className="flex items-center gap-2 border-b border-brand-line pb-2">
-                    <Image size={16} className="text-brand-green" />
+                    <ImageIcon size={16} className="text-brand-green" />
                     <h4 className="font-semibold text-white">Anúncios Sincronizados ({editingCampaign.activeAdsData.length})</h4>
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
@@ -385,13 +407,24 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                   )}
                                   
                                   {campaign.activeAdsData && campaign.activeAdsData.length > 0 ? (
-                                    <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-brand-green bg-brand-green/10 w-fit px-2 py-0.5 rounded-full">
-                                      <Image size={10} />
-                                      {campaign.activeAdsData.length} anúncios sincronizados
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-green bg-brand-green/10 w-fit px-2 py-0.5 rounded-full">
+                                        <ImageIcon size={10} />
+                                        {campaign.activeAdsData.length} anúncios
+                                      </div>
+                                      {campaign.metaCampaignId && (
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); setCreativesModalCampaignId(campaign.id); }}
+                                          className="flex items-center gap-1 text-[10px] font-bold text-sky-400 hover:text-sky-300 transition-colors bg-sky-400/10 px-2 py-0.5 rounded-full"
+                                        >
+                                          <ExternalLink size={10} />
+                                          Ver Criativos
+                                        </button>
+                                      )}
                                     </div>
                                   ) : campaign.activeCreatives ? (
                                     <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-sky-300 bg-sky-400/10 w-fit px-2 py-0.5 rounded-full">
-                                      <Image size={10} />
+                                      <ImageIcon size={10} />
                                       {campaign.activeCreatives} criativos ativos
                                     </div>
                                   ) : null}
@@ -439,6 +472,62 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
           </div>
         </DragDropContext>
       </div>
+
+      <Modal 
+        title="Galeria de Criativos" 
+        description={creativesCampaign ? `Visualizando anúncios da campanha: ${creativesCampaign.name}` : ''}
+        open={!!creativesModalCampaignId} 
+        onClose={() => setCreativesModalCampaignId(null)}
+      >
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
+          {isLoadingCreatives ? (
+            <div className="flex flex-col items-center justify-center py-12 text-brand-muted">
+              <Loader2 className="animate-spin mb-4" size={32} />
+              <p className="text-sm">Buscando criativos na Meta...</p>
+            </div>
+          ) : creativesData.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {creativesData.map((ad, idx) => (
+                <div key={idx} className="rounded-xl border border-brand-line bg-brand-surface overflow-hidden flex flex-col">
+                  {ad.creative?.thumbnail_url ? (
+                    <img src={ad.creative.thumbnail_url} alt="Creative" className="w-full h-40 object-cover border-b border-brand-line" />
+                  ) : (
+                    <div className="w-full h-40 bg-brand-surface2 flex items-center justify-center border-b border-brand-line">
+                      <ImageIcon size={32} className="text-brand-muted" />
+                    </div>
+                  )}
+                  <div className="p-3 flex-1 flex flex-col">
+                    <p className="text-xs font-bold text-white mb-1 line-clamp-1" title={ad.name}>{ad.name}</p>
+                    <p className="text-[10px] text-brand-muted mb-2"><span className={ad.status === 'ACTIVE' ? 'text-brand-green font-bold' : ''}>{ad.status}</span></p>
+                    
+                    {ad.creative?.title && <p className="text-xs font-semibold text-white mb-1 line-clamp-1">{ad.creative.title}</p>}
+                    {ad.creative?.body && <p className="text-[10px] text-brand-soft line-clamp-3 mb-3 flex-1">{ad.creative.body}</p>}
+                    
+                    <div className="grid grid-cols-3 gap-1 mt-auto pt-2 border-t border-brand-line">
+                      <div className="text-center">
+                        <p className="text-[9px] text-brand-muted uppercase">Gasto</p>
+                        <p className="text-xs font-bold text-white">{money(ad.metrics?.spend || 0)}</p>
+                      </div>
+                      <div className="text-center border-x border-brand-line">
+                        <p className="text-[9px] text-brand-muted uppercase">Cliques</p>
+                        <p className="text-xs font-bold text-white">{ad.metrics?.clicks || 0}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] text-brand-muted uppercase">Leads</p>
+                        <p className="text-xs font-bold text-sky-400">{ad.metrics?.leads || 0}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-brand-muted">
+              Nenhum criativo encontrado para esta campanha.
+            </div>
+          )}
+        </div>
+      </Modal>
     </section>
   );
 }

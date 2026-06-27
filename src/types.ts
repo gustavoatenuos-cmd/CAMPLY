@@ -27,7 +27,9 @@ export interface Client {
   adInvestmentYoutube: number;
   adInvestmentTikTok: number;
   status: ClientStatus;
-  notes: string;
+  notes?: string;
+  metaAdAccountId?: string;
+  metaAdAccountName?: string;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
