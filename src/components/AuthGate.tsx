@@ -33,6 +33,7 @@ export function AuthGate() {
 
     // 2. Se falhou, tentamos registrar silenciosamente (caso seja o primeiro acesso)
     if (signInError) {
+      // If it's a genuine invalid password for an existing account, the error is usually "Invalid login credentials"
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: adminEmail,
         password,
@@ -41,9 +42,9 @@ export function AuthGate() {
       if (signUpData.session) {
         window.location.reload();
       } else if (signUpError?.message.includes('already registered') || signUpError?.status === 422) {
-        setError('Senha incorreta.');
+        setError(`Erro: ${signInError.message} (Tente usar uma senha com pelo menos 6 caracteres se for o primeiro acesso)`);
       } else {
-        setError(signUpError?.message || 'Erro ao validar senha.');
+        setError(`Erro: ${signUpError?.message || signInError.message}`);
       }
     }
     
