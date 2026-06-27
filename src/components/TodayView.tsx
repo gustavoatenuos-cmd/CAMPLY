@@ -1,10 +1,11 @@
-import { Activity, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target, BarChart3 } from 'lucide-react';
+import { Activity, RefreshCw, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target, BarChart3 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
+import { supabase } from '../lib/supabase';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -20,11 +21,101 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const [selectedClientId, setSelectedClientId] = useState('');
   const [hasFinance, setHasFinance] = useState(false);
   const [dashboardPeriod, setDashboardPeriod] = useState<string>('last_7d');
+  const [syncingClientId, setSyncingClientId] = useState<string | null>(null);
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
   const priorityCampaigns = data.campaigns.filter((campaign) => campaign.priority === 'high' || campaign.status === 'optimize');
   const amountToReceive = pendingPayments.reduce((sum, item) => sum + item.amount, 0);
+
+  const handleSyncClient = async (client: any) => {
+    if (!client.metaAdAccountId || !supabase) return;
+    setSyncingClientId(client.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
+        body: { adAccountId: client.metaAdAccountId }
+      });
+      if (error || !data?.campaigns) throw new Error();
+
+      const fetchedCampaigns = data.campaigns.map((c: any) => {
+        const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
+        const spend = Number(c.insights?.spend || 0);
+        const results = c.insights?.actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+        
+        const metricsByPeriod: Record<string, any> = {};
+        if (c.insightsByPeriod) {
+          for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
+            if (!pInsights) continue;
+            const pSpend = Number((pInsights as any).spend || 0);
+            const pResults = (pInsights as any).actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+            metricsByPeriod[period] = {
+              spent: pSpend,
+              results: pResults,
+              ctr: Number((pInsights as any).ctr || 0),
+              cpc: Number((pInsights as any).cpc || 0),
+              cpr: pResults > 0 ? pSpend / pResults : 0,
+              pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+              checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+              purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+              impressions: Number((pInsights as any).impressions || 0)
+            };
+          }
+        }
+        
+        return {
+          id: makeId('campaign'),
+          clientId: client.id,
+          name: c.name,
+          platform: 'Meta Ads',
+          status: 'live',
+          objective: c.objective,
+          budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100,
+          spent: spend,
+          results: results,
+          ctr: Number(c.insights?.ctr || 0),
+          cpc: Number(c.insights?.cpc || 0),
+          cpr: results > 0 ? spend / results : 0,
+          pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+          checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+          purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+          metricsByPeriod,
+          activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
+          lastOptimizedAt: new Date().toISOString().slice(0, 10),
+          nextAction: '',
+          priority: 'medium',
+          metaCampaignId: c.id,
+          activeAdSets: c.activeAdSets || []
+        };
+      });
+
+      updateData(curr => {
+        const updatedCampaigns = curr.campaigns.map((c: any) => {
+          if (c.clientId === client.id && c.platform === 'Meta Ads') {
+            const fc = fetchedCampaigns.find((f: any) => f.metaCampaignId === c.metaCampaignId);
+            if (fc) {
+               return { ...fc, id: c.id, status: c.status !== 'launching' ? c.status : fc.status };
+            } else {
+               return { ...c, status: 'paused' };
+            }
+          }
+          return c;
+        });
+        
+        const newCampaignsToInsert = fetchedCampaigns
+          .filter((fc: any) => !curr.campaigns.some((c: any) => c.metaCampaignId === fc.metaCampaignId))
+          .map((fc: any) => ({ ...fc, id: makeId('campaign'), clientId: client.id }));
+          
+        return {
+          ...curr,
+          campaigns: [...newCampaignsToInsert, ...updatedCampaigns]
+        };
+      });
+    } catch(err) {
+      console.error(err);
+    }
+    setSyncingClientId(null);
+  };
+
 
   const toggleTask = (task: Task) => {
     updateData((current) => ({
@@ -573,7 +664,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             let clientImpressions = 0;
             
             activeCampaigns.forEach(c => {
-              const metrics = c.metricsByPeriod?.[dashboardPeriod] || c;
+              const metrics = c.metricsByPeriod?.[dashboardPeriod] || (dashboardPeriod === 'maximum' ? c : { spent: 0, results: 0, purchases: 0, impressions: 0 });
               clientSpent += (metrics.spent || 0);
               clientResults += (metrics.results || 0);
               clientPurchases += (metrics.purchases || 0);
@@ -583,7 +674,21 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             return (
               <div key={client.id} className="rounded-xl border border-brand-line bg-brand-surface p-4 hover:border-[#0064e0]/50 transition">
                 <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
-                  <h3 className="font-bold text-white">{client.name}</h3>
+                  
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white">{client.name}</h3>
+                    {client.metaAdAccountId && (
+                      <button 
+                        onClick={() => handleSyncClient(client)}
+                        disabled={syncingClientId === client.id}
+                        className="text-brand-muted hover:text-brand-green transition"
+                        title="Sincronizar com Facebook Ads"
+                      >
+                        <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
+                      </button>
+                    )}
+                  </div>
+
                   <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
                     {activeCampaigns.length} campanhas
                   </span>
