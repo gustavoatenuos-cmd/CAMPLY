@@ -142,25 +142,25 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           const assignedStatus = numCampaigns > 1 ? 'optimize' : 'live';
 
           const fetchedCampaigns = data.campaigns.map((c: any) => {
+            const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
+            
             const spend = Number(c.insights?.spend || 0);
-            const results = Number(c.insights?.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
-            const cprRaw = Number(c.insights?.cost_per_action_type?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
-            const cpr = cprRaw > 0 ? cprRaw : (results > 0 ? spend / results : 0);
+            const results = c.insights?.actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+            const cpr = results > 0 ? spend / results : 0;
 
             const metricsByPeriod: Record<string, any> = {};
             if (c.insightsByPeriod) {
               for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
                 if (!pInsights) continue;
                 const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = Number((pInsights as any).actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
-                const pCprRaw = Number((pInsights as any).cost_per_action_type?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
+                const pResults = (pInsights as any).actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
                 
                 metricsByPeriod[period] = {
                   spent: pSpend,
                   results: pResults,
                   ctr: Number((pInsights as any).ctr || 0),
                   cpc: Number((pInsights as any).cpc || 0),
-                  cpr: pCprRaw > 0 ? pCprRaw : (pResults > 0 ? pSpend / pResults : 0),
+                  cpr: pResults > 0 ? pSpend / pResults : 0,
                   pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
                   checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
                   purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),

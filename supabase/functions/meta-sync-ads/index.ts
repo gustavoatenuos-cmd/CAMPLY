@@ -43,35 +43,44 @@ serve(async (req) => {
 
     const activeCampaigns = campaignsData.data || [];
     
-    // Fetch Insights and Active Ads for each Campaign
-    const campaignsWithInsights = await Promise.all(activeCampaigns.map(async (campaign: any) => {
+    // Fetch Insights and Active Ads for each Campaign Sequentially to avoid rate limits
+    const campaignsWithInsights = [];
+    for (const campaign of activeCampaigns) {
       try {
         const periods = ['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'maximum'];
-        const insightPromises = periods.map(preset => 
-          fetchMetaGraph({
-            endpoint: `/${campaign.id}/insights`,
-            accessToken,
-            appSecret,
-            params: {
-              fields: 'impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
-              date_preset: preset 
-            }
-          }).then(res => ({ preset, data: res.data && res.data.length > 0 ? res.data[0] : null }))
-        );
+        const insightsResults = [];
+        
+        for (const preset of periods) {
+          try {
+            const res = await fetchMetaGraph({
+              endpoint: `/${campaign.id}/insights`,
+              accessToken,
+              appSecret,
+              params: {
+                fields: 'impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
+                date_preset: preset 
+              }
+            });
+            insightsResults.push({ preset, data: res.data && res.data.length > 0 ? res.data[0] : null });
+          } catch (e: any) {
+            console.warn(`Failed insight preset ${preset} for ${campaign.id}:`, e.message);
+            insightsResults.push({ preset, data: null });
+          }
+        }
 
-        const [insightsResults, adsData] = await Promise.all([
-          Promise.all(insightPromises),
-          fetchMetaGraph({
-            endpoint: `/${campaign.id}/ads`,
-            accessToken,
-            appSecret,
-            params: {
-              fields: 'id,name,status,adset{name}',
-              filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
-              limit: '50'
-            }
-          })
-        ]);
+        const adsData = await fetchMetaGraph({
+          endpoint: `/${campaign.id}/ads`,
+          accessToken,
+          appSecret,
+          params: {
+            fields: 'id,name,status,adset{name}',
+            filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+            limit: '50'
+          }
+        }).catch((e: any) => {
+          console.warn(`Failed ads for ${campaign.id}:`, e.message);
+          return { data: [] };
+        });
         
         const insightsByPeriod: Record<string, any> = {};
         insightsResults.forEach(res => {
@@ -88,21 +97,21 @@ serve(async (req) => {
           }));
         }
 
-        return {
+        campaignsWithInsights.push({
           ...campaign,
           insights: insightsByPeriod['maximum'], // default legacy behavior
           insightsByPeriod,
           activeAdsData
-        };
+        });
       } catch (err) {
         console.warn(`Failed to fetch insights/ads for campaign ${campaign.id}:`, err instanceof Error ? err.message : err);
-        return {
+        campaignsWithInsights.push({
           ...campaign,
           insights: null,
           activeAdsData: []
-        };
+        });
       }
-    }));
+    }
 
     // Log sync
     await supabaseClient.from('meta_sync_logs').insert({
