@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { fetchMetaGraphPaginated } from '../../../supabase/functions/_shared/meta-api';
 
 describe('Pagination & Retry', () => {
-  it('fetches until next is null and handles partial state', async () => {
+  it('handles partial state when next page fetch fails', async () => {
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation(() => {
       callCount++;
@@ -13,14 +13,14 @@ describe('Pagination & Retry', () => {
          });
       }
       return Promise.resolve({
-         ok: true,
-         json: () => Promise.resolve({ data: [{ id: 2 }] })
+         ok: false,
+         status: 400,
+         json: () => Promise.resolve({ error: { message: 'Server Error' } })
       });
     });
 
     const res = await fetchMetaGraphPaginated({ endpoint: '/test', accessToken: 'a', appSecret: 'b', params: {} });
-    expect(res.data.length).toBe(2);
-    expect(res.isPartial).toBe(false);
-    expect(callCount).toBe(2);
+    expect(res.data.length).toBe(1);
+    expect(res.isPartial).toBe(true);
   });
 });

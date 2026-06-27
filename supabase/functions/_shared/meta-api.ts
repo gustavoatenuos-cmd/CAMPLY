@@ -21,7 +21,7 @@ export async function generateAppSecretProof(accessToken: string, appSecret: str
 }
 
 export const META_GRAPH_VERSION = // @ts-ignore
-    Deno.env.get('META_GRAPH_VERSION') || 'v25.0';
+    (typeof Deno !== "undefined" ? Deno.env.get : () => "")('META_GRAPH_VERSION') || 'v25.0';
 export const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 export interface MetaApiOptions {

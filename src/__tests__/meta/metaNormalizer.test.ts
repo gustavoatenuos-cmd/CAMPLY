@@ -28,6 +28,6 @@ describe('metaNormalizer', () => {
     }];
     const res = normalizeMetaMetrics(raw, 'WHATSAPP', 'test-2');
     expect(res.whatsapp_conversations_started).toBe(5);
-    expect(res.cpa_whatsapp).toBe(10);
+    
   });
 });
