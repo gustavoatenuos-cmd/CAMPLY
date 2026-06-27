@@ -1,5 +1,5 @@
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
-import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image as ImageIcon, Plus, ShieldAlert, History, ExternalLink, Loader2 } from 'lucide-react';
+import { Target, MessageSquare, TrendingUp, TrendingDown, Eye, CheckCircle2, PlayCircle, BarChart3, Edit3, Image as ImageIcon, Plus, ShieldAlert, History, ExternalLink, Loader2, Link as LinkIcon } from 'lucide-react';
 import { FormEvent, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money, formatDate } from '../data/camplyStore';
@@ -23,7 +23,48 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
 
   const editingCampaign = data.campaigns.find((c) => c.id === editingCampaignId);
   const creativesCampaign = data.campaigns.find((c) => c.id === creativesModalCampaignId);
-  const activeMetrics = editingCampaign?.metricsByPeriod?.[selectedPeriod] || editingCampaign;
+  const isEditingMatrix = editingCampaign?.isMatrix || (!editingCampaign?.metaCampaignId && !!editingCampaign);
+  const subCampaigns = isEditingMatrix ? data.campaigns.filter(c => editingCampaign?.subCampaignIds?.includes(c.id)) : [];
+  
+  let activeMetrics = editingCampaign?.metricsByPeriod?.[selectedPeriod] || editingCampaign || {} as any;
+  let aggregatedAdSets = editingCampaign?.activeAdSets || [];
+  
+  if (isEditingMatrix) {
+    let spent = 0;
+    let results = 0;
+    let pageViews = 0;
+    let checkouts = 0;
+    let purchases = 0;
+    let impressions = 0;
+    let activeCreatives = 0;
+    let allAdSets: any[] = [];
+    
+    subCampaigns.forEach(sub => {
+       const subMetrics = sub.metricsByPeriod?.[selectedPeriod] || sub;
+       spent += (subMetrics.spent || 0);
+       results += (subMetrics.results || 0);
+       pageViews += (subMetrics.pageViews || 0);
+       checkouts += (subMetrics.checkouts || 0);
+       purchases += (subMetrics.purchases || 0);
+       impressions += (subMetrics.impressions || 0);
+       activeCreatives += (sub.activeCreatives || 0);
+       if (sub.activeAdSets) {
+         allAdSets = [...allAdSets, ...sub.activeAdSets];
+       }
+    });
+    
+    activeMetrics = {
+      ...activeMetrics,
+      spent,
+      results,
+      pageViews,
+      checkouts,
+      purchases,
+      impressions,
+      cpr: results > 0 ? spent / results : 0,
+    };
+    aggregatedAdSets = allAdSets;
+  }
 
   useEffect(() => {
     setSelectedPeriod('maximum');
@@ -77,8 +118,11 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
     const form = new FormData(event.currentTarget);
     
     if (editingCampaign) {
-      const spent = Number(form.get('spent') ?? editingCampaign.spent);
-      const results = Number(form.get('results') ?? editingCampaign.results ?? 0);
+      const isMatrix = editingCampaign.isMatrix || (!editingCampaign.metaCampaignId);
+      const spent = isMatrix ? (activeMetrics.spent || 0) : Number(form.get('spent') ?? editingCampaign.spent);
+      const results = isMatrix ? (activeMetrics.results || 0) : Number(form.get('results') ?? editingCampaign.results ?? 0);
+      const activeCreatives = isMatrix ? subCampaigns.reduce((acc, sub) => acc + (sub.activeCreatives || 0), 0) : Number(form.get('activeCreatives') ?? editingCampaign.activeCreatives ?? 0);
+      const subCampaignIds = form.getAll('subCampaignIds').map(String);
       
       const updatedCampaign: Campaign = {
         ...editingCampaign,
@@ -86,13 +130,15 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         budget: Number(form.get('budget') ?? editingCampaign.budget),
         spent,
         results,
-        activeCreatives: Number(form.get('activeCreatives') ?? editingCampaign.activeCreatives ?? 0),
+        activeCreatives,
         targetResults: Number(form.get('targetResults') ?? editingCampaign.targetResults ?? 0),
         targetCPA: Number(form.get('targetCPA') ?? editingCampaign.targetCPA ?? 0),
         lastOptimizedAt: String(form.get('lastOptimizedAt') ?? editingCampaign.lastOptimizedAt),
         nextAction: String(form.get('nextAction') ?? editingCampaign.nextAction),
         status: String(form.get('status') ?? editingCampaign.status) as CampaignStatus,
         priority: String(form.get('priority') ?? editingCampaign.priority) as Priority,
+        isMatrix,
+        subCampaignIds: isMatrix ? subCampaignIds : editingCampaign.subCampaignIds,
       };
 
       updateData((current) => ({
@@ -130,6 +176,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         lastOptimizedAt: new Date().toISOString().slice(0, 10),
         nextAction: '',
         priority: String(form.get('priority') ?? 'medium') as Priority,
+        isMatrix: true,
       };
 
       updateData((current) => ({
@@ -260,7 +307,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   <Target size={16} className="text-brand-green" />
                   <h4 className="font-semibold text-white">Inteligência Operacional</h4>
                 </div>
-                <Field label="Criativos no ar" name="activeCreatives" type="number" min="0" defaultValue={editingCampaign.activeCreatives} placeholder="Quantos anúncios ativos?" />
+                <Field label="Criativos no ar" name="activeCreatives" type="number" min="0" value={activeMetrics?.activeCreatives || editingCampaign.activeCreatives || 0} readOnly={isEditingMatrix} placeholder="Quantos anúncios ativos?" />
                 <Field label="Meta de Resultados (Volume)" name="targetResults" type="number" min="0" defaultValue={editingCampaign.targetResults} placeholder="Ex: 50 leads" />
                 <MoneyField label="Custo Desejado (CPA Alvo)" name="targetCPA" defaultValue={editingCampaign.targetCPA} />
                 <MoneyField label="Verba Planejada" name="budget" defaultValue={editingCampaign.budget} />
@@ -271,8 +318,8 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   <BarChart3 size={16} className="text-sky-400" />
                   <h4 className="font-semibold text-white">Performance Atual</h4>
                 </div>
-                <MoneyField label="Valor já gasto" name="spent" defaultValue={activeMetrics?.spent} />
-                <Field label="Resultados Obtidos" name="results" type="number" min="0" defaultValue={activeMetrics?.results} />
+                <MoneyField label="Valor já gasto" name="spent" value={activeMetrics?.spent || 0} readOnly={isEditingMatrix} />
+                <Field label="Resultados Obtidos" name="results" type="number" min="0" value={activeMetrics?.results || 0} readOnly={isEditingMatrix} />
                 
                 {activeMetrics?.results && activeMetrics?.results > 0 ? (
                   <div className="rounded-lg bg-brand-surface p-3">
@@ -299,6 +346,38 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                 )}
               </div>
             </div>
+
+            {isEditingMatrix && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 border-b border-brand-line pb-2">
+                  <LinkIcon size={16} className="text-indigo-400" />
+                  <h4 className="font-semibold text-white">Vincular Subcampanhas (Facebook Ads)</h4>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
+                  {data.campaigns.filter(c => c.clientId === editingCampaign.clientId && c.metaCampaignId).length === 0 ? (
+                    <p className="text-sm text-brand-muted">Nenhuma campanha sincronizada do Facebook para este cliente.</p>
+                  ) : (
+                    data.campaigns
+                      .filter(c => c.clientId === editingCampaign.clientId && c.metaCampaignId)
+                      .map(sub => (
+                        <label key={sub.id} className="flex items-center gap-3 rounded bg-brand-surface p-2 border border-brand-line/50 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            name="subCampaignIds" 
+                            value={sub.id} 
+                            defaultChecked={editingCampaign.subCampaignIds?.includes(sub.id)}
+                            className="h-4 w-4 rounded border-brand-line bg-brand-ink text-brand-green focus:ring-brand-green focus:ring-offset-brand-surface"
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-white">{sub.name}</p>
+                            <p className="text-[10px] text-brand-muted">{sub.objective} • {money(sub.spent)} gasto</p>
+                          </div>
+                        </label>
+                      ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Advanced Metrics Section */}
             {(activeMetrics?.ctr !== undefined || activeMetrics?.cpc !== undefined || activeMetrics?.cpr !== undefined || activeMetrics?.pageViews !== undefined) && (
@@ -441,7 +520,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex h-full min-w-max gap-4">
             {campaignColumns.map((status) => {
-              const cards = data.campaigns.filter((campaign) => campaign.status === status);
+              const cards = data.campaigns.filter((campaign) => campaign.status === status && (campaign.isMatrix || !campaign.metaCampaignId));
               return (
                 <div key={status} className="flex h-full w-[280px] flex-col rounded-xl border border-brand-line bg-brand-ink xl:w-[300px]">
                   <div className="flex items-center justify-between border-b border-brand-line p-4">

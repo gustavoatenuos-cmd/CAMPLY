@@ -60,6 +60,8 @@ export interface Campaign {
   nextAction: string;
   priority: Priority;
   metaCampaignId?: string;
+  isMatrix?: boolean;
+  subCampaignIds?: string[];
   activeCreatives?: number;
   activeAdSets?: Array<{
     id: string;
