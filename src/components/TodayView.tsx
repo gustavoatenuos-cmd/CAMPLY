@@ -6,6 +6,7 @@ import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
 import { supabase } from '../lib/supabase';
+import { syncClientMeta } from '../lib/meta/metaSyncService';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -29,37 +30,21 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const amountToReceive = pendingPayments.reduce((sum, item) => sum + item.amount, 0);
 
   const handleSyncClient = async (client: any) => {
-    if (!client.metaAdAccountId || !supabase) return;
     setSyncingClientId(client.id);
     try {
-      const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
-        body: { adAccountId: client.metaAdAccountId }
+      const { campaigns, runId } = await syncClientMeta(client, data.campaigns);
+      updateData(prev => {
+        const otherCampaigns = prev.campaigns.filter(c => c.clientId !== client.id);
+        const newCampaigns = campaigns.map(c => ({...c, clientId: client.id}));
+        return { ...prev, campaigns: [...otherCampaigns, ...newCampaigns] };
       });
-      if (error || !data?.campaigns) throw new Error();
-
-      const fetchedCampaigns = data.campaigns.map((c: any) => {
-        // const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
-        const spend = Number(c.insights?.spend || 0);
-        const results = c.results || 0; // Legacy fallback
-        
-        const metricsByPeriod: Record<string, any> = {};
-        if (c.insightsByPeriod) {
-          for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
-            if (!pInsights) continue;
-            const pSpend = Number((pInsights as any).spend || 0);
-            const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
-            metricsByPeriod[period] = {
-              spent: pSpend,
-              results: pResults,
-              ctr: Number((pInsights as any).ctr || 0),
-              cpc: Number((pInsights as any).cpc || 0),
-              cpr: pResults > 0 ? pSpend / pResults : 0,
-              pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-              conversations: Number((pInsights as any).actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
-              checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-              purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
-              impressions: Number((pInsights as any).impressions || 0)
-            };
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao sincronizar.');
+    } finally {
+      setSyncingClientId(null);
+    }
+  };
           }
         }
         
@@ -76,10 +61,10 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           ctr: Number(c.insights?.ctr || 0),
           cpc: Number(c.insights?.cpc || 0),
           cpr: results > 0 ? spend / results : 0,
-          pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-          conversations: Number(c.insights?.actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
-          checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-          purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+          
+           a: any) => sum + Number(a.value), 0) || 0),
+          
+          
           metricsByPeriod,
           activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
           lastOptimizedAt: new Date().toISOString().slice(0, 10),
