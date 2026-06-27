@@ -17,7 +17,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
   useEffect(() => {
     if (isOpen && syncRunId) {
       setLoading(true);
-      supabase.from('meta_normalized_metrics')
+      supabase!.from('meta_normalized_metrics')
         .select('*')
         .eq('sync_run_id', syncRunId)
         .then(({ data: metrics, error: err }) => {
@@ -29,7 +29,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
   }, [isOpen, syncRunId]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Conciliação de Dados Meta Ads">
+    <Modal open={isOpen} onClose={onClose} title="Conciliação de Dados Meta Ads">
       <div className="p-4 space-y-4 text-sm text-white">
         {loading && <p>Carregando snapshots...</p>}
         {error && <p className="text-red-500">{error}</p>}
