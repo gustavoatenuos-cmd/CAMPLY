@@ -55,28 +55,52 @@ serve(async (req) => {
 
     const activeCampaigns = campaignsData.data || [];
     
-    // Fetch Insights for each Campaign
+    // Fetch Insights and Active Ads for each Campaign
     const campaignsWithInsights = await Promise.all(activeCampaigns.map(async (campaign: any) => {
       try {
-        const insightsData = await fetchMetaGraph({
-          endpoint: `/${campaign.id}/insights`,
-          accessToken,
-          appSecret,
-          params: {
-            fields: 'impressions,clicks,spend,cpc,cpa,actions',
-            date_preset: 'maximum' 
-          }
-        });
+        const [insightsData, adsData] = await Promise.all([
+          fetchMetaGraph({
+            endpoint: `/${campaign.id}/insights`,
+            accessToken,
+            appSecret,
+            params: {
+              fields: 'impressions,clicks,spend,cpc,cpa,actions',
+              date_preset: 'maximum' 
+            }
+          }),
+          fetchMetaGraph({
+            endpoint: `/${campaign.id}/ads`,
+            accessToken,
+            appSecret,
+            params: {
+              fields: 'id,name,status,adset{name}',
+              filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+              limit: '50'
+            }
+          })
+        ]);
         
+        let activeAdsData = [];
+        if (adsData.data && adsData.data.length > 0) {
+          activeAdsData = adsData.data.map((ad: any) => ({
+            id: ad.id,
+            name: ad.name,
+            status: ad.status,
+            adset_name: ad.adset?.name
+          }));
+        }
+
         return {
           ...campaign,
-          insights: insightsData.data && insightsData.data.length > 0 ? insightsData.data[0] : null
+          insights: insightsData.data && insightsData.data.length > 0 ? insightsData.data[0] : null,
+          activeAdsData
         };
       } catch (err) {
-        console.warn(`Failed to fetch insights for campaign ${campaign.id}:`, err.message);
+        console.warn(`Failed to fetch insights/ads for campaign ${campaign.id}:`, err.message);
         return {
           ...campaign,
-          insights: null
+          insights: null,
+          activeAdsData: []
         };
       }
     }));

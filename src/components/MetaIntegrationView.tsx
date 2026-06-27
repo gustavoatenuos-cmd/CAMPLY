@@ -109,6 +109,39 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
   const handleImport = () => {
     if (!importingCampaign || !selectedClientId) return;
 
+    const selectedClient = data.clients.find(c => c.id === selectedClientId);
+    
+    // Meta uses cents for budget
+    const metaBudget = parseFloat(importingCampaign.daily_budget || importingCampaign.lifetime_budget || '0') / 100;
+    const contractBudget = selectedClient?.adInvestmentMeta || 0;
+    const spent = parseFloat(importingCampaign.insights?.spend || '0');
+    
+    // Determine cross-reference insights
+    const newInsights: any[] = [];
+    
+    // 1. Budget Discrepancy Insight
+    if (metaBudget * 30 > contractBudget && contractBudget > 0) {
+      newInsights.push({
+        id: crypto.randomUUID(),
+        level: 'warning',
+        title: 'Verba Meta Ads superior ao Contrato',
+        description: `A campanha ${importingCampaign.name} tem orçamento que projeta R$ ${(metaBudget * 30).toFixed(2)}/mês, mas o contrato prevê R$ ${contractBudget.toFixed(2)}.`,
+        recommendation: 'Reduza o orçamento da campanha na Meta ou faça um aditivo no contrato do cliente.'
+      });
+    }
+
+    // 2. Financial Discrepancy (Client is paused/overdue but Campaign is LIVE)
+    const hasOverdue = data.receivables.some(r => r.clientId === selectedClientId && r.status === 'overdue');
+    if (hasOverdue || selectedClient?.status === 'paused') {
+      newInsights.push({
+        id: crypto.randomUUID(),
+        level: 'critical',
+        title: 'Campanha rodando com Pendência Financeira',
+        description: `O cliente ${selectedClient?.name} possui pendências, mas a campanha ${importingCampaign.name} está ATIVA gerando custos.`,
+        recommendation: 'Pause a campanha na Meta Ads imediatamente até a regularização do cliente.'
+      });
+    }
+
     const newCampaign: Campaign = {
       id: crypto.randomUUID(),
       clientId: selectedClientId,
@@ -116,11 +149,12 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       platform: 'Meta Ads',
       status: 'live',
       objective: importingCampaign.objective || 'Outro',
-      budget: parseFloat(importingCampaign.daily_budget || importingCampaign.lifetime_budget || '0') / 100, // Meta uses cents
-      spent: parseFloat(importingCampaign.insights?.spend || '0'),
+      budget: metaBudget,
+      spent: spent,
+      activeAdsData: importingCampaign.activeAdsData || [],
       lastOptimizedAt: new Date().toISOString(),
       nextAction: 'Monitorar resultados e otimizar',
-      priority: 'medium',
+      priority: hasOverdue ? 'high' : 'medium',
       results: parseInt(importingCampaign.insights?.actions || importingCampaign.insights?.clicks || '0'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -130,11 +164,38 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     updateData((prev) => ({
       ...prev,
       campaigns: [...prev.campaigns, newCampaign],
+      agentLogs: newInsights.length > 0 ? [
+        ...prev.agentLogs,
+        ...newInsights.map(insight => ({
+          id: crypto.randomUUID(),
+          relatedEntityId: newCampaign.id,
+          relatedEntityType: 'campaign' as const,
+          analysisType: 'Sincronização Meta Ads',
+          classification: insight.level,
+          reason: insight.title + ' - ' + insight.description,
+          createdAt: new Date().toISOString(),
+        }))
+      ] : prev.agentLogs,
+      agentAlerts: newInsights.length > 0 ? [
+        ...prev.agentAlerts,
+        ...newInsights.map(insight => ({
+          id: crypto.randomUUID(),
+          relatedEntityId: newCampaign.id,
+          relatedEntityType: 'campaign' as const,
+          clientId: selectedClientId,
+          title: insight.title,
+          message: insight.description,
+          severity: insight.level,
+          status: 'active' as const,
+          suggestedAction: insight.recommendation,
+          triggeredAt: new Date().toISOString(),
+        }))
+      ] : prev.agentAlerts
     }));
 
     setImportingCampaign(null);
     setSelectedClientId('');
-    alert('Campanha importada com sucesso para o CRM!');
+    alert('Campanha importada com sucesso para o CRM! ' + (newInsights.length > 0 ? `${newInsights.length} alertas gerados.` : ''));
   };
 
   return (
@@ -266,6 +327,11 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
                           <div>
                             <p className="font-bold text-white">{camp.name}</p>
                             <p className="text-xs text-brand-soft">Gasto: R$ {parseFloat(camp.insights?.spend || '0').toFixed(2)} • Meta ID: {camp.id}</p>
+                            {camp.activeAdsData && camp.activeAdsData.length > 0 && (
+                              <p className="mt-1 inline-flex items-center gap-1 rounded bg-brand-surface2 px-1.5 py-0.5 text-[10px] font-bold text-brand-soft">
+                                {camp.activeAdsData.length} anúncios ativos
+                              </p>
+                            )}
                           </div>
                           <button
                             disabled={isImported}

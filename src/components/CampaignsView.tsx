@@ -283,6 +283,30 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             </div>
 
             {(() => {
+              if (!editingCampaign.activeAdsData || editingCampaign.activeAdsData.length === 0) return null;
+              
+              return (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-2 border-b border-brand-line pb-2">
+                    <Image size={16} className="text-brand-green" />
+                    <h4 className="font-semibold text-white">Anúncios Sincronizados ({editingCampaign.activeAdsData.length})</h4>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
+                    {editingCampaign.activeAdsData.map(ad => (
+                      <div key={ad.id} className="flex justify-between items-center rounded bg-brand-ink p-2 border border-brand-line">
+                        <div>
+                          <p className="text-xs font-bold text-white truncate max-w-[200px]">{ad.name}</p>
+                          <p className="text-[10px] text-brand-muted mt-0.5 truncate max-w-[200px]">{ad.adset_name || 'Conjunto não especificado'}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-brand-green">ATIVO</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {(() => {
               const campaignLogs = data.activityLogs.filter(log => log.campaignId === editingCampaign.id);
               if (campaignLogs.length === 0) return null;
               
@@ -360,7 +384,12 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                     </div>
                                   )}
                                   
-                                  {campaign.activeCreatives ? (
+                                  {campaign.activeAdsData && campaign.activeAdsData.length > 0 ? (
+                                    <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-brand-green bg-brand-green/10 w-fit px-2 py-0.5 rounded-full">
+                                      <Image size={10} />
+                                      {campaign.activeAdsData.length} anúncios sincronizados
+                                    </div>
+                                  ) : campaign.activeCreatives ? (
                                     <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-sky-300 bg-sky-400/10 w-fit px-2 py-0.5 rounded-full">
                                       <Image size={10} />
                                       {campaign.activeCreatives} criativos ativos
