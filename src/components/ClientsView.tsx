@@ -68,12 +68,16 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       }).then(({ data, error }) => {
         setIsSyncing(false);
         if (data?.campaigns && Array.isArray(data.campaigns)) {
+          const numCampaigns = data.campaigns.length;
+          // Se tiver só 1 campanha, entra como 'live' (ativa). Se tiver mais, entram como 'optimize' (em otimização).
+          const assignedStatus = numCampaigns > 1 ? 'optimize' : 'live';
+
           const fetchedCampaigns = data.campaigns.map((c: any) => ({
             id: makeId('campaign'),
             clientId: nextClient.id,
             name: c.name,
             platform: 'Meta Ads' as const,
-            status: 'active' as const,
+            status: assignedStatus,
             objective: c.objective,
             budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Graph API returns budget in cents usually, check docs but usually /100 or keep raw if small
             spent: Number(c.insights?.spend || 0),
