@@ -57,7 +57,7 @@ CREATE TABLE meta_campaign_entities (
     last_synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(ad_account_id, campaign_id)
+    UNIQUE(user_id, ad_account_id, campaign_id)
 );
 
 CREATE TABLE meta_adset_entities (
@@ -75,7 +75,7 @@ CREATE TABLE meta_adset_entities (
     effective_status TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(ad_account_id, adset_id)
+    UNIQUE(user_id, ad_account_id, adset_id)
 );
 
 CREATE TABLE meta_normalized_metrics (

@@ -5,11 +5,17 @@ import { decryptToken } from '../_shared/crypto.ts'
 import { fetchMetaGraphPaginated, META_BASE_URL, generateAppSecretProof } from '../_shared/meta-api.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classifyCampaignObjective } from '../_shared/meta/campaignObjectiveClassifier.ts'
+import { normalizeMetaMetrics } from '../_shared/meta/metaNormalizer.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  const runId = crypto.randomUUID();
+  let syncStatus = 'success';
+  let isPartialSync = false;
+  let errorMessage = '';
 
   try {
     const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req)
@@ -27,14 +33,14 @@ serve(async (req) => {
     const { adAccountId, syncRunId, periods = ['last_7d'] } = await req.json();
     if (!adAccountId) throw new Error('adAccountId is required');
 
+    const usedRunId = syncRunId || runId;
+
     const accessToken = await decryptToken(integration.access_token_encrypted)
     const appSecret = Deno.env.get('META_APP_SECRET')!
 
-    const runId = syncRunId || crypto.randomUUID();
-    
     // Create Sync Run Record
     await supabaseClient.from('meta_sync_runs').insert({
-      id: runId,
+      id: usedRunId,
       user_id: userId,
       integration_id: integration.id,
       ad_account_id: adAccountId,
@@ -55,6 +61,10 @@ serve(async (req) => {
       }
     });
 
+    if (campaignsRes.isPartial) {
+       isPartialSync = true;
+       errorMessage += 'Campaign fetch was partial. ';
+    }
     const activeCampaigns = campaignsRes.data || [];
 
     // 2. Fetch Ad Sets
@@ -69,12 +79,13 @@ serve(async (req) => {
       }
     });
     
+    if (adSetsRes.isPartial) {
+       isPartialSync = true;
+       errorMessage += 'AdSet fetch was partial. ';
+    }
     const activeAdSets = adSetsRes.data || [];
 
     // 3. Fetch Insights
-    // NOTE: This can be optimized by fetching at ad_account level with breakdowns, but since attribution 
-    // settings might differ, fetching at campaign level is what we had. We will continue fetching at 
-    // campaign level for simplicity and correctness of action attribution.
     const insightsByPeriod: Record<string, any[]> = {};
     for (const preset of periods) {
       const insightsRes = await fetchMetaGraphPaginated({
@@ -88,13 +99,17 @@ serve(async (req) => {
           limit: '100'
         }
       });
+      if (insightsRes.isPartial) {
+         isPartialSync = true;
+         errorMessage += `Insights fetch for ${preset} was partial. `;
+      }
       insightsByPeriod[preset] = insightsRes.data || [];
       
       // Save Snapshot for Insights
       if (insightsRes.data.length > 0) {
         await supabaseClient.from('meta_raw_snapshots').insert({
           user_id: userId,
-          sync_run_id: runId,
+          sync_run_id: usedRunId,
           ad_account_id: adAccountId,
           entity_level: 'account_period',
           entity_id: preset,
@@ -119,10 +134,12 @@ serve(async (req) => {
         meta_status: campaign.status,
         effective_status: campaign.effective_status,
         last_synced_at: new Date().toISOString()
-      }, { onConflict: 'ad_account_id, campaign_id' });
+      }, { onConflict: 'user_id, ad_account_id, campaign_id' });
 
       // Upsert AdSet Entities and classify
       const classifiedAdsets = [];
+      let campaignClassifiedObjective = 'UNCLASSIFIED';
+
       for (const adset of campaignAdSets) {
         await supabaseClient.from('meta_adset_entities').upsert({
           user_id: userId,
@@ -136,7 +153,7 @@ serve(async (req) => {
           attribution_setting: adset.attribution_setting,
           meta_status: adset.status,
           effective_status: adset.effective_status
-        }, { onConflict: 'ad_account_id, adset_id' });
+        }, { onConflict: 'user_id, ad_account_id, adset_id' });
         
         const cObj = classifyCampaignObjective({
            campaignObjective: campaign.objective,
@@ -147,43 +164,79 @@ serve(async (req) => {
         
         classifiedAdsets.push({ ...adset, classified_objective: cObj });
       }
+      
+      if (classifiedAdsets.length > 0) {
+         campaignClassifiedObjective = classifiedAdsets[0].classified_objective;
+      }
 
       const campaignInsights: Record<string, any> = {};
+      const normalizedMetricsByPeriod: Record<string, Record<string, number>> = {};
+
       for (const preset of periods) {
         const row = insightsByPeriod[preset].find((r: any) => r.campaign_id === campaign.id);
         campaignInsights[preset] = row || null;
+        
+        if (row) {
+           const normalized = normalizeMetaMetrics([row], campaignClassifiedObjective, campaign.id);
+           normalizedMetricsByPeriod[preset] = normalized;
+           
+           for (const [metricId, val] of Object.entries(normalized)) {
+             await supabaseClient.from('meta_normalized_metrics').insert({
+               user_id: userId,
+               sync_run_id: usedRunId,
+               ad_account_id: adAccountId,
+               campaign_id: campaign.id,
+               metric_id: metricId,
+               metric_value: val,
+               date_start: row.date_start,
+               date_stop: row.date_stop,
+               timezone: 'America/Sao_Paulo'
+             });
+           }
+        }
       }
 
       campaignsWithInsights.push({
         ...campaign,
         classifiedAdsets,
-        insightsByPeriod: campaignInsights
+        classifiedObjective: campaignClassifiedObjective,
+        insightsByPeriod: campaignInsights,
+        normalizedMetricsByPeriod
       });
     }
 
-    // Update Sync Run to Success
-    await supabaseClient.from('meta_sync_runs').update({
-       status: 'success',
-       finished_at: new Date().toISOString(),
-       records_fetched: activeCampaigns.length
-    }).eq('id', runId);
-    
-    // Also log to the legacy meta_sync_logs to not break other views immediately
-    await supabaseClient.from('meta_sync_logs').insert({
-      integration_id: integration.id,
-      sync_type: 'campaigns_and_insights',
-      endpoint: `/${adAccountId}/campaigns`,
-      status: 'success',
-      metadata: { runId, campaigns_count: campaignsWithInsights.length }
-    });
+    syncStatus = isPartialSync ? 'partial' : 'success';
 
-    return new Response(JSON.stringify({ success: true, runId, campaigns: campaignsWithInsights }), {
+    await supabaseClient.from('meta_sync_runs').update({
+       status: syncStatus,
+       finished_at: new Date().toISOString(),
+       records_fetched: activeCampaigns.length,
+       metadata: { error_message: errorMessage }
+    }).eq('id', usedRunId);
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      status: syncStatus,
+      runId: usedRunId, 
+      campaigns: campaignsWithInsights,
+      message: errorMessage
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Meta Sync Error:', error)
+    
+    const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req).catch(() => ({ user: null, adminClient: null }));
+    if (supabaseClient) {
+      await supabaseClient.from('meta_sync_runs').update({
+         status: 'failed',
+         finished_at: new Date().toISOString(),
+         metadata: { error_message: error.message }
+      }).eq('id', runId);
+    }
+    
     return errorResponse(error, corsHeaders)
   }
 })

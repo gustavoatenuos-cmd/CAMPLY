@@ -133,7 +133,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         activeCreatives,
         targetResults: Number(form.get('targetResults') ?? editingCampaign.targetResults ?? 0),
         targetCPA: Number(form.get('targetCPA') ?? editingCampaign.targetCPA ?? 0),
-        lastOptimizedAt: String(form.get('lastOptimizedAt') ?? editingCampaign.lastOptimizedAt),
+        
         nextAction: String(form.get('nextAction') ?? editingCampaign.nextAction),
         status: String(form.get('status') ?? editingCampaign.status) as CampaignStatus,
         priority: String(form.get('priority') ?? editingCampaign.priority) as Priority,
@@ -173,7 +173,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         objective: String(form.get('objective') ?? 'Tráfego'),
         budget: Number(form.get('budget') ?? 0),
         spent: 0,
-        lastOptimizedAt: new Date().toISOString().slice(0, 10),
+         10),
         nextAction: '',
         priority: String(form.get('priority') ?? 'medium') as Priority,
         isMatrix: true,

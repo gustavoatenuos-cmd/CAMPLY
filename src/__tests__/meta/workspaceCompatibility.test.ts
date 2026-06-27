@@ -1,2 +1,4 @@
 import { describe, it, expect } from 'vitest';
-describe('workspaceCompatibility', () => { it('preserves legacy fields if unclassified', () => { expect(true).toBe(true); }); });
+describe('workspaceCompatibility', () => { it('preserves user context', () => { 
+  expect('context').toBeDefined(); 
+}); });

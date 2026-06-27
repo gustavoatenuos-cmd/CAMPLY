@@ -25,7 +25,7 @@ export function normalizeMetaMetrics(
         found = true;
       }
     } else if (metricDef.source === 'actions') {
-      let matchedActions = [];
+      let matchedActions: any[] = [];
       rawInsights.forEach(row => {
         if (row.actions && Array.isArray(row.actions)) {
           matchedActions.push(...row.actions.filter((a: any) => metricDef.acceptedActionTypes?.includes(a.action_type)));

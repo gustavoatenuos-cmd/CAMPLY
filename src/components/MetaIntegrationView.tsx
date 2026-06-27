@@ -145,10 +145,10 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       spent: spent,
       metaCampaignId: importingCampaign.id,
       activeAdSets: importingCampaign.activeAdsData || [],
-      lastOptimizedAt: new Date().toISOString(),
+      
       nextAction: 'Monitorar resultados e otimizar',
       priority: hasOverdue ? 'high' : 'medium',
-      results: parseInt(importingCampaign.insights?.actions || importingCampaign.insights?.clicks || '0'),
+      results: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),

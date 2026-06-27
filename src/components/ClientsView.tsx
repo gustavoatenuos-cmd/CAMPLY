@@ -154,7 +154,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
                 if (!pInsights) continue;
                 const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
+                const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
                 
                 metricsByPeriod[period] = {
                   spent: pSpend,
@@ -188,7 +188,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
               metricsByPeriod,
               activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
-              lastOptimizedAt: new Date().toISOString().slice(0, 10),
+               10),
               nextAction: '',
               priority: 'medium' as const,
               metaCampaignId: c.id,

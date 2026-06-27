@@ -47,16 +47,15 @@ export function classifyCampaignObjective(context: ClassifierEntityContext): Met
   }
 
   // 4. TRAFFIC
+  if (destType === 'INSTAGRAM_PROFILE' || optGoal === 'PROFILE_VISITS') {
+    return 'PROFILE_VISITS';
+  }
+
   if (obj === 'OUTCOME_TRAFFIC' || obj === 'LINK_CLICKS') {
     return 'TRAFFIC';
   }
 
-  // 5. PROFILE VISITS
-  if (obj === 'OUTCOME_TRAFFIC' || obj === 'OUTCOME_ENGAGEMENT') {
-    if (destType === 'INSTAGRAM_PROFILE' || optGoal === 'PROFILE_VISITS') {
-      return 'PROFILE_VISITS';
-    }
-  }
+  
 
   // 6. ENGAGEMENT
   if (obj === 'OUTCOME_ENGAGEMENT' || obj === 'POST_ENGAGEMENT' || obj === 'PAGE_LIKES' || obj === 'EVENT_RESPONSES') {

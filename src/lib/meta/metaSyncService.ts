@@ -30,24 +30,7 @@ export async function processAndSaveSyncPayload(syncPayload: any, adAccountId: s
 
       normalizedMetricsByPeriod[period] = normalized;
       
-      if (Object.keys(normalized).length > 0) {
-         try {
-           for (const [metricId, val] of Object.entries(normalized)) {
-             await supabase.from('meta_normalized_metrics').insert({
-               sync_run_id: runId,
-               ad_account_id: adAccountId,
-               campaign_id: campaign.id,
-               metric_id: metricId,
-               metric_value: val,
-               date_start: rawInsightsArray[0]?.date_start,
-               date_stop: rawInsightsArray[0]?.date_stop,
-               timezone: 'America/Sao_Paulo' // Default fallback
-             });
-           }
-         } catch(e) {
-           console.error('Failed saving metric to db', e);
-         }
-      }
+      
     }
 
     normalizedCampaigns.push({
