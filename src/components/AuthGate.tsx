@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Hero } from './ui/hero-1';
 
 export function AuthGate() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,34 +18,31 @@ export function AuthGate() {
     }
 
     setLoading(true);
-    
-    const adminEmail = 'admin@camply.crm';
 
     // 1. Tentar fazer login normal
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: adminEmail,
+      email: email.trim(),
       password,
     });
 
     if (signInData.session) {
-      window.location.reload(); // Reload to trigger auth state change
+      window.location.reload();
       return;
     }
 
-    // 2. Se falhou, tentamos registrar silenciosamente (caso seja o primeiro acesso)
+    // 2. Se falhou, tentamos registrar (caso seja o primeiro acesso)
     if (signInError) {
-      // If it's a genuine invalid password for an existing account, the error is usually "Invalid login credentials"
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: adminEmail,
+        email: email.trim(),
         password,
       });
 
       if (signUpData.session) {
         window.location.reload();
       } else if (signUpError?.message.includes('already registered') || signUpError?.status === 422) {
-        setError(`Erro: ${signInError.message} (Tente usar uma senha com pelo menos 6 caracteres se for o primeiro acesso)`);
+        setError(`E-mail ou senha incorretos. (Se for o primeiro acesso, use no mínimo 6 caracteres na senha)`);
       } else {
-        setError(`Erro: ${signUpError?.message || signInError.message}`);
+        setError(signUpError?.message || 'Erro ao fazer login/cadastro.');
       }
     }
     
@@ -62,13 +60,22 @@ export function AuthGate() {
           <section className="w-full max-w-sm text-center">
             <form onSubmit={submit} className="flex flex-col items-center space-y-4">
               <input
+                type="email"
+                aria-label="E-mail de Acesso"
+                placeholder="Seu e-mail"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
+                autoFocus
+                required
+              />
+              <input
                 type="password"
-                aria-label="Senha de Acesso Mestre"
-                placeholder="Senha de Acesso Mestre"
+                aria-label="Senha"
+                placeholder="Sua senha (mínimo 6 caracteres)"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
-                autoFocus
                 required
               />
 
@@ -78,7 +85,7 @@ export function AuthGate() {
                 disabled={loading}
                 className="mt-2 w-fit rounded-full bg-white px-8 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-70 md:w-52"
               >
-                {loading ? 'Entrando...' : 'Entrar'}
+                {loading ? 'Entrando...' : 'Entrar / Criar Conta'}
               </button>
             </form>
           </section>
