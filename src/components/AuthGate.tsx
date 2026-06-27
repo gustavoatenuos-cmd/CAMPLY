@@ -18,7 +18,7 @@ export function AuthGate() {
 
     setLoading(true);
     
-    const adminEmail = 'admin@camply.com';
+    const adminEmail = 'admin@camply.crm';
 
     // 1. Tentar fazer login normal
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
