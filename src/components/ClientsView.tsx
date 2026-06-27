@@ -194,10 +194,24 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               activeAdsData: c.activeAdsData
             };
           });
-          
-          updateData(curr => ({
+          updateData(curr => {
+            const updatedCampaigns = curr.campaigns.map(c => {
+              if (c.clientId === nextClient.id && c.platform === 'Meta Ads') {
+                const fc = fetchedCampaigns.find(f => f.metaCampaignId === c.metaCampaignId);
+                if (fc) {
+                  return { ...fc, id: c.id, status: c.status !== 'launching' && c.status !== 'finished' ? c.status : fc.status }; // if it was already active in crm, keep its system status like 'optimize', else fc.status
+                } else {
+                  return { ...c, status: 'paused' };
+                }
+              }
+              return c;
+            });
+            
+            const newCampaigns = fetchedCampaigns.filter(fc => !curr.campaigns.some(c => c.clientId === nextClient.id && c.platform === 'Meta Ads' && c.metaCampaignId === fc.metaCampaignId));
+
+            return {
             ...curr,
-            campaigns: [...fetchedCampaigns, ...curr.campaigns],
+            campaigns: [...newCampaigns, ...updatedCampaigns],
             activityLogs: [
               createActivityLog({
                 action: 'campaign_created',
@@ -211,7 +225,8 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               }),
               ...curr.activityLogs
             ]
-          }));
+          };
+          });
         }
       });
     }
