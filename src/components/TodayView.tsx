@@ -47,7 +47,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
             if (!pInsights) continue;
             const pSpend = Number((pInsights as any).spend || 0);
-            const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
+            const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
             metricsByPeriod[period] = {
               spent: pSpend,
               results: pResults,
@@ -82,7 +82,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
           metricsByPeriod,
           activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
-           10),
+          lastOptimizedAt: new Date().toISOString().slice(0, 10),
           nextAction: '',
           priority: 'medium',
           metaCampaignId: c.id,
@@ -209,7 +209,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           objective: 'Tráfego',
           budget: 0,
           spent: 0,
-          
+          lastOptimizedAt: task.dueDate,
           nextAction: 'Configuração inicial',
           priority: 'medium'
         };
@@ -407,7 +407,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
               ...d,
               campaigns: d.campaigns.map(c => c.id === campaignId ? {
                 ...c,
-                
+                lastOptimizedAt: now,
                 updatedAt: now,
                 lastActivityAt: now,
                 nextAction: `Próxima revisão: ${nextDate.toLocaleDateString('pt-BR')}`,
