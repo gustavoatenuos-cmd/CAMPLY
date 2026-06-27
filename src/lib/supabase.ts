@@ -8,8 +8,8 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl as string, supabasePublishableKey as string, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
       },
     })
   : null;

@@ -26,6 +26,33 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
       return;
     }
 
+    // Garantir sessão Supabase válida (necessária para as Edge Functions da Meta)
+    // Só cria sessão se ainda não existir uma — evita rate limits
+    if (supabase) {
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      
+      if (!existingSession) {
+        // Tentar login anônimo primeiro (sem email = sem rate limit)
+        const { error: anonErr } = await supabase.auth.signInAnonymously();
+        
+        if (anonErr) {
+          // Fallback: login com email fixo
+          const { error: signInErr } = await supabase.auth.signInWithPassword({
+            email: 'admin@camply.crm',
+            password,
+          });
+          
+          if (signInErr) {
+            // Último recurso: criar conta
+            await supabase.auth.signUp({
+              email: 'admin@camply.crm',
+              password,
+            });
+          }
+        }
+      }
+    }
+
     onUnlock();
     setLoading(false);
   };
