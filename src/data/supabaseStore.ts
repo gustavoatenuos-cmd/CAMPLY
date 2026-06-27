@@ -8,20 +8,15 @@ type WorkspaceRow = {
   updated_at: string;
 };
 
-const getUserId = async (): Promise<string | null> => {
-  const { data } = await supabase!.auth.getSession();
-  return data.session?.user.id || null;
-};
+const WORKSPACE_ID = 'gustavo-camply';
 
 export const loadRemoteData = async (): Promise<CamplyData | null> => {
   if (!isSupabaseConfigured || !supabase) return null;
-  const userId = await getUserId();
-  if (!userId) return null;
 
   const { data, error } = await supabase
     .from('camply_workspace')
     .select('data')
-    .eq('id', userId)
+    .eq('id', WORKSPACE_ID)
     .maybeSingle<Pick<WorkspaceRow, 'data'>>();
 
   if (error) {
@@ -34,11 +29,9 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
 
 export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
   if (!isSupabaseConfigured || !supabase) return false;
-  const userId = await getUserId();
-  if (!userId) return false;
 
   const { error } = await supabase.from('camply_workspace').upsert({
-    id: userId,
+    id: WORKSPACE_ID,
     data,
     updated_at: new Date().toISOString(),
   });
