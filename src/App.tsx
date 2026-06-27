@@ -24,7 +24,7 @@ const TodayView = React.lazy(() => import('./components/TodayView').then(m => ({
 const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(() => window.localStorage.getItem(AUTH_STORAGE_KEY) === 'true');
   const [session, setSession] = useState<any>(null);
   const [activeView, setActiveView] = useState<ViewId>('today');
   const [data, setData] = useState<CamplyData>(() => loadData());
@@ -35,14 +35,14 @@ export default function App() {
   useEffect(() => {
     supabase?.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setAuthenticated(!!session);
+      // We no longer overwrite the 'authenticated' state with the Supabase session, 
+      // so local master password login persists!
     });
 
     const {
       data: { subscription },
     } = supabase!.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setAuthenticated(!!session);
     });
 
     return () => subscription.unsubscribe();
@@ -128,7 +128,7 @@ export default function App() {
     return (
       <AuthGate
         onUnlock={() => {
-          window.sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+          window.localStorage.setItem(AUTH_STORAGE_KEY, 'true');
           setAuthenticated(true);
         }}
       />
