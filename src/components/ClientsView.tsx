@@ -22,12 +22,9 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
   useEffect(() => {
     async function fetchMetaAccounts() {
       if (!supabase) return;
-      const { data, error } = await supabase
-        .from('meta_assets')
-        .select('asset_id, asset_name')
-        .eq('asset_type', 'adaccount');
-      if (!error && data) {
-        setMetaAdAccounts(data.map(d => ({ id: d.asset_id, name: d.asset_name })));
+      const { data, error } = await supabase.functions.invoke('meta-list-assets');
+      if (!error && data?.assets) {
+        setMetaAdAccounts(data.assets.filter((d: any) => d.asset_type === 'adaccount').map((d: any) => ({ id: d.asset_id, name: d.asset_name })));
       }
     }
     fetchMetaAccounts();
