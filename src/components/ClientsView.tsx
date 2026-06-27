@@ -6,6 +6,71 @@ import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
 import { BillingType, CamplyData, ClientStatus, InvestmentPeriod } from '../types';
 
+function MetaAccountSelector({ accounts, defaultValue }: { accounts: {id: string, name: string}[], defaultValue: string }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  
+  const initialSelected = accounts.find(a => a.id === defaultValue);
+  const [selectedId, setSelectedId] = useState(defaultValue);
+  const [selectedName, setSelectedName] = useState(initialSelected?.name || '');
+
+  const filtered = accounts.filter(acc => acc.name.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div className="relative">
+      <input type="hidden" name="metaAdAccountId" value={selectedId} />
+      <div 
+        className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green flex items-center justify-between cursor-pointer"
+        onClick={() => setOpen(!open)}
+      >
+        <span className={selectedName ? 'text-white' : 'text-gray-400 truncate'}>
+          {selectedName || 'Selecionar conta Meta Ads...'}
+        </span>
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-brand-line bg-brand-surface p-2 shadow-xl" onMouseLeave={() => setOpen(false)}>
+          <input 
+            type="text" 
+            placeholder="Buscar conta..." 
+            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-white outline-none"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+          <div className="max-h-48 overflow-y-auto">
+            <div 
+              className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-white/10"
+              onClick={() => {
+                setSelectedId('');
+                setSelectedName('');
+                setOpen(false);
+                setQuery('');
+              }}
+            >
+              Sem vínculo
+            </div>
+            {filtered.map(acc => (
+              <div 
+                key={acc.id}
+                className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-white/10 truncate"
+                onClick={() => {
+                  setSelectedId(acc.id);
+                  setSelectedName(acc.name);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                {acc.name}
+              </div>
+            ))}
+            {filtered.length === 0 && <div className="px-2 py-1 text-sm text-gray-400">Nenhuma conta encontrada.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface ClientsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
@@ -202,14 +267,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft flex items-center gap-2"><LinkIcon size={14} className="text-[#0064e0]" /> Conta Meta Ads (Sincronização)</span>
-              <select name="metaAdAccountId" defaultValue={editingClient?.metaAdAccountId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
-                <option value="">Sem vínculo</option>
-                {metaAdAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))}
-              </select>
+              <MetaAccountSelector accounts={metaAdAccounts} defaultValue={editingClient?.metaAdAccountId ?? ''} />
             </label>
           </div>
 
