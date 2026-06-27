@@ -27,29 +27,59 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
     }
 
     // Garantir sessão Supabase válida (necessária para as Edge Functions da Meta)
-    // Só cria sessão se ainda não existir uma — evita rate limits
     if (supabase) {
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      
-      if (!existingSession) {
-        // Tentar login anônimo primeiro (sem email = sem rate limit)
-        const { error: anonErr } = await supabase.auth.signInAnonymously();
+      try {
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
         
-        if (anonErr) {
-          // Fallback: login com email fixo
-          const { error: signInErr } = await supabase.auth.signInWithPassword({
-            email: 'admin@camply.crm',
-            password,
-          });
-          
-          if (signInErr) {
-            // Último recurso: criar conta
-            await supabase.auth.signUp({
+        if (existingSession) {
+          // Sessão já existe — perfeito, não precisa fazer nada
+          console.log('[AUTH] Sessão Supabase existente encontrada ✅');
+        } else {
+          console.log('[AUTH] Nenhuma sessão encontrada. Criando...');
+          let sessionCreated = false;
+
+          // Tentativa 1: Login anônimo (sem email, sem rate limit)
+          const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
+          if (!anonErr && anonData?.session) {
+            console.log('[AUTH] Login anônimo OK ✅');
+            sessionCreated = true;
+          } else {
+            console.warn('[AUTH] Login anônimo falhou:', anonErr?.message);
+
+            // Tentativa 2: Login com email fixo
+            const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
               email: 'admin@camply.crm',
               password,
             });
+            if (!signInErr && signInData?.session) {
+              console.log('[AUTH] Login email/senha OK ✅');
+              sessionCreated = true;
+            } else {
+              console.warn('[AUTH] Login email/senha falhou:', signInErr?.message);
+
+              // Tentativa 3: Criar conta
+              const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+                email: 'admin@camply.crm',
+                password,
+                options: { data: { role: 'admin' } },
+              });
+              if (!signUpErr && signUpData?.session) {
+                console.log('[AUTH] Criação de conta OK ✅');
+                sessionCreated = true;
+              } else {
+                console.error('[AUTH] Criação de conta falhou:', signUpErr?.message);
+              }
+            }
+          }
+
+          if (!sessionCreated) {
+            // Mostra diagnóstico para o usuário reportar
+            console.error('[AUTH] FALHA: Nenhum método de autenticação Supabase funcionou.');
+            console.error('[AUTH] A integração Meta pode não funcionar.');
           }
         }
+      } catch (e: any) {
+        console.error('[AUTH] Erro inesperado:', e.message);
       }
     }
 
