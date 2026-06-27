@@ -1,10 +1,8 @@
 import { FormEvent, useState } from 'react';
-import { BrandLogo } from './BrandLogo';
 import { supabase } from '../lib/supabase';
 import { Hero } from './ui/hero-1';
 
 export function AuthGate() {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,20 +12,42 @@ export function AuthGate() {
     setError('');
 
     if (!supabase) {
-      setError('Supabase não está configurado. Verifique as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY.');
+      setError('Supabase não configurado.');
       return;
     }
 
     setLoading(true);
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+    
+    const adminEmail = 'admin@camply.com';
+
+    // 1. Tentar fazer login normal
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: adminEmail,
       password,
     });
-    setLoading(false);
 
-    if (signInError) {
-      setError('E-mail ou senha inválidos.');
+    if (signInData.session) {
+      window.location.reload(); // Reload to trigger auth state change
+      return;
     }
+
+    // 2. Se falhou, tentamos registrar silenciosamente (caso seja o primeiro acesso)
+    if (signInError) {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: adminEmail,
+        password,
+      });
+
+      if (signUpData.session) {
+        window.location.reload();
+      } else if (signUpError?.message.includes('already registered') || signUpError?.status === 422) {
+        setError('Senha incorreta.');
+      } else {
+        setError(signUpError?.message || 'Erro ao validar senha.');
+      }
+    }
+    
+    setLoading(false);
   };
 
   return (
@@ -41,24 +61,13 @@ export function AuthGate() {
           <section className="w-full max-w-sm text-center">
             <form onSubmit={submit} className="flex flex-col items-center space-y-4">
               <input
-                type="email"
-                aria-label="E-mail"
-                autoComplete="email"
-                placeholder="Seu e-mail"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
-                autoFocus
-                required
-              />
-              <input
                 type="password"
-                aria-label="Senha"
-                autoComplete="current-password"
-                placeholder="Sua senha"
+                aria-label="Senha de Acesso Mestre"
+                placeholder="Senha de Acesso Mestre"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
+                autoFocus
                 required
               />
 
