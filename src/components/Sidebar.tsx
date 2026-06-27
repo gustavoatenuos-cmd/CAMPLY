@@ -1,4 +1,4 @@
-import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare, Facebook } from 'lucide-react';
+import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare, Facebook, LogOut } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
@@ -21,9 +21,10 @@ interface SidebarProps {
   activeView: ViewId;
   setActiveView: (view: ViewId) => void;
   alertCount: number;
+  onSignOut: () => void;
 }
 
-export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps) {
+export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: SidebarProps) {
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-brand-line bg-brand-ink xl:h-screen xl:w-72 xl:border-b-0 xl:border-r">
       <div className="border-b border-brand-line p-3 sm:p-4 xl:p-5">
@@ -50,8 +51,11 @@ export function Sidebar({ activeView, setActiveView, alertCount }: SidebarProps)
         ))}
       </nav>
 
-      <div className="hidden border-t border-brand-line p-4 text-xs leading-relaxed text-brand-muted xl:block">
-        Assistente para organizar campanhas, clientes, recebimentos e projetos do dia.
+      <div className="border-t border-brand-line p-2 xl:p-4">
+        <button onClick={onSignOut} className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm text-brand-muted transition hover:bg-white/5 hover:text-white xl:justify-start">
+          <LogOut size={16} />
+          Sair
+        </button>
       </div>
     </aside>
   );

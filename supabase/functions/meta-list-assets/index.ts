@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { decryptToken } from '../_shared/crypto.ts'
 import { fetchMetaGraph } from '../_shared/meta-api.ts'
 
@@ -10,14 +10,8 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    // Authenticate user
-    // Removed Supabase Auth check to bypass rate limits
-    const userId = '00000000-0000-0000-0000-000000000000';
+    const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req)
+    const userId = user.id
 
     // Get active integration
     const { data: integration, error: intError } = await supabaseClient
@@ -45,7 +39,7 @@ serve(async (req) => {
       endpoint: '/me/accounts',
       accessToken,
       appSecret,
-      params: { fields: 'id,name,access_token,category' } // access_token here is page token (we could encrypt and save it if needed, but for MVP we just store json)
+      params: { fields: 'id,name,category' }
     });
 
     // Process and upsert into meta_assets
@@ -101,9 +95,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    return errorResponse(error, corsHeaders)
   }
 })

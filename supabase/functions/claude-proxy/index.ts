@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -10,25 +10,16 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('Missing Authorization header');
-    }
-
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-    
-    if (authError || !user) {
-      throw new Error('Unauthorized');
-    }
+    await requireAuthenticatedUser(req)
 
     const { systemPrompt, userMessage, maxTokens = 1024 } = await req.json();
+    if (typeof systemPrompt !== 'string' || typeof userMessage !== 'string') {
+      throw new Error('Invalid Claude request payload')
+    }
+    if (systemPrompt.length > 12_000 || userMessage.length > 60_000) {
+      throw new Error('Claude request payload is too large')
+    }
+    const safeMaxTokens = Math.min(Math.max(Number(maxTokens) || 1024, 64), 2048)
 
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
@@ -43,8 +34,8 @@ serve(async (req) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20240620', // updated model
-        max_tokens: maxTokens,
+        model: 'claude-sonnet-4-6',
+        max_tokens: safeMaxTokens,
         system: systemPrompt,
         messages: [
           {
@@ -66,10 +57,7 @@ serve(async (req) => {
       status: 200,
     });
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message, isError: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200, // return 200 with isError to avoid supabase client generic HTTP error
-    });
+  } catch (error) {
+    return errorResponse(error, corsHeaders)
   }
 })

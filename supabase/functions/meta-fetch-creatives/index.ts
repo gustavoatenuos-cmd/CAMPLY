@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { fetchMetaGraph } from '../_shared/meta-api.ts'
 import { decryptToken } from '../_shared/crypto.ts'
 
@@ -10,14 +10,8 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
-
-    // Removed Supabase Auth check to bypass rate limits
-    const userId = '00000000-0000-0000-0000-000000000000';
+    const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req)
+    const userId = user.id
 
     // Get active integration
     const { data: integration, error: intError } = await supabaseClient
@@ -86,10 +80,7 @@ serve(async (req) => {
       status: 200,
     })
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message, isError: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
+  } catch (error) {
+    return errorResponse(error, corsHeaders)
   }
 })

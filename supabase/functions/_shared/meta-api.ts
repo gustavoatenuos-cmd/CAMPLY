@@ -20,12 +20,12 @@ export async function generateAppSecretProof(accessToken: string, appSecret: str
   return signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-const META_GRAPH_VERSION = 'v19.0';
-const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+export const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v25.0';
+export const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 export interface MetaApiOptions {
   endpoint: string;
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   accessToken: string;
   appSecret: string;
   params?: Record<string, string>;
@@ -38,7 +38,6 @@ export async function fetchMetaGraph(options: MetaApiOptions) {
   const appsecret_proof = await generateAppSecretProof(accessToken, appSecret);
   
   const url = new URL(`${META_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`);
-  url.searchParams.append('access_token', accessToken);
   url.searchParams.append('appsecret_proof', appsecret_proof);
   
   for (const [key, value] of Object.entries(params)) {
@@ -49,6 +48,7 @@ export async function fetchMetaGraph(options: MetaApiOptions) {
     method,
     headers: {
       'Accept': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
     },
   };
 

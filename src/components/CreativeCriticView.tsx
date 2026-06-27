@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { invokeFunction } from '../lib/invokeFunction';
 import { CreativeCriticResponse, CamplyData } from '../types';
 import { Bot, ImageOff, RefreshCw, CheckCircle2, XCircle, AlertTriangle, PlayCircle } from 'lucide-react';
 
@@ -18,12 +18,12 @@ export function CreativeCriticView({ data }: Props) {
 
   // Auto-select first active integration
   useEffect(() => {
-    supabase!.functions.invoke('meta-validate-token').then(({ data }) => {
+    invokeFunction<any>('meta-validate-token').then((data) => {
       if (data && data.status === 'active' && data.integration) {
-        // Here we fallback to integration.id if account_id isn't explicitly available in integration
-        setActiveAccount(data.integration.account_id || '');
+        const adAccount = data.assets?.find((asset: any) => asset.asset_type === 'adaccount');
+        setActiveAccount(adAccount?.asset_id || '');
       }
-    });
+    }).catch((requestError) => setError(requestError.message));
   }, []);
 
   const handleAnalyze = async () => {
@@ -40,11 +40,7 @@ export function CreativeCriticView({ data }: Props) {
       const targetId = activeCampaign || activeAccount;
       const type = activeCampaign ? 'campaign' : 'adaccount';
       
-      const { data: fetchRes, error: fetchErr } = await supabase!.functions.invoke('meta-fetch-creatives', {
-        body: { targetId, type }
-      });
-      
-      if (fetchErr || fetchRes?.isError) throw new Error(fetchRes?.error || fetchErr?.message || 'Erro ao buscar anúncios.');
+      const fetchRes = await invokeFunction<any>('meta-fetch-creatives', { targetId, type });
       
       const ads = fetchRes.ads;
       if (!ads || ads.length === 0) {
@@ -54,11 +50,7 @@ export function CreativeCriticView({ data }: Props) {
       // 2. Call the Critic Agent
       const scopeName = activeCampaign ? data.campaigns.find(c => c.id === activeCampaign)?.name || activeCampaign : 'Conta Completa';
       
-      const { data: agentRes, error: agentErr } = await supabase!.functions.invoke('meta-creative-critic', {
-        body: { adsData: ads, kpi, scopeName }
-      });
-      
-      if (agentErr || agentRes?.isError) throw new Error(agentRes?.error || agentErr?.message || 'Erro no Agente de Inteligência.');
+      const agentRes = await invokeFunction<any>('meta-creative-critic', { adsData: ads, kpi, scopeName });
       
       setAnalysis(agentRes.analysis);
       

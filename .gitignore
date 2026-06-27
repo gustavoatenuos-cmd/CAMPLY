@@ -5,3 +5,5 @@ dist
 .DS_Store
 .vercel
 .env*
+supabase/.temp/
+supabase/secrets.local

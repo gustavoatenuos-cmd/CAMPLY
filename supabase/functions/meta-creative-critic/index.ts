@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -54,13 +54,10 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
+    await requireAuthenticatedUser(req)
     const { adsData, kpi = 'roas', scopeName } = await req.json();
 
-    if (!adsData || !Array.isArray(adsData)) {
+    if (!Array.isArray(adsData) || adsData.length === 0 || adsData.length > 20) {
       throw new Error('Invalid adsData payload');
     }
 
@@ -79,7 +76,7 @@ serve(async (req) => {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20240620',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2500,
         system: SYSTEM_PROMPT,
         messages: [
@@ -117,10 +114,7 @@ serve(async (req) => {
       status: 200,
     });
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message, isError: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200, 
-    });
+  } catch (error) {
+    return errorResponse(error, corsHeaders)
   }
 })

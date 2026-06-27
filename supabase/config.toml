@@ -1,0 +1,31 @@
+project_id = "camply"
+
+[functions.claude-proxy]
+verify_jwt = true
+
+[functions.meta-creative-critic]
+verify_jwt = true
+
+[functions.meta-disconnect]
+verify_jwt = true
+
+[functions.meta-fetch-creatives]
+verify_jwt = true
+
+[functions.meta-list-assets]
+verify_jwt = true
+
+[functions.meta-oauth-start]
+verify_jwt = true
+
+[functions.meta-oauth-callback]
+verify_jwt = false
+
+[functions.meta-sync-ads]
+verify_jwt = true
+
+[functions.meta-sync-campaigns]
+verify_jwt = true
+
+[functions.meta-validate-token]
+verify_jwt = true

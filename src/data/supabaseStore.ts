@@ -6,7 +6,10 @@ type WorkspaceRow = {
   id: string;
   data: CamplyData;
   updated_at: string;
+  version: number;
 };
+
+let remoteVersion: number | null = null;
 
 const getUserId = async (): Promise<string | null> => {
   const { data } = await supabase!.auth.getSession();
@@ -20,15 +23,16 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
 
   const { data, error } = await supabase
     .from('camply_workspace')
-    .select('data')
+    .select('data, version')
     .eq('id', userId)
-    .maybeSingle<Pick<WorkspaceRow, 'data'>>();
+    .maybeSingle<Pick<WorkspaceRow, 'data' | 'version'>>();
 
   if (error) {
     console.warn('Camply Supabase load skipped:', error.message);
     return null;
   }
 
+  remoteVersion = data?.version ?? null;
   return data?.data ? normalizeData(data.data) : null;
 };
 
@@ -37,16 +41,16 @@ export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
   const userId = await getUserId();
   if (!userId) return false;
 
-  const { error } = await supabase.from('camply_workspace').upsert({
-    id: userId,
-    data,
-    updated_at: new Date().toISOString(),
+  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace', {
+    p_data: data,
+    p_expected_version: remoteVersion,
   });
 
   if (error) {
-    console.warn('Camply Supabase save skipped:', error.message);
+    console.error('Camply Supabase save failed:', error.message);
     return false;
   }
 
+  remoteVersion = Number(nextVersion);
   return true;
 };

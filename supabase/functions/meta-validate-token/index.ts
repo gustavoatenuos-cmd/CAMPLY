@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { decryptToken } from '../_shared/crypto.ts'
-import { fetchMetaGraph } from '../_shared/meta-api.ts'
+import { fetchMetaGraph, META_BASE_URL } from '../_shared/meta-api.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -10,13 +10,8 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    // Removed Supabase Auth check to bypass rate limits
-    const userId = '00000000-0000-0000-0000-000000000000'; 
+    const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req)
+    const userId = user.id
 
     // Get integration
     const { data: integration, error: intError } = await supabaseClient
@@ -41,7 +36,7 @@ serve(async (req) => {
     try {
       // Validate token via debug_token endpoint
       const appId = Deno.env.get('META_APP_ID');
-      const debugUrl = new URL('https://graph.facebook.com/v19.0/debug_token');
+      const debugUrl = new URL(`${META_BASE_URL}/debug_token`);
       debugUrl.searchParams.append('input_token', accessToken);
       // For app access token, usually it's APP_ID|APP_SECRET
       debugUrl.searchParams.append('access_token', `${appId}|${appSecret}`);
@@ -77,15 +72,23 @@ serve(async (req) => {
       .select('*')
       .eq('integration_id', integration.id);
 
-    return new Response(JSON.stringify({ status: 'active', integration, assets: assets || [] }), {
+    const safeIntegration = {
+      id: integration.id,
+      meta_user_id: integration.meta_user_id,
+      meta_user_name: integration.meta_user_name,
+      status: integration.status,
+      granted_scopes: integration.granted_scopes,
+      token_expires_at: integration.token_expires_at,
+      last_validated_at: integration.last_validated_at,
+      last_sync_at: integration.last_sync_at,
+    }
+
+    return new Response(JSON.stringify({ status: 'active', integration: safeIntegration, assets: assets || [] }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    return errorResponse(error, corsHeaders)
   }
 })

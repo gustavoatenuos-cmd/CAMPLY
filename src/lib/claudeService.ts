@@ -1,5 +1,5 @@
 import { CamplyData, AgentAlert } from '../types';
-import { supabase } from './supabase';
+import { invokeFunction } from './invokeFunction';
 
 // ============================================================
 // CLAUDE AI SERVICE - Camada de inteligência interpretativa
@@ -83,18 +83,11 @@ export async function generateAgentSummary(data: CamplyData): Promise<ClaudeAgen
   const context = buildContext(data);
 
   try {
-    const { data: responseData, error } = await supabase!.functions.invoke('claude-proxy', {
-      body: {
-        systemPrompt: SYSTEM_PROMPT,
-        userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
-        maxTokens: 512
-      }
+    const responseData = await invokeFunction<any>('claude-proxy', {
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
+      maxTokens: 512,
     });
-
-    if (error || responseData?.isError) {
-      console.warn('[ClaudeService] Error or unconfigured, falling back to local summary:', error || responseData?.error);
-      return generateLocalSummary(data);
-    }
 
     const text = responseData.result?.content?.[0]?.text;
 
@@ -204,17 +197,11 @@ REGRAS:
 5. Seja muito prestativo e pareça um assistente humano em "reply_text".`;
 
   try {
-    const { data: responseData, error } = await supabase!.functions.invoke('claude-proxy', {
-      body: {
-        systemPrompt: CHAT_SYSTEM_PROMPT,
-        userMessage: userInput,
-        maxTokens: 1024
-      }
+    const responseData = await invokeFunction<any>('claude-proxy', {
+      systemPrompt: CHAT_SYSTEM_PROMPT,
+      userMessage: userInput,
+      maxTokens: 1024,
     });
-
-    if (error || responseData?.isError) {
-      throw new Error(responseData?.error || error?.message || 'API request failed');
-    }
 
     const text = responseData.result?.content?.[0]?.text;
     if (!text) throw new Error('No text returned');

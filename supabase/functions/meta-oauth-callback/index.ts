@@ -2,6 +2,8 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { encryptToken } from '../_shared/crypto.ts'
+import { META_BASE_URL } from '../_shared/meta-api.ts'
+import { errorResponse } from '../_shared/auth.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -51,7 +53,7 @@ serve(async (req) => {
     
     if (!appId || !appSecret) throw new Error('Meta credentials missing from env');
 
-    const tokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    const tokenUrl = new URL(`${META_BASE_URL}/oauth/access_token`);
     tokenUrl.searchParams.append('client_id', appId);
     tokenUrl.searchParams.append('redirect_uri', stateData.redirect_uri);
     tokenUrl.searchParams.append('client_secret', appSecret);
@@ -67,7 +69,7 @@ serve(async (req) => {
     let accessToken = tokenData.access_token;
 
     // 3. Exchange short-lived token for long-lived token
-    const longTokenUrl = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+    const longTokenUrl = new URL(`${META_BASE_URL}/oauth/access_token`);
     longTokenUrl.searchParams.append('grant_type', 'fb_exchange_token');
     longTokenUrl.searchParams.append('client_id', appId);
     longTokenUrl.searchParams.append('client_secret', appSecret);
@@ -79,9 +81,13 @@ serve(async (req) => {
     if (longTokenRes.ok && longTokenData.access_token) {
       accessToken = longTokenData.access_token;
     }
+    const expiresIn = longTokenData.expires_in || tokenData.expires_in;
+    const tokenExpiresAt = expiresIn
+      ? new Date(Date.now() + Number(expiresIn) * 1000).toISOString()
+      : null;
 
     // 4. Fetch user profile
-    const meUrl = new URL('https://graph.facebook.com/v19.0/me');
+    const meUrl = new URL(`${META_BASE_URL}/me`);
     meUrl.searchParams.append('access_token', accessToken);
     
     const meRes = await fetch(meUrl.toString());
@@ -98,7 +104,7 @@ serve(async (req) => {
       .select('id')
       .eq('user_id', stateData.user_id)
       .eq('meta_user_id', meData.id)
-      .single();
+      .maybeSingle();
 
     if (existingInt) {
       await supabaseClient
@@ -107,6 +113,7 @@ serve(async (req) => {
           access_token_encrypted: encryptedToken,
           meta_user_name: meData.name,
           granted_scopes: stateData.scopes,
+          token_expires_at: tokenExpiresAt,
           status: 'active',
           last_validated_at: new Date().toISOString(),
         })
@@ -120,13 +127,15 @@ serve(async (req) => {
           meta_user_name: meData.name,
           access_token_encrypted: encryptedToken,
           granted_scopes: stateData.scopes,
+          token_expires_at: tokenExpiresAt,
           status: 'active',
           last_validated_at: new Date().toISOString(),
         });
     }
 
     // 7. Redirect back to frontend
-    const appBaseUrl = Deno.env.get('APP_BASE_URL') || 'https://camply-ten.vercel.app';
+    const appBaseUrl = Deno.env.get('APP_BASE_URL');
+    if (!appBaseUrl) throw new Error('APP_BASE_URL missing');
     return new Response(null, {
       status: 302,
       headers: {
@@ -136,9 +145,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    return errorResponse(error, corsHeaders)
   }
 })

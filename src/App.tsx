@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
-import { AUTH_STORAGE_KEY } from './auth';
+import type { Session } from '@supabase/supabase-js';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
@@ -24,29 +24,37 @@ const TodayView = React.lazy(() => import('./components/TodayView').then(m => ({
 const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(() => window.localStorage.getItem(AUTH_STORAGE_KEY) === 'true');
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>('today');
   const [data, setData] = useState<CamplyData>(() => loadData());
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
   const [claudeLoading, setClaudeLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase?.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      // We no longer overwrite the 'authenticated' state with the Supabase session, 
-      // so local master password login persists!
+    if (!supabase) {
+      setAuthReady(true);
+      return;
+    }
+
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
     });
 
     const {
       data: { subscription },
-    } = supabase!.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const authenticated = Boolean(session);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -72,7 +80,9 @@ export default function App() {
     if (!authenticated || !remoteLoaded) return;
 
     const timeout = window.setTimeout(() => {
-      void saveRemoteData(data);
+      void saveRemoteData(data).then((saved) => {
+        setSyncError(saved ? null : 'Não foi possível sincronizar. Recarregue antes de continuar para evitar conflito de dados.');
+      });
     }, 500);
 
     return () => window.clearTimeout(timeout);
@@ -124,24 +134,32 @@ export default function App() {
     });
   };
 
+  if (!authReady) {
+    return <div className="grid min-h-screen place-items-center bg-brand-ink text-brand-soft">Validando sessão...</div>;
+  }
+
   if (!authenticated) {
-    return (
-      <AuthGate
-        onUnlock={() => {
-          window.localStorage.setItem(AUTH_STORAGE_KEY, 'true');
-          setAuthenticated(true);
-        }}
-      />
-    );
+    return <AuthGate />;
   }
 
   const agentAlertCount = (data.agentAlerts || []).filter(a => a.status === 'active').length;
 
   return (
     <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-brand-ink text-white xl:flex-row">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} alertCount={agentAlertCount} />
-      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
+      <Sidebar
+        activeView={activeView}
+        setActiveView={setActiveView}
+        alertCount={agentAlertCount}
+        onSignOut={() => void supabase?.auth.signOut()}
+      />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {syncError && (
+          <div role="alert" className="border-b border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
+            {syncError}
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
           {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
           {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
           {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
@@ -154,7 +172,8 @@ export default function App() {
           {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
           {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
           {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
-        </Suspense>
+          </Suspense>
+        </div>
       </main>
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
     </div>

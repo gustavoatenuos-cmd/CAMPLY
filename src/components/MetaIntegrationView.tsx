@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Facebook, Link as LinkIcon, Unlink, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { invokeFunction } from '../lib/invokeFunction';
 
 import { CamplyData, Client, Campaign } from '../types';
 
@@ -22,7 +22,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
   const checkStatus = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase!.functions.invoke('meta-validate-token');
+      const data = await invokeFunction<any>('meta-validate-token');
       if (data && data.status === 'active') {
         setIntegration(data.integration);
         if (data.assets) setAssets(data.assets);
@@ -43,15 +43,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     try {
       setIsLoading(true);
       setError(null);
-      const { data, error } = await supabase!.functions.invoke('meta-oauth-start');
-      if (error) {
-        let errorMsg = error.message;
-        if (error.context && typeof error.context.text === 'function') {
-           const text = await error.context.text();
-           errorMsg += ` - Context: ${text}`;
-        }
-        throw new Error(errorMsg);
-      }
+      const data = await invokeFunction<{ url: string }>('meta-oauth-start');
       if (data?.url) {
         window.location.href = data.url;
       }
@@ -66,7 +58,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     
     try {
       setIsLoading(true);
-      await supabase!.functions.invoke('meta-disconnect');
+      await invokeFunction<{ success: boolean }>('meta-disconnect');
       setIntegration(null);
       setAssets([]);
     } catch (e: any) {
@@ -80,8 +72,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     try {
       setIsSyncing(true);
       setError(null);
-      const { data, error } = await supabase!.functions.invoke('meta-list-assets');
-      if (error) throw error;
+      const data = await invokeFunction<any>('meta-list-assets');
       if (data?.assets) {
         setAssets(data.assets);
       }
@@ -96,11 +87,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     try {
       setIsLoading(true);
       setError(null);
-      const { data, error } = await supabase!.functions.invoke('meta-sync-ads', {
-        body: { adAccountId }
-      });
-      if (error) throw error;
-      if (data?.isError) throw new Error(data.error);
+      const data = await invokeFunction<any>('meta-sync-ads', { adAccountId });
       
       setSyncedCampaigns(data.campaigns || []);
       alert(`Sucesso! ${data.campaigns?.length || 0} campanhas ativas sincronizadas.`);
