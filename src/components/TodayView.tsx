@@ -38,16 +38,16 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
       if (error || !data?.campaigns) throw new Error();
 
       const fetchedCampaigns = data.campaigns.map((c: any) => {
-        const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
+        // const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
         const spend = Number(c.insights?.spend || 0);
-        const results = c.insights?.actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+        const results = c.results || 0; // Legacy fallback
         
         const metricsByPeriod: Record<string, any> = {};
         if (c.insightsByPeriod) {
           for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
             if (!pInsights) continue;
             const pSpend = Number((pInsights as any).spend || 0);
-            const pResults = (pInsights as any).actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+            const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
             metricsByPeriod[period] = {
               spent: pSpend,
               results: pResults,

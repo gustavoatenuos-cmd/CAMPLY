@@ -143,10 +143,10 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           const assignedStatus = numCampaigns > 1 ? 'optimize' : 'live';
 
           const fetchedCampaigns = data.campaigns.map((c: any) => {
-            const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
+            // const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
             
             const spend = Number(c.insights?.spend || 0);
-            const results = c.insights?.actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+            const results = c.results || 0; // Legacy fallback
             const cpr = results > 0 ? spend / results : 0;
 
             const metricsByPeriod: Record<string, any> = {};
@@ -154,7 +154,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
                 if (!pInsights) continue;
                 const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = (pInsights as any).actions?.filter((a: any) => isConversion(a.action_type)).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0;
+                const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
                 
                 metricsByPeriod[period] = {
                   spent: pSpend,
