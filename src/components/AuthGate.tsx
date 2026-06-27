@@ -7,10 +7,12 @@ export function AuthGate() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+    setMessage('');
 
     if (!supabase) {
       setError('Supabase não configurado.');
@@ -19,7 +21,6 @@ export function AuthGate() {
 
     setLoading(true);
 
-    // 1. Tentar fazer login normal
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -30,23 +31,33 @@ export function AuthGate() {
       return;
     }
 
-    // 2. Se falhou, tentamos registrar (caso seja o primeiro acesso)
     if (signInError) {
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-
-      if (signUpData.session) {
-        window.location.reload();
-      } else if (signUpError?.message.includes('already registered') || signUpError?.status === 422) {
-        setError(`E-mail ou senha incorretos. (Se for o primeiro acesso, use no mínimo 6 caracteres na senha)`);
-      } else {
-        setError(signUpError?.message || 'Erro ao fazer login/cadastro.');
-      }
+      setError('E-mail ou senha incorretos.');
     }
     
     setLoading(false);
+  };
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Preencha seu e-mail primeiro para recuperar a senha.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setMessage('');
+    
+    const { error } = await supabase!.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin
+    });
+    
+    setLoading(false);
+    
+    if (error) {
+      setError('Erro ao enviar e-mail de recuperação: ' + error.message);
+    } else {
+      setMessage('E-mail de recuperação enviado! Verifique sua caixa de entrada.');
+    }
   };
 
   return (
@@ -72,7 +83,7 @@ export function AuthGate() {
               <input
                 type="password"
                 aria-label="Senha"
-                placeholder="Sua senha (mínimo 6 caracteres)"
+                placeholder="Sua senha"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
@@ -80,12 +91,22 @@ export function AuthGate() {
               />
 
               {error && <p role="alert" className="text-sm font-medium text-rose-400">{error}</p>}
+              {message && <p role="alert" className="text-sm font-medium text-brand-green">{message}</p>}
 
               <button
                 disabled={loading}
-                className="mt-2 w-fit rounded-full bg-white px-8 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-70 md:w-52"
+                className="mt-2 w-full rounded-full bg-white px-8 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-70"
               >
-                {loading ? 'Entrando...' : 'Entrar / Criar Conta'}
+                {loading ? 'Processando...' : 'Entrar'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={loading}
+                className="mt-4 text-sm font-semibold text-brand-soft hover:text-white transition"
+              >
+                Esqueci minha senha
               </button>
             </form>
           </section>
