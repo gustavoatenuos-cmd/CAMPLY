@@ -81,7 +81,7 @@ serve(async (req) => {
           appSecret,
           params: {
             level: 'campaign',
-            fields: 'campaign_id,impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
+            fields: 'campaign_id,impressions,clicks,spend,cpc,actions,ctr,cost_per_action_type',
             date_preset: preset,
             limit: '500'
           }
