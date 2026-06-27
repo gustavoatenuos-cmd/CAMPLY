@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
-import { errorResponse } from '../_shared/auth.ts'
+import { errorResponse, HttpError } from '../_shared/auth.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -21,7 +21,7 @@ serve(async (req) => {
     const state = url.searchParams.get('state');
 
     if (!code || !state) {
-      throw new Error('Code or State missing in URL parameters');
+      throw new HttpError('Code or State missing in URL parameters', 400);
     }
 
     // 1. Verify state hash in database
@@ -33,12 +33,12 @@ serve(async (req) => {
       .single();
 
     if (stateError || !stateData) {
-      throw new Error('Invalid or expired state parameter');
+      throw new HttpError('Invalid or expired state parameter', 400);
     }
 
     // Verify expiration
     if (new Date() > new Date(stateData.expires_at)) {
-      throw new Error('State hash expired');
+      throw new HttpError('Invalid or expired state parameter', 400);
     }
 
     // Mark as used
@@ -63,7 +63,7 @@ serve(async (req) => {
     const tokenData = await tokenRes.json();
 
     if (!tokenRes.ok) {
-      throw new Error(`Token exchange failed: ${tokenData.error?.message}`);
+      throw new HttpError('Meta token exchange failed', 502);
     }
 
     let accessToken = tokenData.access_token;
@@ -93,7 +93,7 @@ serve(async (req) => {
     const meRes = await fetch(meUrl.toString());
     const meData = await meRes.json();
 
-    if (!meRes.ok) throw new Error('Failed to fetch user profile');
+    if (!meRes.ok) throw new HttpError('Failed to fetch Meta user profile', 502);
 
     // 5. Encrypt token
     const encryptedToken = await encryptToken(accessToken);

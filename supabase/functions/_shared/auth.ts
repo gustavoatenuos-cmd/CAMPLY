@@ -41,7 +41,12 @@ export async function requireAuthenticatedUser(req: Request) {
 
 export function errorResponse(error: unknown, headers: Record<string, string>) {
   const status = error instanceof HttpError ? error.status : 500
-  const message = error instanceof Error ? error.message : 'Unexpected server error'
+  const message = error instanceof HttpError ? error.message : 'Unexpected server error'
+
+  if (!(error instanceof HttpError)) {
+    console.error('Unhandled Edge Function error', error)
+  }
+
   return new Response(JSON.stringify({ error: message, isError: true }), {
     status,
     headers: { ...headers, 'Content-Type': 'application/json' },
