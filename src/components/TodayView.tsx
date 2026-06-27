@@ -110,7 +110,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           campaigns: [...newCampaignsToInsert, ...updatedCampaigns]
         };
       });
-    } catch(err) {
+    } catch(err: any) { alert("Erro ao sincronizar: " + err.message);
       console.error(err);
     }
     setSyncingClientId(null);
