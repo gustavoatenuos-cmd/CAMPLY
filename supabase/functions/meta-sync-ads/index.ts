@@ -46,16 +46,21 @@ serve(async (req) => {
     // Fetch Insights and Active Ads for each Campaign
     const campaignsWithInsights = await Promise.all(activeCampaigns.map(async (campaign: any) => {
       try {
-        const [insightsData, adsData] = await Promise.all([
+        const periods = ['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'maximum'];
+        const insightPromises = periods.map(preset => 
           fetchMetaGraph({
             endpoint: `/${campaign.id}/insights`,
             accessToken,
             appSecret,
             params: {
-              fields: 'impressions,clicks,spend,cpc,cpa,actions',
-              date_preset: 'maximum' 
+              fields: 'impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
+              date_preset: preset 
             }
-          }),
+          }).then(res => ({ preset, data: res.data && res.data.length > 0 ? res.data[0] : null }))
+        );
+
+        const [insightsResults, adsData] = await Promise.all([
+          Promise.all(insightPromises),
           fetchMetaGraph({
             endpoint: `/${campaign.id}/ads`,
             accessToken,
@@ -67,6 +72,11 @@ serve(async (req) => {
             }
           })
         ]);
+        
+        const insightsByPeriod: Record<string, any> = {};
+        insightsResults.forEach(res => {
+          insightsByPeriod[res.preset] = res.data;
+        });
         
         let activeAdsData = [];
         if (adsData.data && adsData.data.length > 0) {
@@ -80,7 +90,8 @@ serve(async (req) => {
 
         return {
           ...campaign,
-          insights: insightsData.data && insightsData.data.length > 0 ? insightsData.data[0] : null,
+          insights: insightsByPeriod['maximum'], // default legacy behavior
+          insightsByPeriod,
           activeAdsData
         };
       } catch (err) {

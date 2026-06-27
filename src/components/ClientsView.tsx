@@ -147,6 +147,28 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             const cprRaw = Number(c.insights?.cost_per_action_type?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
             const cpr = cprRaw > 0 ? cprRaw : (results > 0 ? spend / results : 0);
 
+            const metricsByPeriod: Record<string, any> = {};
+            if (c.insightsByPeriod) {
+              for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
+                if (!pInsights) continue;
+                const pSpend = Number((pInsights as any).spend || 0);
+                const pResults = Number((pInsights as any).actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
+                const pCprRaw = Number((pInsights as any).cost_per_action_type?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
+                
+                metricsByPeriod[period] = {
+                  spent: pSpend,
+                  results: pResults,
+                  ctr: Number((pInsights as any).ctr || 0),
+                  cpc: Number((pInsights as any).cpc || 0),
+                  cpr: pCprRaw > 0 ? pCprRaw : (pResults > 0 ? pSpend / pResults : 0),
+                  pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+                  checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+                  purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+                  impressions: Number((pInsights as any).impressions || 0)
+                };
+              }
+            }
+
             return {
               id: makeId('campaign'),
               clientId: nextClient.id,
@@ -154,7 +176,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               platform: 'Meta Ads' as const,
               status: assignedStatus,
               objective: c.objective,
-              budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Graph API returns budget in cents usually, check docs but usually /100 or keep raw if small
+              budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100,
               spent: spend,
               results: results,
               ctr: Number(c.insights?.ctr || 0),
@@ -163,6 +185,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
               checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
               purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+              metricsByPeriod,
               activeCreatives: c.activeAdsData?.length || 0,
               lastOptimizedAt: new Date().toISOString().slice(0, 10),
               nextAction: '',

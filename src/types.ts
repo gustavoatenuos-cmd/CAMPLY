@@ -35,6 +35,18 @@ export interface Client {
   lastActivityAt?: string;
 }
 
+export interface CampaignMetrics {
+  spent: number;
+  results: number;
+  ctr: number;
+  cpc: number;
+  cpr: number;
+  pageViews: number;
+  checkouts: number;
+  purchases: number;
+  impressions?: number;
+}
+
 export interface Campaign {
   id: string;
   clientId: string;
@@ -59,6 +71,7 @@ export interface Campaign {
   pageViews?: number;
   checkouts?: number;
   purchases?: number;
+  metricsByPeriod?: Record<string, CampaignMetrics>;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;

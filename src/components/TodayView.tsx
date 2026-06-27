@@ -19,6 +19,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const [taskArea, setTaskArea] = useState<TaskArea>('geral');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [hasFinance, setHasFinance] = useState(false);
+  const [dashboardPeriod, setDashboardPeriod] = useState<string>('last_7d');
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
@@ -648,6 +649,85 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         <Metric icon={AlertTriangle} label="Alertas" value={insights.filter((item) => item.level !== 'good').length.toString()} tone="warning" />
         <Metric icon={Banknote} label="A receber" value={money(amountToReceive)} />
         <Metric icon={Target} label="Projetos abertos" value={data.projects.filter((item) => item.status !== 'done').length.toString()} />
+      </div>
+
+      {/* ===== DASHBOARD POR CLIENTE ===== */}
+      <div className="mb-8 rounded-2xl border border-brand-line bg-brand-ink p-5 shadow-lg">
+        <div className="mb-5 flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-black text-white">
+            <BarChart3 className="text-[#0064e0]" size={22} />
+            Dashboard de Tráfego por Cliente
+          </h2>
+          <select 
+            value={dashboardPeriod} 
+            onChange={(e) => setDashboardPeriod(e.target.value)}
+            className="rounded-lg border border-brand-line bg-brand-surface px-3 py-1.5 text-sm text-white outline-none focus:border-[#0064e0]"
+          >
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="last_3d">Últimos 3 dias</option>
+            <option value="last_7d">Últimos 7 dias</option>
+            <option value="last_14d">Últimos 14 dias</option>
+            <option value="last_30d">Últimos 30 dias</option>
+            <option value="maximum">Máximo</option>
+          </select>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {data.clients.filter(client => 
+            data.campaigns.some(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status))
+          ).map(client => {
+            const activeCampaigns = data.campaigns.filter(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status));
+            
+            let clientSpent = 0;
+            let clientResults = 0;
+            let clientPurchases = 0;
+            let clientImpressions = 0;
+            
+            activeCampaigns.forEach(c => {
+              const metrics = c.metricsByPeriod?.[dashboardPeriod] || c;
+              clientSpent += (metrics.spent || 0);
+              clientResults += (metrics.results || 0);
+              clientPurchases += (metrics.purchases || 0);
+              clientImpressions += (metrics.impressions || 0);
+            });
+
+            return (
+              <div key={client.id} className="rounded-xl border border-brand-line bg-brand-surface p-4 hover:border-[#0064e0]/50 transition">
+                <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
+                  <h3 className="font-bold text-white">{client.name}</h3>
+                  <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
+                    {activeCampaigns.length} campanhas
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Gasto</p>
+                    <p className="font-bold text-white">{money(clientSpent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Alcance / Impr.</p>
+                    <p className="font-bold text-white">{clientImpressions.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Resultados</p>
+                    <p className="font-bold text-white">{clientResults.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Vendas</p>
+                    <p className="font-bold text-brand-green">{clientPurchases.toLocaleString('pt-BR')}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          
+          {data.clients.filter(client => data.campaigns.some(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status))).length === 0 && (
+            <div className="col-span-full rounded-lg border border-dashed border-brand-line p-8 text-center text-brand-muted">
+              Nenhum cliente com campanhas ativas no momento.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-8 grid gap-6 2xl:grid-cols-[1.15fr_0.85fr]">

@@ -19,9 +19,15 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const [creativesModalCampaignId, setCreativesModalCampaignId] = useState<string | null>(null);
   const [creativesData, setCreativesData] = useState<any[]>([]);
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('maximum');
 
   const editingCampaign = data.campaigns.find((c) => c.id === editingCampaignId);
   const creativesCampaign = data.campaigns.find((c) => c.id === creativesModalCampaignId);
+  const activeMetrics = editingCampaign?.metricsByPeriod?.[selectedPeriod] || editingCampaign;
+
+  useEffect(() => {
+    setSelectedPeriod('maximum');
+  }, [editingCampaignId]);
 
   useEffect(() => {
     if (creativesModalCampaignId && creativesCampaign?.metaCampaignId) {
@@ -220,13 +226,32 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
 
       <Modal title="Dashboard da campanha" description="Gerencie a inteligência, performance e próxima ação de otimização." open={!!editingCampaignId} onClose={() => setEditingCampaignId(null)}>
         {editingCampaign && (
-          <form key={editingCampaign.id} onSubmit={saveCampaign} className="space-y-6 p-5">
+          <form key={`${editingCampaign.id}-${selectedPeriod}`} onSubmit={saveCampaign} className="space-y-6 p-5">
             <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold text-white">{editingCampaign.name}</h3>
-                <span className="rounded-full bg-brand-ink px-2.5 py-1 text-xs font-semibold text-brand-soft">{editingCampaign.platform}</span>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white">{editingCampaign.name}</h3>
+                    <span className="rounded-full bg-brand-ink px-2.5 py-1 text-xs font-semibold text-brand-soft">{editingCampaign.platform}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-brand-muted">{clientDisplayName(data.clients.find(c => c.id === editingCampaign.clientId))} • {editingCampaign.objective}</p>
+                </div>
+                {editingCampaign.metricsByPeriod && (
+                  <select 
+                    value={selectedPeriod} 
+                    onChange={(e) => setSelectedPeriod(e.target.value)}
+                    className="rounded-lg border border-brand-line bg-brand-ink px-3 py-1.5 text-sm text-white outline-none focus:border-brand-green"
+                  >
+                    <option value="today">Hoje</option>
+                    <option value="yesterday">Ontem</option>
+                    <option value="last_3d">Últimos 3 dias</option>
+                    <option value="last_7d">Últimos 7 dias</option>
+                    <option value="last_14d">Últimos 14 dias</option>
+                    <option value="last_30d">Últimos 30 dias</option>
+                    <option value="maximum">Máximo</option>
+                  </select>
+                )}
               </div>
-              <p className="mt-1 text-sm text-brand-muted">{clientDisplayName(data.clients.find(c => c.id === editingCampaign.clientId))} • {editingCampaign.objective}</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
@@ -246,21 +271,21 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   <BarChart3 size={16} className="text-sky-400" />
                   <h4 className="font-semibold text-white">Performance Atual</h4>
                 </div>
-                <MoneyField label="Valor já gasto" name="spent" defaultValue={editingCampaign.spent} />
-                <Field label="Resultados Obtidos" name="results" type="number" min="0" defaultValue={editingCampaign.results} />
+                <MoneyField label="Valor já gasto" name="spent" defaultValue={activeMetrics.spent} />
+                <Field label="Resultados Obtidos" name="results" type="number" min="0" defaultValue={activeMetrics.results} />
                 
-                {editingCampaign.results && editingCampaign.results > 0 ? (
+                {activeMetrics.results && activeMetrics.results > 0 ? (
                   <div className="rounded-lg bg-brand-surface p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPA Atual (Custo/Resultado)</p>
                     <div className="mt-2 flex items-end gap-2">
                       <p className={`text-2xl font-black ${
-                        (editingCampaign.targetCPA && (editingCampaign.spent / editingCampaign.results) <= editingCampaign.targetCPA) 
+                        (editingCampaign.targetCPA && (activeMetrics.spent / activeMetrics.results) <= editingCampaign.targetCPA) 
                         ? 'text-brand-green' 
-                        : (editingCampaign.targetCPA && (editingCampaign.spent / editingCampaign.results) > editingCampaign.targetCPA)
+                        : (editingCampaign.targetCPA && (activeMetrics.spent / activeMetrics.results) > editingCampaign.targetCPA)
                         ? 'text-rose-400'
                         : 'text-white'
                       }`}>
-                        {money(editingCampaign.spent / editingCampaign.results)}
+                        {money(activeMetrics.spent / activeMetrics.results)}
                       </p>
                       {editingCampaign.targetCPA ? (
                         <p className="mb-1 text-xs text-brand-muted">alvo: {money(editingCampaign.targetCPA)}</p>
@@ -276,7 +301,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             </div>
 
             {/* Advanced Metrics Section */}
-            {(editingCampaign.ctr !== undefined || editingCampaign.cpc !== undefined || editingCampaign.cpr !== undefined || editingCampaign.pageViews !== undefined) && (
+            {(activeMetrics.ctr !== undefined || activeMetrics.cpc !== undefined || activeMetrics.cpr !== undefined || activeMetrics.pageViews !== undefined) && (
               <div className="space-y-4 pt-2">
                 <div className="flex items-center gap-2 border-b border-brand-line pb-2">
                   <BarChart3 size={16} className="text-[#0064e0]" />
@@ -285,27 +310,27 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                 <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Taxa de Clique (CTR)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.ctr ? Number(editingCampaign.ctr).toFixed(2) : '0.00'}%</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.ctr ? Number(activeMetrics.ctr).toFixed(2) : '0.00'}%</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Custo / Clique (CPC)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(editingCampaign.cpc || 0)}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics.cpc || 0)}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPR (Facebook)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(editingCampaign.cpr || 0)}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics.cpr || 0)}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Vis. Página</p>
-                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.pageViews || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.pageViews || 0}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Checkouts</p>
-                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.checkouts || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.checkouts || 0}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Compras</p>
-                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.purchases || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.purchases || 0}</p>
                   </div>
                 </div>
               </div>
