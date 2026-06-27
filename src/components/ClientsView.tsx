@@ -1,7 +1,6 @@
 import { Edit3, Mail, Plus, RefreshCw, Link as LinkIcon } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { syncClientMeta } from '../lib/meta/metaSyncService';
 import { createActivityLog, makeId, money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
@@ -155,7 +154,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
                 if (!pInsights) continue;
                 const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
+                const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
                 
                 metricsByPeriod[period] = {
                   spent: pSpend,
@@ -163,9 +162,9 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
                   ctr: Number((pInsights as any).ctr || 0),
                   cpc: Number((pInsights as any).cpc || 0),
                   cpr: pResults > 0 ? pSpend / pResults : 0,
-                  
-                  
-                  
+                  pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+                  checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+                  purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
                   impressions: Number((pInsights as any).impressions || 0)
                 };
               }
@@ -184,9 +183,9 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               ctr: Number(c.insights?.ctr || 0),
               cpc: Number(c.insights?.cpc || 0),
               cpr: cpr,
-              
-              
-              
+              pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+              checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+              purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
               metricsByPeriod,
               activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
               lastOptimizedAt: new Date().toISOString().slice(0, 10),
