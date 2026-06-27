@@ -26,31 +26,6 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
       return;
     }
 
-    // Tentar login silencioso para obter a sessão (necessário para as integrações Meta / RLS)
-    const adminEmail = 'admin@camply.com';
-    const { data: sessionData } = await supabase!.auth.getSession();
-    
-    if (!sessionData.session) {
-      const { error: signInErr } = await supabase!.auth.signInWithPassword({
-        email: adminEmail,
-        password,
-      });
-
-      if (signInErr) {
-        const { error: signUpErr, data: signUpData } = await supabase!.auth.signUp({
-          email: adminEmail,
-          password,
-        });
-
-        if (signUpErr) {
-          console.error("Supabase Silent Auth Error:", signUpErr.message);
-          alert(`Aviso: O login no painel funcionou, mas a autenticação com o banco de dados falhou (${signUpErr.message}). As integrações da Meta podem não funcionar.`);
-        } else if (signUpData.user && !signUpData.session) {
-          alert(`Aviso: O Supabase exige confirmação de e-mail. Por favor, desative a 'Email Confirmation' nas configurações de Auth do seu projeto Supabase para que a integração da Meta funcione sem e-mail.`);
-        }
-      }
-    }
-
     onUnlock();
     setLoading(false);
   };

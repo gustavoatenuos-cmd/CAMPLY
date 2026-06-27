@@ -25,9 +25,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       const { data, error } = await supabase!.functions.invoke('meta-validate-token');
       if (data && data.status === 'active') {
         setIntegration(data.integration);
-        // Opcional: buscar os assets automaticamente ao carregar
-        const { data: assetData } = await supabase!.from('meta_assets').select('*').eq('integration_id', data.integration.id);
-        if (assetData) setAssets(assetData);
+        if (data.assets) setAssets(data.assets);
       }
     } catch (e: any) {
       console.error(e);
@@ -46,7 +44,14 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       setIsLoading(true);
       setError(null);
       const { data, error } = await supabase!.functions.invoke('meta-oauth-start');
-      if (error) throw error;
+      if (error) {
+        let errorMsg = error.message;
+        if (error.context && typeof error.context.text === 'function') {
+           const text = await error.context.text();
+           errorMsg += ` - Context: ${text}`;
+        }
+        throw new Error(errorMsg);
+      }
       if (data?.url) {
         window.location.href = data.url;
       }

@@ -18,8 +18,11 @@ export function CreativeCriticView({ data }: Props) {
 
   // Auto-select first active integration
   useEffect(() => {
-    supabase!.from('meta_integrations').select('*').eq('status', 'active').maybeSingle().then(({ data: int }) => {
-      if (int) setActiveAccount(int.account_id || '');
+    supabase!.functions.invoke('meta-validate-token').then(({ data }) => {
+      if (data && data.status === 'active' && data.integration) {
+        // Here we fallback to integration.id if account_id isn't explicitly available in integration
+        setActiveAccount(data.integration.account_id || '');
+      }
     });
   }, []);
 
