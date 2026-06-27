@@ -275,6 +275,42 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
               </div>
             </div>
 
+            {/* Advanced Metrics Section */}
+            {(editingCampaign.ctr !== undefined || editingCampaign.cpc !== undefined || editingCampaign.cpr !== undefined || editingCampaign.pageViews !== undefined) && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center gap-2 border-b border-brand-line pb-2">
+                  <BarChart3 size={16} className="text-[#0064e0]" />
+                  <h4 className="font-semibold text-white">Métricas Avançadas (Facebook Ads)</h4>
+                </div>
+                <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Taxa de Clique (CTR)</p>
+                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.ctr ? Number(editingCampaign.ctr).toFixed(2) : '0.00'}%</p>
+                  </div>
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Custo / Clique (CPC)</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(editingCampaign.cpc || 0)}</p>
+                  </div>
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPR (Facebook)</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(editingCampaign.cpr || 0)}</p>
+                  </div>
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Vis. Página</p>
+                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.pageViews || 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Checkouts</p>
+                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.checkouts || 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Compras</p>
+                    <p className="mt-1 text-lg font-bold text-white">{editingCampaign.purchases || 0}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-2 border-b border-brand-line pb-2">
                 <CheckCircle2 size={16} className="text-amber-400" />

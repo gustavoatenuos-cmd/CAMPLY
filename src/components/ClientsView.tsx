@@ -141,23 +141,36 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           // Se tiver só 1 campanha, entra como 'live' (ativa). Se tiver mais, entram como 'optimize' (em otimização).
           const assignedStatus = numCampaigns > 1 ? 'optimize' : 'live';
 
-          const fetchedCampaigns = data.campaigns.map((c: any) => ({
-            id: makeId('campaign'),
-            clientId: nextClient.id,
-            name: c.name,
-            platform: 'Meta Ads' as const,
-            status: assignedStatus,
-            objective: c.objective,
-            budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Graph API returns budget in cents usually, check docs but usually /100 or keep raw if small
-            spent: Number(c.insights?.spend || 0),
-            results: Number(c.insights?.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0),
-            activeCreatives: c.activeAdsData?.length || 0,
-            lastOptimizedAt: new Date().toISOString().slice(0, 10),
-            nextAction: '',
-            priority: 'medium' as const,
-            metaCampaignId: c.id,
-            activeAdsData: c.activeAdsData
-          }));
+          const fetchedCampaigns = data.campaigns.map((c: any) => {
+            const spend = Number(c.insights?.spend || 0);
+            const results = Number(c.insights?.actions?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
+            const cprRaw = Number(c.insights?.cost_per_action_type?.find((a: any) => a.action_type === 'onsite_conversion.lead_grouped' || a.action_type === 'lead' || a.action_type === 'purchase')?.value || 0);
+            const cpr = cprRaw > 0 ? cprRaw : (results > 0 ? spend / results : 0);
+
+            return {
+              id: makeId('campaign'),
+              clientId: nextClient.id,
+              name: c.name,
+              platform: 'Meta Ads' as const,
+              status: assignedStatus,
+              objective: c.objective,
+              budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Graph API returns budget in cents usually, check docs but usually /100 or keep raw if small
+              spent: spend,
+              results: results,
+              ctr: Number(c.insights?.ctr || 0),
+              cpc: Number(c.insights?.cpc || 0),
+              cpr: cpr,
+              pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+              checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
+              purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
+              activeCreatives: c.activeAdsData?.length || 0,
+              lastOptimizedAt: new Date().toISOString().slice(0, 10),
+              nextAction: '',
+              priority: 'medium' as const,
+              metaCampaignId: c.id,
+              activeAdsData: c.activeAdsData
+            };
+          });
           
           updateData(curr => ({
             ...curr,

@@ -53,6 +53,12 @@ export interface Campaign {
   targetResults?: number;
   targetCPA?: number;
   results?: number;
+  ctr?: number;
+  cpc?: number;
+  cpr?: number;
+  pageViews?: number;
+  checkouts?: number;
+  purchases?: number;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
