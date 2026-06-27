@@ -37,7 +37,7 @@ serve(async (req) => {
       endpoint: '/me/adaccounts',
       accessToken,
       appSecret,
-      params: { fields: 'id,name,account_status,currency,timezone_name' }
+      params: { fields: 'id,name,account_status,currency,timezone_name', limit: '1000' }
     });
 
     // Fetch Pages
@@ -45,7 +45,7 @@ serve(async (req) => {
       endpoint: '/me/accounts',
       accessToken,
       appSecret,
-      params: { fields: 'id,name,access_token,category' } // access_token here is page token (we could encrypt and save it if needed, but for MVP we just store json)
+      params: { fields: 'id,name,access_token,category', limit: '1000' } // access_token here is page token (we could encrypt and save it if needed, but for MVP we just store json)
     });
 
     // Process and upsert into meta_assets
