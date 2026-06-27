@@ -127,9 +127,10 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       metaAdAccountName: metaAdAccounts.find(acc => acc.id === String(form.get('metaAdAccountId')))?.name,
     };
 
-    const isNewMetaLink = nextClient.metaAdAccountId && editingClient?.metaAdAccountId !== nextClient.metaAdAccountId;
+    // Always sync if a meta account is linked when saving, to allow forcing updates
+    const shouldSyncMeta = !!nextClient.metaAdAccountId;
 
-    if (isNewMetaLink && supabase) {
+    if (shouldSyncMeta && supabase) {
       setIsSyncing(true);
       // Fetch active campaigns from edge function
       supabase.functions.invoke('meta-sync-ads', {
