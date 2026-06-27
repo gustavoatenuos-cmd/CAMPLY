@@ -3,16 +3,15 @@ import { normalizeData } from './camplyStore';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 type WorkspaceRow = {
-  id: string;
   data: CamplyData;
-  updated_at: string;
   version: number;
 };
 
 let remoteVersion: number | null = null;
 
 const getUserId = async (): Promise<string | null> => {
-  const { data } = await supabase!.auth.getSession();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
   return data.session?.user.id || null;
 };
 
@@ -25,7 +24,7 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
     .from('camply_workspace')
     .select('data, version')
     .eq('id', userId)
-    .maybeSingle<Pick<WorkspaceRow, 'data' | 'version'>>();
+    .maybeSingle<WorkspaceRow>();
 
   if (error) {
     console.warn('Camply Supabase load skipped:', error.message);

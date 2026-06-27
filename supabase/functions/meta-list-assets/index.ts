@@ -31,7 +31,7 @@ serve(async (req) => {
       endpoint: '/me/adaccounts',
       accessToken,
       appSecret,
-      params: { fields: 'id,name,account_status,currency,timezone_name' }
+      params: { fields: 'id,name,account_status,currency,timezone_name', limit: '1000' }
     });
 
     // Fetch Pages
@@ -39,7 +39,7 @@ serve(async (req) => {
       endpoint: '/me/accounts',
       accessToken,
       appSecret,
-      params: { fields: 'id,name,category' }
+      params: { fields: 'id,name,category', limit: '1000' }
     });
 
     // Process and upsert into meta_assets

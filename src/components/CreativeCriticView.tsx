@@ -9,6 +9,7 @@ interface Props {
 
 export function CreativeCriticView({ data }: Props) {
   const [activeAccount, setActiveAccount] = useState<string>('');
+  const [adAccounts, setAdAccounts] = useState<any[]>([]);
   const [activeCampaign, setActiveCampaign] = useState<string>('');
   const [kpi, setKpi] = useState<string>('roas');
   
@@ -19,16 +20,19 @@ export function CreativeCriticView({ data }: Props) {
   // Auto-select first active integration
   useEffect(() => {
     invokeFunction<any>('meta-validate-token').then((data) => {
-      if (data && data.status === 'active' && data.integration) {
-        const adAccount = data.assets?.find((asset: any) => asset.asset_type === 'adaccount');
-        setActiveAccount(adAccount?.asset_id || '');
+      if (data && data.status === 'active' && data.assets) {
+        const accounts = data.assets.filter((a: any) => a.asset_type === 'adaccount');
+        setAdAccounts(accounts);
+        if (accounts.length > 0) {
+          setActiveAccount(accounts[0].asset_id);
+        }
       }
     }).catch((requestError) => setError(requestError.message));
   }, []);
 
   const handleAnalyze = async () => {
     if (!activeCampaign && !activeAccount) {
-      setError('Selecione uma conta ou campanha para analisar.');
+      setError('Selecione uma conta de anúncio ou campanha para analisar.');
       return;
     }
     
@@ -37,8 +41,21 @@ export function CreativeCriticView({ data }: Props) {
     
     try {
       // 1. Fetch Creative Data from Meta
-      const targetId = activeCampaign || activeAccount;
-      const type = activeCampaign ? 'campaign' : 'adaccount';
+      let targetId = activeAccount;
+      let type = 'adaccount';
+      let scopeName = 'Conta Inteira';
+
+      if (activeCampaign) {
+        const camp = data.campaigns.find(c => c.id === activeCampaign);
+        if (!camp?.metaCampaignId) {
+           setError('A campanha selecionada não possui um Meta ID vinculado. Ela precisa ser importada da tela de Integração Meta.');
+           setLoading(false);
+           return;
+        }
+        targetId = camp.metaCampaignId;
+        type = 'campaign';
+        scopeName = camp.name;
+      }
       
       const fetchRes = await invokeFunction<any>('meta-fetch-creatives', { targetId, type });
       
@@ -48,8 +65,6 @@ export function CreativeCriticView({ data }: Props) {
       }
 
       // 2. Call the Critic Agent
-      const scopeName = activeCampaign ? data.campaigns.find(c => c.id === activeCampaign)?.name || activeCampaign : 'Conta Completa';
-      
       const agentRes = await invokeFunction<any>('meta-creative-critic', { adsData: ads, kpi, scopeName });
       
       setAnalysis(agentRes.analysis);
@@ -77,12 +92,23 @@ export function CreativeCriticView({ data }: Props) {
             
             <div className="flex flex-wrap items-center gap-3">
               <select
+                value={activeAccount}
+                onChange={(e) => { setActiveAccount(e.target.value); setActiveCampaign(''); }}
+                className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-white focus:border-brand-green focus:outline-none"
+              >
+                <option value="" disabled>Selecione a Conta...</option>
+                {adAccounts.map(acc => (
+                  <option key={acc.asset_id} value={acc.asset_id}>{acc.asset_name}</option>
+                ))}
+              </select>
+
+              <select
                 value={activeCampaign}
                 onChange={(e) => setActiveCampaign(e.target.value)}
                 className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-white focus:border-brand-green focus:outline-none"
               >
-                <option value="">Conta Inteira</option>
-                {data.campaigns.filter(c => c.status !== 'setup').map(c => (
+                <option value="">Analisar a Conta Inteira</option>
+                {data.campaigns.filter(c => c.status !== 'setup' && c.platform === 'Meta Ads').map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
