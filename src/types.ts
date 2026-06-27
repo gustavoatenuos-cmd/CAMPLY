@@ -45,7 +45,7 @@ export interface CampaignMetrics {
   checkouts: number;
   purchases: number;
   impressions?: number;
-  conversations?: number;
+  conversations?: number; // @deprecated
 }
 
 export interface Campaign {
@@ -76,16 +76,18 @@ export interface Campaign {
   }>;
   targetResults?: number;
   targetCPA?: number;
-  results?: number;
+  results?: number; // @deprecated
   ctr?: number;
   cpc?: number;
-  cpr?: number;
+  cpr?: number; // @deprecated
   pageViews?: number;
   checkouts?: number;
   purchases?: number;
   impressions?: number;
-  conversations?: number;
-  metricsByPeriod?: Record<string, CampaignMetrics>;
+  conversations?: number; // @deprecated
+  metricsByPeriod?: Record<string, CampaignMetrics>; // @deprecated legacy field
+  classifiedObjective?: string;
+  normalizedMetricsByPeriod?: Record<string, Record<string, number>>;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
