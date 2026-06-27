@@ -55,6 +55,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
               cpc: Number((pInsights as any).cpc || 0),
               cpr: pResults > 0 ? pSpend / pResults : 0,
               pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+              conversations: Number((pInsights as any).actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
               checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
               purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
               impressions: Number((pInsights as any).impressions || 0)
@@ -76,6 +77,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           cpc: Number(c.insights?.cpc || 0),
           cpr: results > 0 ? spend / results : 0,
           pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
+          conversations: Number(c.insights?.actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
           checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
           purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
           metricsByPeriod,
@@ -662,13 +664,19 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             let clientResults = 0;
             let clientPurchases = 0;
             let clientImpressions = 0;
+            let clientConversations = 0;
+            let clientCheckouts = 0;
+            let clientPageViews = 0;
             
             activeCampaigns.forEach(c => {
-              const metrics = c.metricsByPeriod?.[dashboardPeriod] || (dashboardPeriod === 'maximum' ? c : { spent: 0, results: 0, purchases: 0, impressions: 0 });
+              const metrics = c.metricsByPeriod?.[dashboardPeriod] || (dashboardPeriod === 'maximum' ? c : { spent: 0, results: 0, purchases: 0, impressions: 0, conversations: 0, checkouts: 0, pageViews: 0 });
               clientSpent += (metrics.spent || 0);
               clientResults += (metrics.results || 0);
               clientPurchases += (metrics.purchases || 0);
               clientImpressions += (metrics.impressions || 0);
+              clientConversations += (metrics.conversations || 0);
+              clientCheckouts += (metrics.checkouts || 0);
+              clientPageViews += (metrics.pageViews || 0);
             });
 
             return (
@@ -706,10 +714,34 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Resultados</p>
                     <p className="font-bold text-white">{clientResults.toLocaleString('pt-BR')}</p>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Vendas</p>
-                    <p className="font-bold text-brand-green">{clientPurchases.toLocaleString('pt-BR')}</p>
-                  </div>
+                  
+                  {clientConversations > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#25D366]">Conversas (WhatsApp)</p>
+                      <p className="font-bold text-white">{clientConversations.toLocaleString('pt-BR')}</p>
+                    </div>
+                  )}
+
+                  {(clientPurchases > 0 || clientCheckouts > 0 || clientPageViews > 0 || clientConversations === 0) && (
+                    <>
+                      {clientPageViews > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">Visitas na Página</p>
+                          <p className="font-bold text-white">{clientPageViews.toLocaleString('pt-BR')}</p>
+                        </div>
+                      )}
+                      {clientCheckouts > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400">Finalização de Venda</p>
+                          <p className="font-bold text-white">{clientCheckouts.toLocaleString('pt-BR')}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-green">Vendas</p>
+                        <p className="font-bold text-brand-green">{clientPurchases.toLocaleString('pt-BR')}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );

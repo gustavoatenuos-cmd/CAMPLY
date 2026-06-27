@@ -45,6 +45,7 @@ export interface CampaignMetrics {
   checkouts: number;
   purchases: number;
   impressions?: number;
+  conversations?: number;
 }
 
 export interface Campaign {
@@ -83,6 +84,7 @@ export interface Campaign {
   checkouts?: number;
   purchases?: number;
   impressions?: number;
+  conversations?: number;
   metricsByPeriod?: Record<string, CampaignMetrics>;
   createdAt?: string;
   updatedAt?: string;
