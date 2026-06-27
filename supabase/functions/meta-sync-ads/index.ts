@@ -73,9 +73,9 @@ serve(async (req) => {
           accessToken,
           appSecret,
           params: {
-            fields: 'id,name,status,adset{name}',
+            fields: 'id,name,status,adset{id,name,status}',
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
-            limit: '50'
+            limit: '100'
           }
         }).catch((e: any) => {
           console.warn(`Failed ads for ${campaign.id}:`, e.message);
@@ -87,28 +87,40 @@ serve(async (req) => {
           insightsByPeriod[res.preset] = res.data;
         });
         
-        let activeAdsData = [];
+        let activeAdSets: any[] = [];
         if (adsData.data && adsData.data.length > 0) {
-          activeAdsData = adsData.data.map((ad: any) => ({
-            id: ad.id,
-            name: ad.name,
-            status: ad.status,
-            adset_name: ad.adset?.name
-          }));
+          const adSetsMap = new Map();
+          adsData.data.forEach((ad: any) => {
+             const adsetId = ad.adset?.id || 'unknown';
+             if (!adSetsMap.has(adsetId)) {
+               adSetsMap.set(adsetId, {
+                 id: adsetId,
+                 name: ad.adset?.name || 'Grupo Desconhecido',
+                 status: ad.adset?.status || 'ACTIVE',
+                 ads: []
+               });
+             }
+             adSetsMap.get(adsetId).ads.push({
+               id: ad.id,
+               name: ad.name,
+               status: ad.status
+             });
+          });
+          activeAdSets = Array.from(adSetsMap.values());
         }
 
         campaignsWithInsights.push({
           ...campaign,
-          insights: insightsByPeriod['maximum'], // default legacy behavior
+          insights: insightsByPeriod['maximum'],
           insightsByPeriod,
-          activeAdsData
+          activeAdSets
         });
       } catch (err) {
         console.warn(`Failed to fetch insights/ads for campaign ${campaign.id}:`, err instanceof Error ? err.message : err);
         campaignsWithInsights.push({
           ...campaign,
           insights: null,
-          activeAdsData: []
+          activeAdSets: []
         });
       }
     }
@@ -128,6 +140,29 @@ serve(async (req) => {
     })
 
   } catch (error) {
+    console.error('Meta Sync Error:', error)
+    try {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') || '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+      )
+      // Attempt to log the error to the database if possible
+      const reqClone = await req.clone().json().catch(() => ({}));
+      if (reqClone.adAccountId) {
+        const { data: intg } = await supabase.from('meta_integrations').select('id').eq('status', 'active').single();
+        if (intg) {
+          await supabase.from('meta_sync_logs').insert({
+            integration_id: intg.id,
+            sync_type: 'campaigns_and_insights',
+            endpoint: `/${reqClone.adAccountId}/campaigns`,
+            status: 'error',
+            metadata: { error: error instanceof Error ? error.message : String(error) }
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to write error log:', e);
+    }
     return errorResponse(error, corsHeaders)
   }
 })

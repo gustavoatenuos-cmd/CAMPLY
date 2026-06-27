@@ -366,22 +366,38 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             </div>
 
             {(() => {
-              if (!editingCampaign.activeAdsData || editingCampaign.activeAdsData.length === 0) return null;
+              if (!editingCampaign.activeAdSets || editingCampaign.activeAdSets.length === 0) return null;
               
               return (
                 <div className="space-y-4 pt-2">
                   <div className="flex items-center gap-2 border-b border-brand-line pb-2">
                     <ImageIcon size={16} className="text-brand-green" />
-                    <h4 className="font-semibold text-white">Anúncios Sincronizados ({editingCampaign.activeAdsData.length})</h4>
+                    <h4 className="font-semibold text-white">Estrutura de Anúncios Sincronizados ({editingCampaign.activeAdSets.reduce((acc, set) => acc + (set.ads?.length || 0), 0)})</h4>
                   </div>
-                  <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
-                    {editingCampaign.activeAdsData.map(ad => (
-                      <div key={ad.id} className="flex justify-between items-center rounded bg-brand-ink p-2 border border-brand-line">
-                        <div>
-                          <p className="text-xs font-bold text-white truncate max-w-[200px]">{ad.name}</p>
-                          <p className="text-[10px] text-brand-muted mt-0.5 truncate max-w-[200px]">{ad.adset_name || 'Conjunto não especificado'}</p>
+                  <div className="max-h-64 overflow-y-auto space-y-3 rounded-lg border border-brand-line/50 bg-brand-surface/30 p-3">
+                    {editingCampaign.activeAdSets.map(adset => (
+                      <div key={adset.id} className="rounded-lg bg-brand-ink border border-brand-line overflow-hidden">
+                        <div className="flex items-center justify-between p-3 border-b border-brand-line/50 bg-brand-surface/50">
+                          <div>
+                            <p className="text-xs font-bold text-white uppercase tracking-wide">GRUPO: {adset.name}</p>
+                            <p className="text-[10px] text-brand-muted mt-0.5">{adset.ads?.length || 0} criativos</p>
+                          </div>
+                          <span className={`text-[10px] font-bold ${adset.status === 'ACTIVE' ? 'text-brand-green' : 'text-amber-400'}`}>
+                            {adset.status === 'ACTIVE' ? 'ATIVO' : adset.status}
+                          </span>
                         </div>
-                        <span className="text-[10px] font-bold text-brand-green">ATIVO</span>
+                        {adset.ads && adset.ads.length > 0 && (
+                          <div className="p-3 space-y-2">
+                            {adset.ads.map(ad => (
+                              <div key={ad.id} className="flex justify-between items-center rounded bg-brand-surface p-2 border border-brand-line/50">
+                                <p className="text-xs font-medium text-white truncate max-w-[200px] sm:max-w-[300px]">{ad.name}</p>
+                                <span className={`text-[9px] font-bold ${ad.status === 'ACTIVE' ? 'text-brand-green' : 'text-brand-muted'}`}>
+                                  {ad.status === 'ACTIVE' ? 'ATIVO' : ad.status}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

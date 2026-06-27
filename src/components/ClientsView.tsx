@@ -187,12 +187,12 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
               purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
               metricsByPeriod,
-              activeCreatives: c.activeAdsData?.length || 0,
+              activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
               lastOptimizedAt: new Date().toISOString().slice(0, 10),
               nextAction: '',
               priority: 'medium' as const,
               metaCampaignId: c.id,
-              activeAdsData: c.activeAdsData
+              activeAdSets: c.activeAdSets || []
             };
           });
           updateData(curr => {

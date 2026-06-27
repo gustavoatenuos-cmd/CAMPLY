@@ -61,7 +61,16 @@ export interface Campaign {
   priority: Priority;
   metaCampaignId?: string;
   activeCreatives?: number;
-  activeAdsData?: Array<{ id: string; name: string; status: string; adset_name?: string }>;
+  activeAdSets?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    ads: Array<{
+      id: string;
+      name: string;
+      status: string;
+    }>;
+  }>;
   targetResults?: number;
   targetCPA?: number;
   results?: number;
