@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { BrandLogo } from './BrandLogo';
-import { supabase } from '../lib/supabase';
+import { verifyPassword } from '../auth';
 import { Hero } from './ui/hero-1';
 
 interface AuthGateProps {
@@ -16,41 +16,16 @@ export function AuthGate({ onUnlock }: AuthGateProps) {
     event.preventDefault();
     setLoading(true);
     setError('');
+
+    const valid = await verifyPassword(password);
     
-    // Hardcoded admin email for internal single-tenant usage
-    const adminEmail = 'admin@camply.com';
-
-    // 1. Tentar fazer login normal
-    const { data: signInData, error: signInError } = await supabase!.auth.signInWithPassword({
-      email: adminEmail,
-      password,
-    });
-
-    if (signInData.session) {
-      onUnlock();
+    if (!valid) {
+      setError('Senha incorreta.');
       setLoading(false);
       return;
     }
 
-    // 2. Se falhou, tentamos registrar silenciosamente (caso seja o primeiro acesso)
-    if (signInError) {
-      const { data: signUpData, error: signUpError } = await supabase!.auth.signUp({
-        email: adminEmail,
-        password,
-      });
-
-      if (signUpData.session) {
-        // Sucesso no primeiro acesso (senha configurada)
-        onUnlock();
-      } else if (signUpError?.message.includes('already registered') || signUpError?.status === 422) {
-        // Se já existe e falhou no signIn, a senha está errada
-        setError('Senha incorreta.');
-      } else {
-        // Outro erro qualquer (ex: senha muito fraca)
-        setError(signUpError?.message || 'Erro ao validar senha.');
-      }
-    }
-
+    onUnlock();
     setLoading(false);
   };
 
