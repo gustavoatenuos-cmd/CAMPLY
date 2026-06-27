@@ -5,8 +5,8 @@ export function CampaignObjectiveBlocks({ campaign, metrics, period }: { campaig
   if (!metrics) return null;
   const obj = campaign.classifiedObjective || 'UNCLASSIFIED';
 
-  const safeDivide = (num, den) => den > 0 ? (num / den) : 0;
-  const renderMoney = (num, den) => {
+  const safeDivide = (num: number, den: number) => den > 0 ? (num / den) : 0;
+  const renderMoney = (num: number, den: number) => {
     if (!den || den === 0) return 'Indisponível';
     return money(num / den);
   };
