@@ -20,7 +20,8 @@ export async function generateAppSecretProof(accessToken: string, appSecret: str
   return signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v25.0';
+export const META_GRAPH_VERSION = // @ts-ignore
+    Deno.env.get('META_GRAPH_VERSION') || 'v25.0';
 export const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 export interface MetaApiOptions {

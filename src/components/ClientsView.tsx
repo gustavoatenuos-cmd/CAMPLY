@@ -154,7 +154,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
                 if (!pInsights) continue;
                 const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = c.metricsByPeriod?.[preset]?.results || 0; // Legacy fallback
+                const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
                 
                 metricsByPeriod[period] = {
                   spent: pSpend,
