@@ -80,6 +80,7 @@ export interface Campaign {
   pageViews?: number;
   checkouts?: number;
   purchases?: number;
+  impressions?: number;
   metricsByPeriod?: Record<string, CampaignMetrics>;
   createdAt?: string;
   updatedAt?: string;

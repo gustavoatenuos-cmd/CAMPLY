@@ -196,11 +196,11 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
             };
           });
           updateData(curr => {
-            const updatedCampaigns = curr.campaigns.map(c => {
+            const updatedCampaigns = curr.campaigns.map((c: any) => {
               if (c.clientId === nextClient.id && c.platform === 'Meta Ads') {
-                const fc = fetchedCampaigns.find(f => f.metaCampaignId === c.metaCampaignId);
+                const fc = fetchedCampaigns.find((f: any) => f.metaCampaignId === c.metaCampaignId);
                 if (fc) {
-                  return { ...fc, id: c.id, status: c.status !== 'launching' && c.status !== 'finished' ? c.status : fc.status }; // if it was already active in crm, keep its system status like 'optimize', else fc.status
+                  return { ...fc, id: c.id, status: c.status !== 'launching' ? c.status : fc.status }; // if it was already active in crm, keep its system status like 'optimize', else fc.status
                 } else {
                   return { ...c, status: 'paused' };
                 }
@@ -208,11 +208,17 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
               return c;
             });
             
-            const newCampaigns = fetchedCampaigns.filter(fc => !curr.campaigns.some(c => c.clientId === nextClient.id && c.platform === 'Meta Ads' && c.metaCampaignId === fc.metaCampaignId));
+            const newCampaignsToInsert = fetchedCampaigns
+              .filter((fc: any) => !curr.campaigns.some((c: any) => c.metaCampaignId === fc.metaCampaignId))
+              .map((fc: any) => ({
+                ...fc,
+                id: makeId('campaign'),
+                clientId: nextClient.id
+              }));
 
             return {
             ...curr,
-            campaigns: [...newCampaigns, ...updatedCampaigns],
+            campaigns: [...newCampaignsToInsert, ...updatedCampaigns],
             activityLogs: [
               createActivityLog({
                 action: 'campaign_created',

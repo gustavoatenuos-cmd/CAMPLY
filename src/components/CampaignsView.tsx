@@ -271,21 +271,21 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   <BarChart3 size={16} className="text-sky-400" />
                   <h4 className="font-semibold text-white">Performance Atual</h4>
                 </div>
-                <MoneyField label="Valor já gasto" name="spent" defaultValue={activeMetrics.spent} />
-                <Field label="Resultados Obtidos" name="results" type="number" min="0" defaultValue={activeMetrics.results} />
+                <MoneyField label="Valor já gasto" name="spent" defaultValue={activeMetrics?.spent} />
+                <Field label="Resultados Obtidos" name="results" type="number" min="0" defaultValue={activeMetrics?.results} />
                 
-                {activeMetrics.results && activeMetrics.results > 0 ? (
+                {activeMetrics?.results && activeMetrics?.results > 0 ? (
                   <div className="rounded-lg bg-brand-surface p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPA Atual (Custo/Resultado)</p>
                     <div className="mt-2 flex items-end gap-2">
                       <p className={`text-2xl font-black ${
-                        (editingCampaign.targetCPA && (activeMetrics.spent / activeMetrics.results) <= editingCampaign.targetCPA) 
+                        (editingCampaign.targetCPA && (activeMetrics?.spent / activeMetrics?.results) <= editingCampaign.targetCPA) 
                         ? 'text-brand-green' 
-                        : (editingCampaign.targetCPA && (activeMetrics.spent / activeMetrics.results) > editingCampaign.targetCPA)
+                        : (editingCampaign.targetCPA && (activeMetrics?.spent / activeMetrics?.results) > editingCampaign.targetCPA)
                         ? 'text-rose-400'
                         : 'text-white'
                       }`}>
-                        {money(activeMetrics.spent / activeMetrics.results)}
+                        {money(activeMetrics?.spent / activeMetrics?.results)}
                       </p>
                       {editingCampaign.targetCPA ? (
                         <p className="mb-1 text-xs text-brand-muted">alvo: {money(editingCampaign.targetCPA)}</p>
@@ -301,7 +301,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             </div>
 
             {/* Advanced Metrics Section */}
-            {(activeMetrics.ctr !== undefined || activeMetrics.cpc !== undefined || activeMetrics.cpr !== undefined || activeMetrics.pageViews !== undefined) && (
+            {(activeMetrics?.ctr !== undefined || activeMetrics?.cpc !== undefined || activeMetrics?.cpr !== undefined || activeMetrics?.pageViews !== undefined) && (
               <div className="space-y-4 pt-2">
                 <div className="flex items-center gap-2 border-b border-brand-line pb-2">
                   <BarChart3 size={16} className="text-[#0064e0]" />
@@ -310,27 +310,27 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                 <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Taxa de Clique (CTR)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.ctr ? Number(activeMetrics.ctr).toFixed(2) : '0.00'}%</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.ctr ? Number(activeMetrics?.ctr).toFixed(2) : '0.00'}%</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Custo / Clique (CPC)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics.cpc || 0)}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics?.cpc || 0)}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPR (Facebook)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics.cpr || 0)}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics?.cpr || 0)}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Vis. Página</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.pageViews || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.pageViews || 0}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Checkouts</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.checkouts || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.checkouts || 0}</p>
                   </div>
                   <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Compras</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics.purchases || 0}</p>
+                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.purchases || 0}</p>
                   </div>
                 </div>
               </div>
@@ -483,11 +483,11 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                     </div>
                                   )}
                                   
-                                  {campaign.activeAdsData && campaign.activeAdsData.length > 0 ? (
+                                  {campaign.activeAdSets && campaign.activeAdSets.length > 0 ? (
                                     <div className="mt-2 flex flex-wrap items-center gap-2">
                                       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-green bg-brand-green/10 w-fit px-2 py-0.5 rounded-full">
                                         <ImageIcon size={10} />
-                                        {campaign.activeAdsData.length} anúncios
+                                        {campaign.activeAdSets.length} anúncios
                                       </div>
                                       {campaign.metaCampaignId && (
                                         <button 

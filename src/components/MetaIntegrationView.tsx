@@ -144,7 +144,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       budget: metaBudget,
       spent: spent,
       metaCampaignId: importingCampaign.id,
-      activeAdsData: importingCampaign.activeAdsData || [],
+      activeAdSets: importingCampaign.activeAdsData || [],
       lastOptimizedAt: new Date().toISOString(),
       nextAction: 'Monitorar resultados e otimizar',
       priority: hasOverdue ? 'high' : 'medium',

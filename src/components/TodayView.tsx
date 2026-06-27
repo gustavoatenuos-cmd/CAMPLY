@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target, BarChart3 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
