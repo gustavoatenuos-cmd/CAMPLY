@@ -42,90 +42,95 @@ serve(async (req) => {
     });
 
     const activeCampaigns = campaignsData.data || [];
-    
-    // Fetch Insights and Active Ads for each Campaign Sequentially to avoid rate limits
-    const campaignsWithInsights = [];
-    for (const campaign of activeCampaigns) {
-      try {
-        const periods = ['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'maximum'];
-        const insightsResults = [];
-        
-        for (const preset of periods) {
-          try {
-            const res = await fetchMetaGraph({
-              endpoint: `/${campaign.id}/insights`,
-              accessToken,
-              appSecret,
-              params: {
-                fields: 'impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
-                date_preset: preset 
-              }
-            });
-            insightsResults.push({ preset, data: res.data && res.data.length > 0 ? res.data[0] : null });
-          } catch (e: any) {
-            console.warn(`Failed insight preset ${preset} for ${campaign.id}:`, e.message);
-            insightsResults.push({ preset, data: null });
-          }
-        }
 
-        const adsData = await fetchMetaGraph({
-          endpoint: `/${campaign.id}/ads`,
+    // 2. Fetch all active ads for the account in one call
+    let allAds = [];
+    try {
+      const adsRes = await fetchMetaGraph({
+        endpoint: `/${adAccountId}/ads`,
+        accessToken,
+        appSecret,
+        params: {
+          fields: 'campaign_id,id,name,status,adset{id,name,status}',
+          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+          limit: '500'
+        }
+      });
+      allAds = adsRes.data || [];
+    } catch (e: any) {
+      console.warn('Failed to fetch ads for account', e.message);
+    }
+
+    // Group ads by campaign
+    const adsByCampaign = new Map();
+    allAds.forEach((ad: any) => {
+      const cid = ad.campaign_id;
+      if (!adsByCampaign.has(cid)) adsByCampaign.set(cid, []);
+      adsByCampaign.get(cid).push(ad);
+    });
+
+    // 3. Fetch insights for all campaigns in 7 calls
+    const periods = ['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'maximum'];
+    const accountInsightsByPeriod: Record<string, any[]> = {};
+    
+    for (const preset of periods) {
+      try {
+        const res = await fetchMetaGraph({
+          endpoint: `/${adAccountId}/insights`,
           accessToken,
           appSecret,
           params: {
-            fields: 'id,name,status,adset{id,name,status}',
-            filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
-            limit: '100'
+            level: 'campaign',
+            fields: 'campaign_id,impressions,clicks,spend,cpc,cpa,actions,ctr,cost_per_action_type',
+            date_preset: preset,
+            limit: '500'
           }
-        }).catch((e: any) => {
-          console.warn(`Failed ads for ${campaign.id}:`, e.message);
-          return { data: [] };
         });
-        
-        const insightsByPeriod: Record<string, any> = {};
-        insightsResults.forEach(res => {
-          insightsByPeriod[res.preset] = res.data;
-        });
-        
-        let activeAdSets: any[] = [];
-        if (adsData.data && adsData.data.length > 0) {
-          const adSetsMap = new Map();
-          adsData.data.forEach((ad: any) => {
-             const adsetId = ad.adset?.id || 'unknown';
-             if (!adSetsMap.has(adsetId)) {
-               adSetsMap.set(adsetId, {
-                 id: adsetId,
-                 name: ad.adset?.name || 'Grupo Desconhecido',
-                 status: ad.adset?.status || 'ACTIVE',
-                 ads: []
-               });
-             }
-             adSetsMap.get(adsetId).ads.push({
-               id: ad.id,
-               name: ad.name,
-               status: ad.status
-             });
-          });
-          activeAdSets = Array.from(adSetsMap.values());
-        }
-
-        campaignsWithInsights.push({
-          ...campaign,
-          insights: insightsByPeriod['maximum'],
-          insightsByPeriod,
-          activeAdSets
-        });
-      } catch (err) {
-        console.warn(`Failed to fetch insights/ads for campaign ${campaign.id}:`, err instanceof Error ? err.message : err);
-        campaignsWithInsights.push({
-          ...campaign,
-          insights: null,
-          activeAdSets: []
-        });
+        accountInsightsByPeriod[preset] = res.data || [];
+      } catch (e: any) {
+        console.warn(`Failed account insights for ${preset}`, e.message);
+        accountInsightsByPeriod[preset] = [];
       }
     }
 
-    // Log sync
+    // 4. Assemble campaignsWithInsights
+    const campaignsWithInsights = [];
+    for (const campaign of activeCampaigns) {
+      // Build activeAdSets from grouped ads
+      const campaignAds = adsByCampaign.get(campaign.id) || [];
+      const adSetsMap = new Map();
+      campaignAds.forEach((ad: any) => {
+        const adsetId = ad.adset?.id || 'unknown';
+        if (!adSetsMap.has(adsetId)) {
+          adSetsMap.set(adsetId, {
+            id: adsetId,
+            name: ad.adset?.name || 'Grupo Desconhecido',
+            status: ad.adset?.status || 'ACTIVE',
+            ads: []
+          });
+        }
+        adSetsMap.get(adsetId).ads.push({
+          id: ad.id,
+          name: ad.name,
+          status: ad.status
+        });
+      });
+      const activeAdSets = Array.from(adSetsMap.values());
+
+      // Build insightsByPeriod
+      const insightsByPeriod: Record<string, any> = {};
+      for (const preset of periods) {
+        const row = accountInsightsByPeriod[preset].find((r: any) => r.campaign_id === campaign.id);
+        insightsByPeriod[preset] = row || null;
+      }
+
+      campaignsWithInsights.push({
+        ...campaign,
+        insightsByPeriod,
+        activeAdSets
+      });
+    }
+// Log sync
     await supabaseClient.from('meta_sync_logs').insert({
       integration_id: integration.id,
       sync_type: 'campaigns_and_insights',
@@ -149,7 +154,7 @@ serve(async (req) => {
       // Attempt to log the error to the database if possible
       const reqClone = await req.clone().json().catch(() => ({}));
       if (reqClone.adAccountId) {
-        const { data: intg } = await supabase.from('meta_integrations').select('id').eq('status', 'active').single();
+        const { data: intg } = await supabase.from('integrations').select('id').eq('platform', 'meta').single();
         if (intg) {
           await supabase.from('meta_sync_logs').insert({
             integration_id: intg.id,

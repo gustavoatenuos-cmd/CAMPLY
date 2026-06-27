@@ -676,7 +676,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                 <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
                   
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-white">{client.name}</h3>
+                    <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
                     {client.metaAdAccountId && (
                       <button 
                         onClick={() => handleSyncClient(client)}
