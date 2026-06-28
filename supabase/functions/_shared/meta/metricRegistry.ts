@@ -283,5 +283,31 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable', // Do not default to 0 if API does not return this metric
     deduplicationRule: 'priority_alias',
     supportedLevels: ['campaign', 'adset', 'ad']
+  },
+  video_views: {
+    id: 'video_views',
+    label: 'Visualizações de Vídeo (3s)',
+    description: 'Número de vezes que seu vídeo foi reproduzido por pelo menos 3 segundos.',
+    source: 'actions',
+    acceptedActionTypes: ['video_view'],
+    compatibleObjectives: ['VIDEO', 'ENGAGEMENT', 'AWARENESS'],
+    aggregationRule: 'sum',
+    formatter: 'integer',
+    missingDataRule: 'zero',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad']
+  },
+  thru_plays: {
+    id: 'thru_plays',
+    label: 'ThruPlays',
+    description: 'Número de vezes que seu vídeo foi reproduzido até o fim ou por pelo menos 15 segundos.',
+    source: 'actions',
+    acceptedActionTypes: ['video_view_thru_play'],
+    compatibleObjectives: ['VIDEO', 'ENGAGEMENT'],
+    aggregationRule: 'sum',
+    formatter: 'integer',
+    missingDataRule: 'zero',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad']
   }
 };

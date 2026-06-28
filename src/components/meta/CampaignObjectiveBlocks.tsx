@@ -52,8 +52,8 @@ export function CampaignObjectiveBlocks({ campaign, metrics, period }: { campaig
       <div className="p-3 bg-gray-800 rounded-lg mt-2 space-y-1">
         <h4 className="text-xs font-bold text-cyan-400">Objetivo: Tráfego</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          <div>Visitas: <span className="font-mono">{metrics.landing_page_views || metrics.link_clicks || 0}</span></div>
-          <div>CPC/Custo Visita: <span className="font-mono">{renderMoney(metrics.spend, (metrics.landing_page_views || metrics.link_clicks))}</span></div>
+          <div>Visitas à Página: <span className="font-mono">{metrics.landing_page_views || 0}</span></div>
+          <div>Custo p/ Visita: <span className="font-mono">{renderMoney(metrics.spend, metrics.landing_page_views)}</span></div>
         </div>
       </div>
     );
@@ -64,32 +64,48 @@ export function CampaignObjectiveBlocks({ campaign, metrics, period }: { campaig
       <div className="p-3 bg-gray-800 rounded-lg mt-2 space-y-1">
         <h4 className="text-xs font-bold text-pink-400">Objetivo: Visitas ao Perfil</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          <div>Cliques: <span className="font-mono">{metrics.link_clicks || 0}</span></div>
-          <div>CPC: <span className="font-mono">{renderMoney(metrics.spend, metrics.link_clicks)}</span></div>
+          <div>Visitas: <span className="font-mono">{metrics.profile_visits || 0}</span></div>
+          <div>Custo p/ Visita: <span className="font-mono">{renderMoney(metrics.spend, metrics.profile_visits)}</span></div>
         </div>
       </div>
     );
   }
 
-  if (obj === 'ENGAGEMENT' || obj === 'AWARENESS' || obj === 'VIDEO') {
+  if (obj === 'VIDEO') {
+    return (
+      <div className="p-3 bg-gray-800 rounded-lg mt-2 space-y-1">
+        <h4 className="text-xs font-bold text-orange-400">Objetivo: Visualizações de Vídeo</h4>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>ThruPlays: <span className="font-mono">{metrics.thru_plays || 0}</span></div>
+          <div>Custo p/ ThruPlay: <span className="font-mono">{renderMoney(metrics.spend, metrics.thru_plays)}</span></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (obj === 'ENGAGEMENT' || obj === 'AWARENESS') {
     return (
       <div className="p-3 bg-gray-800 rounded-lg mt-2 space-y-1">
         <h4 className="text-xs font-bold text-orange-400">Objetivo: Reconhecimento/Engajamento</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>Alcance: <span className="font-mono">{metrics.reach || 0}</span></div>
-          <div>CPM: <span className="font-mono">{renderMoney(metrics.spend, metrics.impressions / 1000)}</span></div>
+          <div>CPM: <span className="font-mono">{metrics.cpm ? money(metrics.cpm) : 'Indisponível'}</span></div>
         </div>
       </div>
     );
   }
   
   if (obj === 'MESSENGER' || obj === 'INSTAGRAM_DIRECT' || obj === 'MESSAGING_OTHER') {
+    const convCount = obj === 'MESSENGER' ? metrics.messenger_conversations_started :
+                      obj === 'INSTAGRAM_DIRECT' ? metrics.instagram_direct_conversations_started :
+                      metrics.messaging_conversations_started_generic;
+                      
     return (
       <div className="p-3 bg-gray-800 rounded-lg mt-2 space-y-1">
         <h4 className="text-xs font-bold text-teal-400">Objetivo: Mensagens ({obj})</h4>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          <div>Conversas: <span className="font-mono">{metrics.messaging_conversations_started || 0}</span></div>
-          <div>Custo p/ Conversa: <span className="font-mono">{renderMoney(metrics.spend, metrics.messaging_conversations_started)}</span></div>
+          <div>Conversas: <span className="font-mono">{convCount || 0}</span></div>
+          <div>Custo p/ Conversa: <span className="font-mono">{renderMoney(metrics.spend, convCount)}</span></div>
         </div>
       </div>
     );

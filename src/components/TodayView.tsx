@@ -233,7 +233,6 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const totalSpent = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.spend || c.spent || 0), 0);
   const totalBudget = data.campaigns.reduce((s, c) => s + c.budget, 0);
   const totalImpressions = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.impressions || 0), 0);
-  const totalReach = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.reach || 0), 0);
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -510,7 +509,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           );
         })()}
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
             <p className="text-[10px] text-brand-muted uppercase font-semibold">Campanhas Ativas</p>
             <p className="text-xl font-black text-white mt-1">{activeCampaigns.length}</p>
@@ -522,10 +521,6 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
             <p className="text-[10px] text-brand-muted uppercase font-semibold">Impressões (7d)</p>
             <p className="text-xl font-black text-white mt-1">{totalImpressions.toLocaleString('pt-BR')}</p>
-          </div>
-          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">Alcance (7d)</p>
-            <p className="text-xl font-black text-white mt-1">{totalReach > 0 ? totalReach.toLocaleString('pt-BR') : '—'}</p>
           </div>
         </div>
 
@@ -579,7 +574,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             <option value="last_7d">Últimos 7 dias</option>
             <option value="last_14d">Últimos 14 dias</option>
             <option value="last_30d">Últimos 30 dias</option>
-            <option value="maximum">Máximo</option>
+            <option value="maximum">Desde o início</option>
           </select>
         </div>
 

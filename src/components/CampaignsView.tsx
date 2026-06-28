@@ -8,6 +8,7 @@ import { Modal } from './ui/Modal';
 import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
+import { ReconciliationModal } from './meta/ReconciliationModal';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -18,6 +19,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
   const [creativesModalCampaignId, setCreativesModalCampaignId] = useState<string | null>(null);
+  const [reconciliationSyncRunId, setReconciliationSyncRunId] = useState<string | null>(null);
   const [creativesData, setCreativesData] = useState<any[]>([]);
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('maximum');
@@ -266,21 +268,41 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   </div>
                   <p className="mt-1 text-sm text-brand-muted">{clientDisplayName(data.clients.find(c => c.id === editingCampaign.clientId))} • {editingCampaign.objective}</p>
                 </div>
-                {editingCampaign.metricsByPeriod && (
-                  <select 
-                    value={selectedPeriod} 
-                    onChange={(e) => setSelectedPeriod(e.target.value)}
-                    className="rounded-lg border border-brand-line bg-brand-ink px-3 py-1.5 text-sm text-white outline-none focus:border-brand-green"
-                  >
-                    <option value="today">Hoje</option>
-                    <option value="yesterday">Ontem</option>
-                    <option value="last_3d">Últimos 3 dias</option>
-                    <option value="last_7d">Últimos 7 dias</option>
-                    <option value="last_14d">Últimos 14 dias</option>
-                    <option value="last_30d">Últimos 30 dias</option>
-                    <option value="maximum">Desde o início</option>
-                  </select>
-                )}
+                <div className="flex items-center gap-2">
+                  {editingCampaign.syncRunId && (
+                    <button
+                      type="button"
+                      onClick={() => setReconciliationSyncRunId(editingCampaign.syncRunId || null)}
+                      className="flex items-center gap-1.5 rounded-lg border border-brand-line bg-brand-surface2 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-line transition-colors"
+                    >
+                      <History size={14} />
+                      Conciliar Dados
+                    </button>
+                  )}
+                  {(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod) && (
+                    <select 
+                      value={selectedPeriod} 
+                      onChange={(e) => setSelectedPeriod(e.target.value)}
+                      className="rounded-lg border border-brand-line bg-brand-ink px-3 py-1.5 text-sm text-white outline-none focus:border-brand-green"
+                    >
+                      {Object.keys(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).map(period => (
+                        <option key={period} value={period}>
+                          {period === 'maximum' ? 'Desde o início' :
+                           period === 'today' ? 'Hoje' :
+                           period === 'yesterday' ? 'Ontem' :
+                           period === 'last_3d' ? 'Últimos 3 dias' :
+                           period === 'last_7d' ? 'Últimos 7 dias' :
+                           period === 'last_14d' ? 'Últimos 14 dias' :
+                           period === 'last_30d' ? 'Últimos 30 dias' : period}
+                        </option>
+                      ))}
+                      {/* Fallback option if empty */}
+                      {Object.keys(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).length === 0 && (
+                        <option value="maximum">Desde o início</option>
+                      )}
+                    </select>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -628,6 +650,14 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
           )}
         </div>
       </Modal>
+
+      {reconciliationSyncRunId && (
+        <ReconciliationModal 
+          isOpen={!!reconciliationSyncRunId} 
+          onClose={() => setReconciliationSyncRunId(null)} 
+          syncRunId={reconciliationSyncRunId} 
+        />
+      )}
     </section>
   );
 }

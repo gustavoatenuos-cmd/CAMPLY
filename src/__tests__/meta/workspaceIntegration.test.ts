@@ -32,7 +32,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
     projects: [],
     receivables: [],
     tasks: [],
-    goals: []
+    agentRules: []
   };
 
   const fetchedCampaign: Campaign = {
@@ -40,7 +40,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
     clientId: 'c1',
     name: 'Updated Name by Meta',
     platform: 'Meta Ads',
-    status: 'review', // Meta sync tries to set to review, but it's already 'optimize'
+    status: 'setup', // Meta sync tries to set to setup, but it's already 'optimize'
     objective: 'Traffic',
     budget: 200,
     spent: 80,
@@ -57,7 +57,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
     clientId: 'c1',
     name: 'Brand New Meta Campaign',
     platform: 'Meta Ads',
-    status: 'review',
+    status: 'setup',
     objective: 'Sales',
     budget: 500,
     spent: 0,
@@ -96,7 +96,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
     const inserted = nextData.campaigns.find(c => c.metaCampaignId === 'meta_c2');
     expect(inserted).toBeDefined();
     expect(inserted?.id).toBeDefined();
-    expect(inserted?.status).toBe('review');
+    expect(inserted?.status).toBe('setup');
   });
 
   it('is idempotent when run twice with same fetched campaigns', () => {
@@ -115,10 +115,10 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
     expect(camp2Step1?.id).toBe(camp2Step2?.id);
   });
   
-  it('pauses campaigns that are no longer returned by Meta', () => {
-    // We fetched nothing, so camp_int_1 should be paused
+  it('preserves campaigns that are no longer returned by Meta (partial sync)', () => {
+    // We fetched nothing, so camp_int_1 should preserve its status 'optimize'
     const nextData = applyMetaSyncToWorkspace(mockClient, [], initialWorkspace);
     expect(nextData.campaigns).toHaveLength(1);
-    expect(nextData.campaigns[0].status).toBe('paused');
+    expect(nextData.campaigns[0].status).toBe('optimize');
   });
 });

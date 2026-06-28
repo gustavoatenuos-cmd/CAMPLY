@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Facebook, Link as LinkIcon, Unlink, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { invokeFunction } from '../lib/invokeFunction';
+import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
 
 import { CamplyData, Client, Campaign } from '../types';
 
@@ -134,62 +135,42 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       });
     }
 
-    const newCampaign: Campaign = {
-      id: crypto.randomUUID(),
-      clientId: selectedClientId,
-      name: importingCampaign.name,
-      platform: 'Meta Ads',
-      status: 'live',
-      objective: importingCampaign.objective || 'Outro',
-      budget: metaBudget,
-      spent: spent,
-      metaCampaignId: importingCampaign.id,
-      activeAdSets: importingCampaign.classifiedAdsets || [],
-      priority: hasOverdue ? 'high' : 'medium',
-      classifiedObjective: importingCampaign.classifiedObjective || 'UNCLASSIFIED',
-      normalizedMetricsByPeriod: importingCampaign.normalizedMetricsByPeriod || {},
-      metaStatus: importingCampaign.status || importingCampaign.metaStatus,
-      metaEffectiveStatus: importingCampaign.effective_status || importingCampaign.metaEffectiveStatus,
-      syncRunId: importingCampaign.syncRunId,
-      lastSyncedAt: importingCampaign.lastSyncedAt || new Date().toISOString(),
-      lastOptimizedAt: new Date().toISOString().slice(0, 10),
-      nextAction: '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString(),
-    };
+    updateData((prev) => {
+      // Use standard sync application instead of manual construction
+      const nextState = applyMetaSyncToWorkspace(selectedClient, [importingCampaign], prev);
+      
+      return {
+        ...nextState,
+        agentLogs: newInsights.length > 0 ? [
+          ...nextState.agentLogs,
+          ...newInsights.map(insight => ({
+            id: crypto.randomUUID(),
+            relatedEntityId: nextState.campaigns.find((c: Campaign) => c.metaCampaignId === importingCampaign.id)?.id || '',
+            relatedEntityType: 'campaign' as const,
+            analysisType: 'Sincronização Meta Ads',
+            classification: insight.level,
+            reason: insight.title + ' - ' + insight.description,
+            createdAt: new Date().toISOString(),
+          }))
+        ] : prev.agentLogs,
+        agentAlerts: newInsights.length > 0 ? [
+          ...prev.agentAlerts,
+          ...newInsights.map(insight => ({
+            id: crypto.randomUUID(),
+            relatedEntityId: nextState.campaigns.find((c: Campaign) => c.metaCampaignId === importingCampaign.id)?.id || '',
+            relatedEntityType: 'campaign' as const,
+            clientId: selectedClientId,
+            title: insight.title,
+            message: insight.description,
+            severity: insight.level,
+            status: 'active' as const,
+            suggestedAction: insight.recommendation,
+            triggeredAt: new Date().toISOString(),
+          }))
+        ] : nextState.agentAlerts
+      };
+    });
 
-    updateData((prev) => ({
-      ...prev,
-      campaigns: [...prev.campaigns, newCampaign],
-      agentLogs: newInsights.length > 0 ? [
-        ...prev.agentLogs,
-        ...newInsights.map(insight => ({
-          id: crypto.randomUUID(),
-          relatedEntityId: newCampaign.id,
-          relatedEntityType: 'campaign' as const,
-          analysisType: 'Sincronização Meta Ads',
-          classification: insight.level,
-          reason: insight.title + ' - ' + insight.description,
-          createdAt: new Date().toISOString(),
-        }))
-      ] : prev.agentLogs,
-      agentAlerts: newInsights.length > 0 ? [
-        ...prev.agentAlerts,
-        ...newInsights.map(insight => ({
-          id: crypto.randomUUID(),
-          relatedEntityId: newCampaign.id,
-          relatedEntityType: 'campaign' as const,
-          clientId: selectedClientId,
-          title: insight.title,
-          message: insight.description,
-          severity: insight.level,
-          status: 'active' as const,
-          suggestedAction: insight.recommendation,
-          triggeredAt: new Date().toISOString(),
-        }))
-      ] : prev.agentAlerts
-    }));
 
     setImportingCampaign(null);
     setSelectedClientId('');

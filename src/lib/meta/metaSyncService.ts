@@ -43,7 +43,8 @@ export async function syncClientMeta(client: any, existingCampaigns: Campaign[])
       metaStatus: c.status || c.meta_status,
       metaEffectiveStatus: c.effective_status,
       metaCampaignId: c.id,
-      activeAdSets: c.classifiedAdsets || []
+      activeAdSets: c.classifiedAdsets || [],
+      syncRunId: data.runId
     } as Campaign;
   });
 

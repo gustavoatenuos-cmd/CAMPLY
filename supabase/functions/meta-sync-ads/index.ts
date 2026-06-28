@@ -190,7 +190,8 @@ serve(async (req) => {
                metric_value: val,
                date_start: row.date_start,
                date_stop: row.date_stop,
-               timezone: 'America/Sao_Paulo'
+               timezone: 'America/Sao_Paulo',
+               attribution_setting: classifiedAdsets[0]?.attribution_setting || 'default'
              });
            }
         }

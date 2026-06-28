@@ -92,6 +92,7 @@ export interface Campaign {
   metaStatus?: string;
   metaEffectiveStatus?: string;
   syncRunId?: string;
+  metaMissingFromLatestSync?: boolean;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;

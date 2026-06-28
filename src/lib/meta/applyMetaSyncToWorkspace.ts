@@ -22,9 +22,14 @@ export function applyMetaSyncToWorkspace(
           createdAt: c.createdAt,
           updatedAt: new Date().toISOString(),
           lastActivityAt: c.lastActivityAt,
+          syncRunId: fc.syncRunId,
+          metaMissingFromLatestSync: false,
         };
       } else {
-        return { ...c, status: 'paused' as const };
+        // Do not pause the campaign if missing from partial sync.
+        // It could be missing due to pagination limit or partial sync from edge function.
+        // Preserve operational status and old data, but mark missing if we wanted (optional).
+        return { ...c, metaMissingFromLatestSync: true };
       }
     }
     return c;
