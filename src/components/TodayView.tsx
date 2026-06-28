@@ -6,6 +6,9 @@ import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
 import { supabase } from '../lib/supabase';
+import { syncClientMeta } from '../lib/meta/metaSyncService';
+import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
+import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -29,90 +32,18 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const amountToReceive = pendingPayments.reduce((sum, item) => sum + item.amount, 0);
 
   const handleSyncClient = async (client: any) => {
-    if (!client.metaAdAccountId || !supabase) return;
+    if (!client.metaAdAccountId) return;
     setSyncingClientId(client.id);
     try {
-      const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
-        body: { adAccountId: client.metaAdAccountId }
-      });
-      if (error || !data?.campaigns) throw new Error();
-
-      const fetchedCampaigns = data.campaigns.map((c: any) => {
-        // const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
-        const spend = Number(c.insights?.spend || 0);
-        const results = c.results || 0; // Legacy fallback
-        
-        const metricsByPeriod: Record<string, any> = {};
-        if (c.insightsByPeriod) {
-          for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
-            if (!pInsights) continue;
-            const pSpend = Number((pInsights as any).spend || 0);
-            const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
-            metricsByPeriod[period] = {
-              spent: pSpend,
-              results: pResults,
-              ctr: Number((pInsights as any).ctr || 0),
-              cpc: Number((pInsights as any).cpc || 0),
-              cpr: pResults > 0 ? pSpend / pResults : 0,
-              pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-              conversations: Number((pInsights as any).actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
-              checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-              purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
-              impressions: Number((pInsights as any).impressions || 0)
-            };
-          }
-        }
-        
-        return {
-          id: makeId('campaign'),
-          clientId: client.id,
-          name: c.name,
-          platform: 'Meta Ads',
-          status: 'live',
-          objective: c.objective,
-          budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100,
-          spent: spend,
-          results: results,
-          ctr: Number(c.insights?.ctr || 0),
-          cpc: Number(c.insights?.cpc || 0),
-          cpr: results > 0 ? spend / results : 0,
-          pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-          conversations: Number(c.insights?.actions?.filter((a: any) => a.action_type.includes('messaging')).reduce((sum: number, a: any) => sum + Number(a.value), 0) || 0),
-          checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-          purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
-          metricsByPeriod,
-          activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
-          lastOptimizedAt: new Date().toISOString().slice(0, 10),
-          nextAction: '',
-          priority: 'medium',
-          metaCampaignId: c.id,
-          activeAdSets: c.activeAdSets || []
-        };
-      });
-
-      updateData(curr => {
-        const updatedCampaigns = curr.campaigns.map((c: any) => {
-          if (c.clientId === client.id && c.platform === 'Meta Ads') {
-            const fc = fetchedCampaigns.find((f: any) => f.metaCampaignId === c.metaCampaignId);
-            if (fc) {
-               return { ...fc, id: c.id, status: c.status !== 'launching' ? c.status : fc.status };
-            } else {
-               return { ...c, status: 'paused' };
-            }
-          }
-          return c;
-        });
-        
-        const newCampaignsToInsert = fetchedCampaigns
-          .filter((fc: any) => !curr.campaigns.some((c: any) => c.metaCampaignId === fc.metaCampaignId))
-          .map((fc: any) => ({ ...fc, id: makeId('campaign'), clientId: client.id }));
-          
-        return {
-          ...curr,
-          campaigns: [...newCampaignsToInsert, ...updatedCampaigns]
-        };
-      });
-    } catch(err: any) { alert("Erro ao sincronizar: " + err.message);
+      const { campaigns, status, message } = await syncClientMeta(client, data.campaigns);
+      
+      updateData(curr => applyMetaSyncToWorkspace(client, campaigns, curr));
+      
+      if (status === 'partial') {
+        alert(`Sincronização parcial concluída. Algumas falhas ocorreram: ${message || 'Erro desconhecido'}`);
+      }
+    } catch(err: any) { 
+      alert("Erro ao sincronizar: " + err.message);
       console.error(err);
     }
     setSyncingClientId(null);
@@ -299,11 +230,10 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const toggleExpand = (card: string) => setExpandedCard(expandedCard === card ? null : card);
 
-  // Métricas de campanha
-  const totalSpent = data.campaigns.reduce((s, c) => s + c.spent, 0);
+  const totalSpent = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.spend || c.spent || 0), 0);
   const totalBudget = data.campaigns.reduce((s, c) => s + c.budget, 0);
-  const totalResults = data.campaigns.reduce((s, c) => s + (c.results || 0), 0);
-  const avgCPA = totalResults > 0 ? totalSpent / totalResults : 0;
+  const totalImpressions = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.impressions || 0), 0);
+  const totalReach = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.reach || 0), 0);
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -580,23 +510,22 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           );
         })()}
 
-        {/* Métricas Operacionais */}
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
             <p className="text-[10px] text-brand-muted uppercase font-semibold">Campanhas Ativas</p>
             <p className="text-xl font-black text-white mt-1">{activeCampaigns.length}</p>
           </div>
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">Total Gasto</p>
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Total Gasto (7d)</p>
             <p className="text-xl font-black text-white mt-1">{money(totalSpent)}</p>
           </div>
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">Resultados</p>
-            <p className="text-xl font-black text-white mt-1">{totalResults}</p>
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Impressões (7d)</p>
+            <p className="text-xl font-black text-white mt-1">{totalImpressions.toLocaleString('pt-BR')}</p>
           </div>
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">CPA Médio</p>
-            <p className="text-xl font-black text-white mt-1">{avgCPA > 0 ? money(avgCPA) : '—'}</p>
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Alcance (7d)</p>
+            <p className="text-xl font-black text-white mt-1">{totalReach > 0 ? totalReach.toLocaleString('pt-BR') : '—'}</p>
           </div>
         </div>
 
@@ -659,89 +588,87 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             data.campaigns.some(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status))
           ).map(client => {
             const activeCampaigns = data.campaigns.filter(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status) && !c.subCampaignIds?.length);
-            
-            let clientSpent = 0;
-            let clientResults = 0;
-            let clientPurchases = 0;
-            let clientImpressions = 0;
-            let clientConversations = 0;
-            let clientCheckouts = 0;
-            let clientPageViews = 0;
-            
-            activeCampaigns.forEach(c => {
-              const metrics = c.metricsByPeriod?.[dashboardPeriod] || (dashboardPeriod === 'maximum' ? c : { spent: 0, results: 0, purchases: 0, impressions: 0, conversations: 0, checkouts: 0, pageViews: 0 });
-              clientSpent += (metrics.spent || 0);
-              clientResults += (metrics.results || 0);
-              clientPurchases += (metrics.purchases || 0);
-              clientImpressions += (metrics.impressions || 0);
-              clientConversations += (metrics.conversations || 0);
-              clientCheckouts += (metrics.checkouts || 0);
-              clientPageViews += (metrics.pageViews || 0);
-            });
+            const hasNormalizedData = activeCampaigns.some(c => c.normalizedMetricsByPeriod && Object.keys(c.normalizedMetricsByPeriod).length > 0);
+
+            if (!hasNormalizedData) {
+              // Fallback legado
+              let clientSpent = 0;
+              let clientResults = 0;
+              activeCampaigns.forEach(c => {
+                const metrics = c.metricsByPeriod?.[dashboardPeriod] || (dashboardPeriod === 'maximum' ? c : { spent: 0, results: 0 });
+                clientSpent += (metrics.spent || 0);
+                clientResults += (metrics.results || 0);
+              });
+              
+              return (
+                <div key={client.id} className="rounded-xl border border-brand-line bg-brand-surface p-4 hover:border-[#0064e0]/50 transition">
+                  <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
+                      {client.metaAdAccountId && (
+                        <button onClick={() => handleSyncClient(client)} disabled={syncingClientId === client.id} className="text-brand-muted hover:text-brand-green transition" title="Sincronizar com Facebook Ads">
+                          <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
+                        </button>
+                      )}
+                    </div>
+                    <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
+                      {activeCampaigns.length} campanhas
+                    </span>
+                  </div>
+                  <div className="text-center p-4">
+                    <p className="text-sm text-brand-muted">Dados legados aguardando nova sincronização.</p>
+                    <div className="mt-2 grid grid-cols-2 gap-3 text-left">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Gasto Antigo</p>
+                        <p className="font-bold text-white">{money(clientSpent)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Resultados Antigos</p>
+                        <p className="font-bold text-white">{clientResults.toLocaleString('pt-BR')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             return (
-              <div key={client.id} className="rounded-xl border border-brand-line bg-brand-surface p-4 hover:border-[#0064e0]/50 transition">
-                <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
-                  
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
-                    {client.metaAdAccountId && (
-                      <button 
-                        onClick={() => handleSyncClient(client)}
-                        disabled={syncingClientId === client.id}
-                        className="text-brand-muted hover:text-brand-green transition"
-                        title="Sincronizar com Facebook Ads"
-                      >
-                        <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
-                      </button>
-                    )}
-                  </div>
-
-                  <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
-                    {activeCampaigns.length} campanhas
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Gasto</p>
-                    <p className="font-bold text-white">{money(clientSpent)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Alcance / Impr.</p>
-                    <p className="font-bold text-white">{clientImpressions.toLocaleString('pt-BR')}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Resultados</p>
-                    <p className="font-bold text-white">{clientResults.toLocaleString('pt-BR')}</p>
-                  </div>
-                  
-                  {clientConversations > 0 && (
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#25D366]">Conversas (WhatsApp)</p>
-                      <p className="font-bold text-white">{clientConversations.toLocaleString('pt-BR')}</p>
+              <div key={client.id} className="rounded-xl border border-brand-line bg-brand-surface p-4 hover:border-[#0064e0]/50 transition flex flex-col h-full">
+                <div className="mb-3 flex flex-col gap-2 border-b border-brand-line pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
+                      {client.metaAdAccountId && (
+                        <button onClick={() => handleSyncClient(client)} disabled={syncingClientId === client.id} className="text-brand-muted hover:text-brand-green transition" title="Sincronizar com Facebook Ads">
+                          <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
+                        </button>
+                      )}
                     </div>
+                    <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
+                      {activeCampaigns.length} campanhas
+                    </span>
+                  </div>
+                  
+                  {activeCampaigns[0]?.lastSyncedAt && (
+                     <div className="text-[10px] text-brand-muted">
+                       Última sincronização: {new Date(activeCampaigns[0].lastSyncedAt).toLocaleString('pt-BR')}
+                     </div>
                   )}
-
-                  {(clientPurchases > 0 || clientCheckouts > 0 || clientPageViews > 0 || clientConversations === 0) && (
-                    <>
-                      {clientPageViews > 0 && (
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400">Visitas na Página</p>
-                          <p className="font-bold text-white">{clientPageViews.toLocaleString('pt-BR')}</p>
+                </div>
+                
+                <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] pr-2">
+                  {activeCampaigns.map(c => {
+                    const metrics = c.normalizedMetricsByPeriod?.[dashboardPeriod] || {};
+                    return (
+                      <div key={c.id} className="border border-brand-line/50 rounded-lg p-3 bg-brand-ink/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs font-bold text-white truncate max-w-[200px]" title={c.name}>{c.name}</h4>
+                          <span className="text-[10px] font-mono text-brand-muted">{c.metaStatus}</span>
                         </div>
-                      )}
-                      {clientCheckouts > 0 && (
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400">Finalização de Venda</p>
-                          <p className="font-bold text-white">{clientCheckouts.toLocaleString('pt-BR')}</p>
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-green">Vendas</p>
-                        <p className="font-bold text-brand-green">{clientPurchases.toLocaleString('pt-BR')}</p>
+                        <CampaignObjectiveBlocks campaign={c} metrics={metrics} period={dashboardPeriod} />
                       </div>
-                    </>
-                  )}
+                    );
+                  })}
                 </div>
               </div>
             );

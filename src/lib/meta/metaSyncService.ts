@@ -1,7 +1,14 @@
 import { supabase } from '../supabase';
 import { Campaign } from '../../types';
 
-export async function syncClientMeta(client: any, existingCampaigns: Campaign[]): Promise<{ campaigns: Campaign[], runId: string, status: string }> {
+export interface SyncResponse {
+  campaigns: Campaign[];
+  runId: string;
+  status: 'success' | 'partial' | 'failed';
+  message?: string;
+}
+
+export async function syncClientMeta(client: any, existingCampaigns: Campaign[]): Promise<SyncResponse> {
   if (!client.metaAdAccountId || !supabase) throw new Error('Client has no metaAdAccountId');
   
   const { data, error } = await supabase.functions.invoke('meta-sync-ads', {
@@ -12,34 +19,38 @@ export async function syncClientMeta(client: any, existingCampaigns: Campaign[])
   if (!data?.campaigns) throw new Error('No campaigns returned');
 
   const fetchedCampaigns: Campaign[] = data.campaigns.map((c: any) => {
-    // Preserve legacy operational fields
-    const existing = existingCampaigns.find(ec => ec.id === c.id);
-    
     return {
-      id: c.id,
+      id: c.id, // Will be overridden in applyMetaSyncToWorkspace if it exists
+      clientId: client.id,
       name: c.name,
-      status: existing?.status || 'review',
+      platform: 'Meta Ads',
+      status: 'setup', // Default for new campaigns
       objective: c.objective || c.raw_objective || '',
-      dailyBudget: Number(c.daily_budget || 0),
-      lifetimeBudget: Number(c.lifetime_budget || 0),
-      spend: Number(c.insights?.spend || 0),
-      amountSpent: Number(c.insights?.spend || 0),
+      budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100, // Legacy compatibility, ideally use normalized metrics
+      spent: Number(c.insightsByPeriod?.['last_7d']?.spend || 0), // Base default
       results: 0,
       cpr: 0,
       conversations: 0,
       insights: null,
-      priority: existing?.priority || 'medium',
-      createdAt: existing?.createdAt || new Date().toISOString(),
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastSyncedAt: new Date().toISOString(),
-      lastOptimizedAt: existing?.lastOptimizedAt || undefined, // Preserved, not overwritten
-      metricsByPeriod: c.metricsByPeriod || {},
+      lastOptimizedAt: '', // Temporary, overridden by applyMetaSyncToWorkspace
+      nextAction: '',      // Temporary, overridden by applyMetaSyncToWorkspace
       classifiedObjective: c.classifiedObjective || 'UNCLASSIFIED',
       normalizedMetricsByPeriod: c.normalizedMetricsByPeriod || {},
       metaStatus: c.status || c.meta_status,
-      metaEffectiveStatus: c.effective_status
-    };
+      metaEffectiveStatus: c.effective_status,
+      metaCampaignId: c.id,
+      activeAdSets: c.classifiedAdsets || []
+    } as Campaign;
   });
 
-  return { campaigns: fetchedCampaigns, runId: data.runId, status: data.status };
+  return { 
+    campaigns: fetchedCampaigns, 
+    runId: data.runId, 
+    status: data.status,
+    message: data.message
+  };
 }

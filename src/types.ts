@@ -88,6 +88,9 @@ export interface Campaign {
   metricsByPeriod?: Record<string, CampaignMetrics>; // @deprecated legacy field
   classifiedObjective?: string;
   normalizedMetricsByPeriod?: Record<string, Record<string, number>>;
+  lastSyncedAt?: string;
+  metaStatus?: string;
+  metaEffectiveStatus?: string;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
