@@ -7,6 +7,7 @@ import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import { Modal } from './ui/Modal';
 import { Campaign, CamplyData, CampaignStatus, Priority } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
+import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -26,27 +27,17 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const isEditingMatrix = editingCampaign?.isMatrix || (!editingCampaign?.metaCampaignId && !!editingCampaign);
   const subCampaigns = isEditingMatrix ? data.campaigns.filter(c => editingCampaign?.subCampaignIds?.includes(c.id)) : [];
   
-  let activeMetrics = editingCampaign?.metricsByPeriod?.[selectedPeriod] || editingCampaign || {} as any;
+  let activeMetrics = editingCampaign?.normalizedMetricsByPeriod?.[selectedPeriod] || editingCampaign || {} as any;
   let aggregatedAdSets = editingCampaign?.activeAdSets || [];
   
   if (isEditingMatrix) {
     let spent = 0;
-    let results = 0;
-    let pageViews = 0;
-    let checkouts = 0;
-    let purchases = 0;
-    let impressions = 0;
     let activeCreatives = 0;
     let allAdSets: any[] = [];
     
     subCampaigns.forEach(sub => {
-       const subMetrics = sub.metricsByPeriod?.[selectedPeriod] || sub;
-       spent += (subMetrics.spent || 0);
-       results += (subMetrics.results || 0);
-       pageViews += (subMetrics.pageViews || 0);
-       checkouts += (subMetrics.checkouts || 0);
-       purchases += (subMetrics.purchases || 0);
-       impressions += (subMetrics.impressions || 0);
+       const subMetrics = sub.normalizedMetricsByPeriod?.[selectedPeriod] || sub;
+       spent += ((subMetrics as any).spend || (subMetrics as any).spent || 0);
        activeCreatives += (sub.activeCreatives || 0);
        if (sub.activeAdSets) {
          allAdSets = [...allAdSets, ...sub.activeAdSets];
@@ -55,13 +46,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
     
     activeMetrics = {
       ...activeMetrics,
-      spent,
-      results,
-      pageViews,
-      checkouts,
-      purchases,
-      impressions,
-      cpr: results > 0 ? spent / results : 0,
+      spend: spent,
     };
     aggregatedAdSets = allAdSets;
   }
@@ -119,8 +104,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
     
     if (editingCampaign) {
       const isMatrix = editingCampaign.isMatrix || (!editingCampaign.metaCampaignId);
-      const spent = isMatrix ? (activeMetrics.spent || 0) : Number(form.get('spent') ?? editingCampaign.spent);
-      const results = isMatrix ? (activeMetrics.results || 0) : Number(form.get('results') ?? editingCampaign.results ?? 0);
+      const spent = isMatrix ? (activeMetrics.spend || 0) : Number(form.get('spent') ?? editingCampaign.spent);
       const activeCreatives = isMatrix ? subCampaigns.reduce((acc, sub) => acc + (sub.activeCreatives || 0), 0) : Number(form.get('activeCreatives') ?? editingCampaign.activeCreatives ?? 0);
       const subCampaignIds = form.getAll('subCampaignIds').map(String);
       
@@ -129,7 +113,6 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         name: String(form.get('name') ?? editingCampaign.name),
         budget: Number(form.get('budget') ?? editingCampaign.budget),
         spent,
-        results,
         activeCreatives,
         targetResults: Number(form.get('targetResults') ?? editingCampaign.targetResults ?? 0),
         targetCPA: Number(form.get('targetCPA') ?? editingCampaign.targetCPA ?? 0),
@@ -295,7 +278,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                     <option value="last_7d">Últimos 7 dias</option>
                     <option value="last_14d">Últimos 14 dias</option>
                     <option value="last_30d">Últimos 30 dias</option>
-                    <option value="maximum">Máximo</option>
+                    <option value="maximum">Desde o início</option>
                   </select>
                 )}
               </div>
@@ -318,31 +301,43 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                   <BarChart3 size={16} className="text-sky-400" />
                   <h4 className="font-semibold text-white">Performance Atual</h4>
                 </div>
-                <MoneyField label="Valor já gasto" name="spent" value={activeMetrics?.spent || 0} readOnly={isEditingMatrix} />
-                <Field label="Resultados Obtidos" name="results" type="number" min="0" value={activeMetrics?.results || 0} readOnly={isEditingMatrix} />
+                <MoneyField label="Valor já gasto" name="spent" value={activeMetrics?.spend || activeMetrics?.spent || 0} readOnly={isEditingMatrix} />
                 
-                {activeMetrics?.results && activeMetrics?.results > 0 ? (
-                  <div className="rounded-lg bg-brand-surface p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPA Atual (Custo/Resultado)</p>
-                    <div className="mt-2 flex items-end gap-2">
-                      <p className={`text-2xl font-black ${
-                        (editingCampaign.targetCPA && (activeMetrics?.spent / activeMetrics?.results) <= editingCampaign.targetCPA) 
-                        ? 'text-brand-green' 
-                        : (editingCampaign.targetCPA && (activeMetrics?.spent / activeMetrics?.results) > editingCampaign.targetCPA)
-                        ? 'text-rose-400'
-                        : 'text-white'
-                      }`}>
-                        {money(activeMetrics?.spent / activeMetrics?.results)}
-                      </p>
-                      {editingCampaign.targetCPA ? (
-                        <p className="mb-1 text-xs text-brand-muted">alvo: {money(editingCampaign.targetCPA)}</p>
-                      ) : null}
-                    </div>
+                {isEditingMatrix ? (
+                  <div className="space-y-3 pt-2">
+                    {Object.entries(
+                      subCampaigns.reduce((acc, sub) => {
+                        const obj = sub.classifiedObjective || 'UNCLASSIFIED';
+                        if (!acc[obj]) acc[obj] = [];
+                        acc[obj].push(sub);
+                        return acc;
+                      }, {} as Record<string, typeof subCampaigns>)
+                    ).map(([obj, campaigns]) => (
+                      <div key={obj} className="space-y-2">
+                        {campaigns.map(sub => (
+                          <div key={sub.id} className="border border-brand-line/50 rounded-lg p-3 bg-brand-ink/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-[10px] font-bold text-white truncate max-w-[150px]">{sub.name}</h4>
+                            </div>
+                            <CampaignObjectiveBlocks 
+                              campaign={sub} 
+                              metrics={sub.normalizedMetricsByPeriod?.[selectedPeriod] || {}} 
+                              period={selectedPeriod} 
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {subCampaigns.length === 0 && (
+                      <p className="text-xs text-brand-muted">Nenhuma subcampanha vinculada.</p>
+                    )}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3 text-sm text-brand-muted">
-                    Insira o número de resultados e gastos para ver o CPA Atual.
-                  </div>
+                  <CampaignObjectiveBlocks 
+                    campaign={editingCampaign} 
+                    metrics={activeMetrics || {}} 
+                    period={selectedPeriod} 
+                  />
                 )}
               </div>
             </div>
@@ -375,42 +370,6 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                         </label>
                       ))
                   )}
-                </div>
-              </div>
-            )}
-
-            {/* Advanced Metrics Section */}
-            {(activeMetrics?.ctr !== undefined || activeMetrics?.cpc !== undefined || activeMetrics?.cpr !== undefined || activeMetrics?.pageViews !== undefined) && (
-              <div className="space-y-4 pt-2">
-                <div className="flex items-center gap-2 border-b border-brand-line pb-2">
-                  <BarChart3 size={16} className="text-[#0064e0]" />
-                  <h4 className="font-semibold text-white">Métricas Avançadas (Facebook Ads)</h4>
-                </div>
-                <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Taxa de Clique (CTR)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.ctr ? Number(activeMetrics?.ctr).toFixed(2) : '0.00'}%</p>
-                  </div>
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Custo / Clique (CPC)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics?.cpc || 0)}</p>
-                  </div>
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">CPR (Facebook)</p>
-                    <p className="mt-1 text-lg font-bold text-white">{money(activeMetrics?.cpr || 0)}</p>
-                  </div>
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Vis. Página</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.pageViews || 0}</p>
-                  </div>
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Checkouts</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.checkouts || 0}</p>
-                  </div>
-                  <div className="rounded-lg border border-brand-line bg-brand-surface/50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-soft">Compras</p>
-                    <p className="mt-1 text-lg font-bold text-white">{activeMetrics?.purchases || 0}</p>
-                  </div>
                 </div>
               </div>
             )}
@@ -585,22 +544,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                                     </div>
                                   ) : null}
 
-                                  {currentCPA > 0 && (
-                                    <div className="mt-3 grid grid-cols-2 gap-2 border-t border-brand-line pt-3">
-                                      <div>
-                                        <p className="text-[10px] text-brand-muted uppercase">CPA Atual</p>
-                                        <p className={`text-sm font-bold ${hasTarget ? (cpaGood ? 'text-brand-green' : 'text-rose-400') : 'text-white'}`}>
-                                          {money(currentCPA)}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-[10px] text-brand-muted uppercase">Resultados</p>
-                                        <p className="text-sm font-bold text-white">
-                                          {campaign.results} <span className="text-brand-muted text-xs font-normal">/ {campaign.targetResults || '-'}</span>
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
+                                      {/* Removed legacy CPA/Results display from card */}
 
                                   <p className={`mt-3 line-clamp-2 text-xs text-brand-muted ${currentCPA > 0 ? '' : 'border-t border-brand-line pt-3'}`}>
                                     <span className="font-semibold text-brand-soft">Próxima ação:</span> {campaign.nextAction || 'Não definida'}
