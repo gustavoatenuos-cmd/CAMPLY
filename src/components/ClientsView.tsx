@@ -5,6 +5,8 @@ import { createActivityLog, makeId, money, normalizeMonthlyInvestment } from '..
 import { billingTypes, investmentPeriods } from '../data/options';
 import { Modal } from './ui/Modal';
 import { BillingType, CamplyData, ClientStatus, InvestmentPeriod } from '../types';
+import { syncClientMeta } from '../lib/meta/metaSyncService';
+import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
 
 function MetaAccountSelector({ accounts, defaultValue }: { accounts: {id: string, name: string}[], defaultValue: string }) {
   const [query, setQuery] = useState('');
@@ -132,109 +134,34 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
 
     if (shouldSyncMeta && supabase) {
       setIsSyncing(true);
-      // Fetch active campaigns from edge function
-      supabase.functions.invoke('meta-sync-ads', {
-        body: { adAccountId: nextClient.metaAdAccountId }
-      }).then(({ data, error }) => {
+      syncClientMeta(nextClient, data.campaigns).then(({ campaigns, status, message }) => {
         setIsSyncing(false);
-        if (data?.campaigns && Array.isArray(data.campaigns)) {
-          const numCampaigns = data.campaigns.length;
-          // Se tiver só 1 campanha, entra como 'live' (ativa). Se tiver mais, entram como 'optimize' (em otimização).
-          const assignedStatus = numCampaigns > 1 ? 'optimize' : 'live';
-
-          const fetchedCampaigns = data.campaigns.map((c: any) => {
-            // const isConversion = (type: string) => type === 'lead' || type === 'purchase' || type.includes('conversion') || type.includes('messaging');
-            
-            const spend = Number(c.insights?.spend || 0);
-            const results = c.results || 0; // Legacy fallback
-            const cpr = results > 0 ? spend / results : 0;
-
-            const metricsByPeriod: Record<string, any> = {};
-            if (c.insightsByPeriod) {
-              for (const [period, pInsights] of Object.entries(c.insightsByPeriod)) {
-                if (!pInsights) continue;
-                const pSpend = Number((pInsights as any).spend || 0);
-                const pResults = c.metricsByPeriod?.["last_7d"]?.results || 0; // Legacy fallback
-                
-                metricsByPeriod[period] = {
-                  spent: pSpend,
-                  results: pResults,
-                  ctr: Number((pInsights as any).ctr || 0),
-                  cpc: Number((pInsights as any).cpc || 0),
-                  cpr: pResults > 0 ? pSpend / pResults : 0,
-                  pageViews: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-                  checkouts: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-                  purchases: Number((pInsights as any).actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
-                  impressions: Number((pInsights as any).impressions || 0)
-                };
-              }
-            }
-
-            return {
-              id: makeId('campaign'),
-              clientId: nextClient.id,
-              name: c.name,
-              platform: 'Meta Ads' as const,
-              status: assignedStatus,
-              objective: c.objective,
-              budget: Number(c.lifetime_budget || c.daily_budget || 0) / 100,
-              spent: spend,
-              results: results,
-              ctr: Number(c.insights?.ctr || 0),
-              cpc: Number(c.insights?.cpc || 0),
-              cpr: cpr,
-              pageViews: Number(c.insights?.actions?.find((a: any) => a.action_type === 'landing_page_view' || a.action_type === 'view_content')?.value || 0),
-              checkouts: Number(c.insights?.actions?.find((a: any) => a.action_type === 'initiate_checkout')?.value || 0),
-              purchases: Number(c.insights?.actions?.find((a: any) => a.action_type === 'purchase')?.value || 0),
-              metricsByPeriod,
-              activeCreatives: c.activeAdSets?.reduce((acc: number, set: any) => acc + (set.ads?.length || 0), 0) || 0,
-              lastOptimizedAt: new Date().toISOString().slice(0, 10),
-              nextAction: '',
-              priority: 'medium' as const,
-              metaCampaignId: c.id,
-              activeAdSets: c.activeAdSets || []
-            };
-          });
-          updateData(curr => {
-            const updatedCampaigns = curr.campaigns.map((c: any) => {
-              if (c.clientId === nextClient.id && c.platform === 'Meta Ads') {
-                const fc = fetchedCampaigns.find((f: any) => f.metaCampaignId === c.metaCampaignId);
-                if (fc) {
-                  return { ...fc, id: c.id, status: c.status !== 'launching' ? c.status : fc.status }; // if it was already active in crm, keep its system status like 'optimize', else fc.status
-                } else {
-                  return { ...c, status: 'paused' };
-                }
-              }
-              return c;
-            });
-            
-            const newCampaignsToInsert = fetchedCampaigns
-              .filter((fc: any) => !curr.campaigns.some((c: any) => c.metaCampaignId === fc.metaCampaignId))
-              .map((fc: any) => ({
-                ...fc,
-                id: makeId('campaign'),
-                clientId: nextClient.id
-              }));
-
-            return {
-            ...curr,
-            campaigns: [...newCampaignsToInsert, ...updatedCampaigns],
+        updateData(curr => {
+          const nextData = applyMetaSyncToWorkspace(nextClient, campaigns, curr);
+          return {
+            ...nextData,
             activityLogs: [
               createActivityLog({
                 action: 'campaign_created',
-                title: `${fetchedCampaigns.length} Campanhas importadas da Meta`,
-                description: `Foram sincronizadas as campanhas ativas da conta ${nextClient.metaAdAccountName}.`,
+                title: `${campaigns.length} Campanhas processadas da Meta`,
+                description: `Sincronização concluída para a conta ${nextClient.metaAdAccountName}. Status: ${status}.`,
                 projectId: nextClient.projectId,
                 clientId: nextClient.id,
                 campaignId: '',
                 receivableId: '',
                 taskId: '',
               }),
-              ...curr.activityLogs
+              ...nextData.activityLogs
             ]
           };
-          });
+        });
+        if (status === 'partial') {
+          alert(`Sincronização parcial: ${message}`);
         }
+      }).catch(err => {
+        setIsSyncing(false);
+        console.error(err);
+        alert('Falha ao sincronizar: ' + err.message);
       });
     }
 
