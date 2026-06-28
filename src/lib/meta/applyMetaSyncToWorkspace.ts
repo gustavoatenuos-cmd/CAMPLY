@@ -1,41 +1,64 @@
 import { Campaign, CamplyData } from '../../types';
 import { makeId } from '../../data/camplyStore';
+import { MetaSyncPayload, mapMetaCampaigns } from './metaSyncMapper';
 
 export function applyMetaSyncToWorkspace(
   client: any,
-  fetchedCampaigns: Campaign[],
+  payload: MetaSyncPayload,
   currentData: CamplyData
 ): CamplyData {
+  const isPartial = payload.status === 'partial';
+  const mappedCampaigns = mapMetaCampaigns(payload, client.id);
+
   const updatedCampaigns = currentData.campaigns.map((c) => {
     if (c.clientId === client.id && c.platform === 'Meta Ads') {
-      const fc = fetchedCampaigns.find((f) => f.metaCampaignId === c.metaCampaignId);
+      const fc = mappedCampaigns.find((f) => f.metaCampaignId === c.metaCampaignId);
       if (fc) {
-        return {
-          ...c,
-          ...fc,
-          id: c.id, // Preserve internal ID
-          clientId: client.id,
-          status: c.status !== 'launching' ? c.status : fc.status,
-          lastOptimizedAt: c.lastOptimizedAt, // Preserve operational status
-          priority: c.priority,
-          nextAction: c.nextAction,
-          createdAt: c.createdAt,
-          updatedAt: new Date().toISOString(),
-          lastActivityAt: c.lastActivityAt,
-          syncRunId: fc.syncRunId,
-          metaMissingFromLatestSync: false,
-        };
+        if (isPartial) {
+           // Preserve the full metrics from previous sync if this was partial
+           return {
+             ...c,
+             ...fc,
+             id: c.id,
+             clientId: client.id,
+             status: c.status !== 'launching' ? c.status : fc.status,
+             lastOptimizedAt: c.lastOptimizedAt,
+             priority: c.priority,
+             nextAction: c.nextAction,
+             createdAt: c.createdAt,
+             updatedAt: new Date().toISOString(),
+             lastActivityAt: c.lastActivityAt,
+             syncRunId: fc.syncRunId, // update to current for diagnostics
+             metaMissingFromLatestSync: false,
+             // Preserve metrics explicitly
+             globalMetricsByPeriod: c.globalMetricsByPeriod || fc.globalMetricsByPeriod,
+             attributionGroupsByPeriod: c.attributionGroupsByPeriod || fc.attributionGroupsByPeriod,
+           };
+        } else {
+           return {
+             ...c,
+             ...fc,
+             id: c.id, 
+             clientId: client.id,
+             status: c.status !== 'launching' ? c.status : fc.status,
+             lastOptimizedAt: c.lastOptimizedAt, 
+             priority: c.priority,
+             nextAction: c.nextAction,
+             createdAt: c.createdAt,
+             updatedAt: new Date().toISOString(),
+             lastActivityAt: c.lastActivityAt,
+             syncRunId: fc.syncRunId,
+             metaMissingFromLatestSync: false,
+           };
+        }
       } else {
-        // Do not pause the campaign if missing from partial sync.
-        // It could be missing due to pagination limit or partial sync from edge function.
-        // Preserve operational status and old data, but mark missing if we wanted (optional).
         return { ...c, metaMissingFromLatestSync: true };
       }
     }
     return c;
   });
 
-  const newCampaignsToInsert = fetchedCampaigns
+  const newCampaignsToInsert = mappedCampaigns
     .filter((fc) => !currentData.campaigns.some((c) => c.metaCampaignId === fc.metaCampaignId))
     .map((fc) => ({ ...fc, id: makeId('campaign'), clientId: client.id }));
 

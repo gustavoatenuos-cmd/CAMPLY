@@ -29,7 +29,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
   const isEditingMatrix = editingCampaign?.isMatrix || (!editingCampaign?.metaCampaignId && !!editingCampaign);
   const subCampaigns = isEditingMatrix ? data.campaigns.filter(c => editingCampaign?.subCampaignIds?.includes(c.id)) : [];
   
-  let activeMetrics = editingCampaign?.normalizedMetricsByPeriod?.[selectedPeriod] || editingCampaign || {} as any;
+  let activeMetrics = editingCampaign?.globalMetricsByPeriod?.[selectedPeriod] || editingCampaign?.normalizedMetricsByPeriod?.[selectedPeriod] || editingCampaign || {} as any;
   let aggregatedAdSets = editingCampaign?.activeAdSets || [];
   
   if (isEditingMatrix) {
@@ -38,7 +38,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
     let allAdSets: any[] = [];
     
     subCampaigns.forEach(sub => {
-       const subMetrics = sub.normalizedMetricsByPeriod?.[selectedPeriod] || sub;
+       const subMetrics = sub.globalMetricsByPeriod?.[selectedPeriod] || sub.normalizedMetricsByPeriod?.[selectedPeriod] || sub;
        spent += ((subMetrics as any).spend || (subMetrics as any).spent || 0);
        activeCreatives += (sub.activeCreatives || 0);
        if (sub.activeAdSets) {
@@ -279,13 +279,13 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                       Conciliar Dados
                     </button>
                   )}
-                  {(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod) && (
+                  {(editingCampaign.globalMetricsByPeriod || editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod) && (
                     <select 
                       value={selectedPeriod} 
                       onChange={(e) => setSelectedPeriod(e.target.value)}
                       className="rounded-lg border border-brand-line bg-brand-ink px-3 py-1.5 text-sm text-white outline-none focus:border-brand-green"
                     >
-                      {Object.keys(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).map(period => (
+                      {Object.keys(editingCampaign.globalMetricsByPeriod || editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).map(period => (
                         <option key={period} value={period}>
                           {period === 'maximum' ? 'Desde o início' :
                            period === 'today' ? 'Hoje' :
@@ -296,8 +296,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                            period === 'last_30d' ? 'Últimos 30 dias' : period}
                         </option>
                       ))}
-                      {/* Fallback option if empty */}
-                      {Object.keys(editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).length === 0 && (
+                      {Object.keys(editingCampaign.globalMetricsByPeriod || editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod || {}).length === 0 && (
                         <option value="maximum">Desde o início</option>
                       )}
                     </select>
@@ -343,7 +342,6 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                             </div>
                             <CampaignObjectiveBlocks 
                               campaign={sub} 
-                              metrics={sub.normalizedMetricsByPeriod?.[selectedPeriod] || {}} 
                               period={selectedPeriod} 
                             />
                           </div>
@@ -357,7 +355,6 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                 ) : (
                   <CampaignObjectiveBlocks 
                     campaign={editingCampaign} 
-                    metrics={activeMetrics || {}} 
                     period={selectedPeriod} 
                   />
                 )}

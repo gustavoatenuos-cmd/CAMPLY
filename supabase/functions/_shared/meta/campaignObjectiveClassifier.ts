@@ -8,7 +8,7 @@ export interface ClassifierEntityContext {
   availableActionTypes?: string[];
 }
 
-export function classifyCampaignObjective(context: ClassifierEntityContext): MetaObjective {
+export function classifyAdSetObjective(context: ClassifierEntityContext): MetaObjective {
   const obj = context.campaignObjective?.toUpperCase() || '';
   const optGoal = context.adsetOptimizationGoal?.toUpperCase() || '';
   const destType = context.adsetDestinationType?.toUpperCase() || '';
@@ -42,7 +42,6 @@ export function classifyCampaignObjective(context: ClassifierEntityContext): Met
 
   // 3. LEADS (Web/Forms)
   if (obj === 'OUTCOME_LEADS' || obj === 'LEAD_GENERATION') {
-    // If it wasn't caught by the messaging check above
     return 'LEADS';
   }
 
@@ -54,8 +53,6 @@ export function classifyCampaignObjective(context: ClassifierEntityContext): Met
   if (obj === 'OUTCOME_TRAFFIC' || obj === 'LINK_CLICKS') {
     return 'TRAFFIC';
   }
-
-  
 
   // 6. ENGAGEMENT
   if (obj === 'OUTCOME_ENGAGEMENT' || obj === 'POST_ENGAGEMENT' || obj === 'PAGE_LIKES' || obj === 'EVENT_RESPONSES') {
@@ -78,4 +75,29 @@ export function classifyCampaignObjective(context: ClassifierEntityContext): Met
   }
 
   return 'UNCLASSIFIED';
+}
+
+export function classifyCampaignObjective(contexts: ClassifierEntityContext[]): MetaObjective {
+  if (!contexts || contexts.length === 0) {
+    return 'UNCLASSIFIED';
+  }
+
+  const validClassifications = new Set<MetaObjective>();
+
+  for (const ctx of contexts) {
+    const classification = classifyAdSetObjective(ctx);
+    if (classification !== 'UNCLASSIFIED') {
+      validClassifications.add(classification);
+    }
+  }
+
+  if (validClassifications.size === 0) {
+    return 'UNCLASSIFIED';
+  }
+
+  if (validClassifications.size === 1) {
+    return Array.from(validClassifications)[0];
+  }
+
+  return 'MIXED';
 }

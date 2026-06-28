@@ -70,7 +70,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
   };
 
   it('updates existing campaigns preserving operational status', () => {
-    const nextData = applyMetaSyncToWorkspace(mockClient, [fetchedCampaign], initialWorkspace);
+    const nextData = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: [fetchedCampaign] }, initialWorkspace);
     
     expect(nextData.campaigns).toHaveLength(1);
     
@@ -90,7 +90,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
   });
 
   it('inserts new campaigns from meta', () => {
-    const nextData = applyMetaSyncToWorkspace(mockClient, [fetchedCampaign, newCampaign], initialWorkspace);
+    const nextData = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: [fetchedCampaign, newCampaign] }, initialWorkspace);
     expect(nextData.campaigns).toHaveLength(2);
     
     const inserted = nextData.campaigns.find(c => c.metaCampaignId === 'meta_c2');
@@ -100,8 +100,8 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
   });
 
   it('is idempotent when run twice with same fetched campaigns', () => {
-    const step1 = applyMetaSyncToWorkspace(mockClient, [fetchedCampaign, newCampaign], initialWorkspace);
-    const step2 = applyMetaSyncToWorkspace(mockClient, [fetchedCampaign, newCampaign], step1);
+    const step1 = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: [fetchedCampaign, newCampaign] }, initialWorkspace);
+    const step2 = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: [fetchedCampaign, newCampaign] }, step1);
     
     expect(step1.campaigns).toHaveLength(2);
     expect(step2.campaigns).toHaveLength(2);
@@ -117,7 +117,7 @@ describe('Workspace Compatibility, Operational Status, Idempotency', () => {
   
   it('preserves campaigns that are no longer returned by Meta (partial sync)', () => {
     // We fetched nothing, so camp_int_1 should preserve its status 'optimize'
-    const nextData = applyMetaSyncToWorkspace(mockClient, [], initialWorkspace);
+    const nextData = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: [] }, initialWorkspace);
     expect(nextData.campaigns).toHaveLength(1);
     expect(nextData.campaigns[0].status).toBe('optimize');
   });

@@ -36,8 +36,14 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     setSyncingClientId(client.id);
     try {
       const { campaigns, status, message } = await syncClientMeta(client, data.campaigns);
-      
-      updateData(curr => applyMetaSyncToWorkspace(client, campaigns, curr));
+      const payload = {
+        runId: crypto.randomUUID(),
+        status: status as string,
+        completenessByPeriod: {},
+        failedAdsetIds: [],
+        campaigns: campaigns
+      };
+      updateData(curr => applyMetaSyncToWorkspace(client, payload, curr));
       
       if (status === 'partial') {
         alert(`Sincronização parcial concluída. Algumas falhas ocorreram: ${message || 'Erro desconhecido'}`);
@@ -660,7 +666,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                           <h4 className="text-xs font-bold text-white truncate max-w-[200px]" title={c.name}>{c.name}</h4>
                           <span className="text-[10px] font-mono text-brand-muted">{c.metaStatus}</span>
                         </div>
-                        <CampaignObjectiveBlocks campaign={c} metrics={metrics} period={dashboardPeriod} />
+                        <CampaignObjectiveBlocks campaign={c} period={dashboardPeriod} />
                       </div>
                     );
                   })}

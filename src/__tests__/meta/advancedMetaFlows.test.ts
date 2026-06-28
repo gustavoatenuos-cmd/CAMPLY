@@ -36,7 +36,7 @@ describe('Advanced Meta Flows: Partial Sync & Mixed Attribution', () => {
     // Simulate partial sync where existing campaign is missing
     const syncedCampaigns: Campaign[] = [];
 
-    const updatedWorkspace = applyMetaSyncToWorkspace(mockClient, syncedCampaigns, mockWorkspace);
+    const updatedWorkspace = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: syncedCampaigns }, mockWorkspace);
 
     const checkCamp = updatedWorkspace.campaigns.find(c => c.id === 'camp-old');
     expect(checkCamp).toBeDefined();
@@ -82,7 +82,7 @@ describe('Advanced Meta Flows: Partial Sync & Mixed Attribution', () => {
       } as any
     ];
 
-    const updatedWorkspace = applyMetaSyncToWorkspace(mockClient, syncedCampaigns, mockWorkspace);
+    const updatedWorkspace = applyMetaSyncToWorkspace(mockClient, { runId: 'r1', status: 'success', completenessByPeriod: {}, failedAdsetIds: [], campaigns: syncedCampaigns }, mockWorkspace);
     
     const checkCamp = updatedWorkspace.campaigns.find(c => c.id === 'camp-old');
     expect(checkCamp).toBeDefined();

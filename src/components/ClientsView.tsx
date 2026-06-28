@@ -137,7 +137,14 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       syncClientMeta(nextClient, data.campaigns).then(({ campaigns, status, message }) => {
         setIsSyncing(false);
         updateData(curr => {
-          const nextData = applyMetaSyncToWorkspace(nextClient, campaigns, curr);
+          const payload = {
+            runId: crypto.randomUUID(),
+            status: status as string,
+            completenessByPeriod: {},
+            failedAdsetIds: [],
+            campaigns: campaigns
+          };
+          const nextData = applyMetaSyncToWorkspace(nextClient, payload, curr);
           return {
             ...nextData,
             activityLogs: [

@@ -137,7 +137,14 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
 
     updateData((prev) => {
       // Use standard sync application instead of manual construction
-      const nextState = applyMetaSyncToWorkspace(selectedClient, [importingCampaign], prev);
+      const payload = {
+        runId: importingCampaign.syncRunId || crypto.randomUUID(),
+        status: 'success', // Importing single campaign implies success for this unit
+        completenessByPeriod: importingCampaign.completenessByPeriod || {},
+        failedAdsetIds: [],
+        campaigns: [importingCampaign]
+      };
+      const nextState = applyMetaSyncToWorkspace(selectedClient, payload, prev);
       
       return {
         ...nextState,

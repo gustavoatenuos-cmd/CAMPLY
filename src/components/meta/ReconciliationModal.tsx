@@ -100,7 +100,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
                 </div>
                 <div className="rounded-lg bg-brand-surface2 p-4">
                   <p className="text-[10px] uppercase text-brand-muted font-bold">Graph API Version</p>
-                  <p className="font-mono text-sm mt-1 text-white">{runInfo.api_version || 'v20.0'}</p>
+                  <p className="font-mono text-sm mt-1 text-white">{runInfo.graph_api_version || 'v20.0'}</p>
                 </div>
                 <div className="rounded-lg bg-brand-surface2 p-4">
                   <p className="text-[10px] uppercase text-brand-muted font-bold">Início do Sync</p>
@@ -108,7 +108,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
                 </div>
                 <div className="rounded-lg bg-brand-surface2 p-4">
                   <p className="text-[10px] uppercase text-brand-muted font-bold">Total Campanhas Lidas</p>
-                  <p className="font-mono text-sm mt-1 text-white">{runInfo.campaigns_processed || 0}</p>
+                  <p className="font-mono text-sm mt-1 text-white">{runInfo.records_fetched || 0}</p>
                 </div>
               </div>
             )}
@@ -120,7 +120,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
                 <table className="w-full text-left text-sm text-white">
                   <thead className="bg-brand-surface2 text-xs text-brand-muted uppercase">
                     <tr>
-                      <th className="p-3 font-bold">Campanha (ID)</th>
+                      <th className="p-3 font-bold">Origem</th>
                       <th className="p-3 font-bold">Período</th>
                       <th className="p-3 font-bold">Atribuição</th>
                       <th className="p-3 font-bold">Métrica</th>
@@ -130,15 +130,26 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
                   </thead>
                   <tbody className="divide-y divide-brand-line bg-brand-surface">
                     {metrics.map(m => {
+                      const meta = m.calculation_metadata || {};
+                      const rawValue = meta.raw_value !== undefined ? meta.raw_value : 'N/A';
+                      const formulaInfo = meta.formula || meta.action_type || m.source_field || 'Direto do DB';
+
                       return (
                         <tr key={m.id} className="hover:bg-brand-surface2/30">
-                          <td className="p-3 font-mono text-[11px] max-w-[120px] truncate text-brand-soft" title={m.campaign_id}>{m.campaign_id}</td>
+                          <td className="p-3 font-mono text-[11px] max-w-[150px] truncate text-brand-soft" title={`Camp: ${m.campaign_id}\nAdSet: ${m.adset_id}`}>
+                             Lvl: {m.source_level}<br/>
+                             <span className="text-[9px] opacity-70">C: {m.campaign_id}</span>
+                             {m.source_level === 'adset' && <><br/><span className="text-[9px] opacity-70">A: {m.adset_id}</span></>}
+                          </td>
                           <td className="p-3 text-[11px] whitespace-nowrap">{m.date_start} até {m.date_stop}</td>
                           <td className="p-3 text-[11px] font-mono text-amber-500/80">{m.attribution_setting || 'default'}</td>
                           <td className="p-3 font-semibold text-blue-400">{m.metric_id}</td>
-                          <td className="p-3 font-mono text-right text-brand-green font-bold">{m.metric_value}</td>
-                          <td className="p-3 text-[10px] font-mono text-brand-soft max-w-[200px] truncate">
-                            [Calculated / Action Sum]
+                          <td className="p-3 text-right">
+                             <div className="font-mono text-brand-green font-bold">{m.metric_value}</div>
+                             <div className="text-[10px] text-brand-muted">Bruto: {rawValue}</div>
+                          </td>
+                          <td className="p-3 text-[10px] font-mono text-brand-soft max-w-[200px] truncate" title={JSON.stringify(meta)}>
+                             {formulaInfo}
                           </td>
                         </tr>
                       );
@@ -162,11 +173,11 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
                 {snapshots.slice(0, 5).map(snap => (
                   <details key={snap.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
                     <summary className="cursor-pointer text-xs font-bold text-white outline-none">
-                      Snapshot de Campanha: <span className="font-mono text-blue-400">{snap.campaign_id}</span> ({snap.date_start} - {snap.date_stop})
+                      Snapshot Nível: <span className="font-mono text-blue-400">{snap.entity_level}</span> | Entidade: {snap.entity_id}
                     </summary>
                     <div className="mt-4 bg-brand-ink p-4 rounded border border-brand-line overflow-x-auto">
                       <pre className="text-[10px] text-brand-soft font-mono">
-                        {JSON.stringify(snap.raw_data, null, 2)}
+                        {JSON.stringify(snap.payload, null, 2)}
                       </pre>
                     </div>
                   </details>

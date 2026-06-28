@@ -87,7 +87,17 @@ export interface Campaign {
   conversations?: number; // @deprecated
   metricsByPeriod?: Record<string, CampaignMetrics>; // @deprecated legacy field
   classifiedObjective?: string;
-  normalizedMetricsByPeriod?: Record<string, Record<string, number>>;
+  normalizedMetricsByPeriod?: Record<string, Record<string, number>>; // @deprecated
+
+  // New Contract
+  mixedAttribution?: boolean;
+  mixedObjective?: boolean;
+  globalMetricsByPeriod?: Record<string, any>;
+  attributionGroupsByPeriod?: Record<string, any[]>;
+  completenessByPeriod?: Record<string, any>;
+  trendAvailable?: boolean;
+  trendUnavailableReason?: string;
+
   lastSyncedAt?: string;
   metaStatus?: string;
   metaEffectiveStatus?: string;
@@ -104,7 +114,9 @@ export type MetaCampaignObjective =
   | 'Engajamento'
   | 'Cadastros'
   | 'Promoção do app'
-  | 'Vendas';
+  | 'Vendas'
+  | 'MIXED'
+  | 'UNCLASSIFIED';
 
 export interface Receivable {
   id: string;

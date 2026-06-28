@@ -10,8 +10,8 @@ export type MetaObjective =
   | 'ENGAGEMENT' 
   | 'AWARENESS' 
   | 'VIDEO' 
-  | 'APP' 
   | 'OTHER' 
+  | 'MIXED'
   | 'UNCLASSIFIED';
 
 export type AggregationRule = 'sum' | 'recalculate' | 'none';

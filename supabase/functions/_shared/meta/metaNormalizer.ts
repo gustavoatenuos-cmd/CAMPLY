@@ -1,25 +1,37 @@
 import { METRIC_REGISTRY, MetaObjective } from './metricRegistry';
 import { classifyCampaignObjective, ClassifierEntityContext } from './campaignObjectiveClassifier';
 
+export interface NormalizedMetricResult {
+  value: number;
+  metadata: any;
+}
+
 export function normalizeMetaMetrics(
   rawInsights: any[],
   classifiedObjective: MetaObjective,
   campaignId: string,
   adsetId?: string
-) {
-  const normalized: Record<string, number> = {};
+): Record<string, NormalizedMetricResult> {
+  const normalized: Record<string, NormalizedMetricResult> = {};
+  const flatValues: Record<string, number> = {};
 
   for (const [key, metricDef] of Object.entries(METRIC_REGISTRY)) {
     if (metricDef.compatibleObjectives !== 'ALL' && !metricDef.compatibleObjectives.includes(classifiedObjective)) {
-      continue; // Skip if metric doesn't apply to this objective
+      continue; 
     }
 
     let value = 0;
     let found = false;
+    let rawValue: any = undefined;
+    let formulaOrAction = '';
 
     if (metricDef.source === 'insights') {
-      const fbField = metricDef.id === 'link_clicks' ? 'inline_link_clicks' : metricDef.id; // basic mapping
+      const fbField = metricDef.id === 'link_clicks' ? 'inline_link_clicks' : metricDef.id;
+      formulaOrAction = `Source field: ${fbField}`;
+      
       const sum = rawInsights.reduce((acc, row) => acc + Number(row[fbField] || 0), 0);
+      rawValue = sum;
+      
       if (sum > 0 || rawInsights.some(r => r[fbField] !== undefined)) {
         value = sum;
         found = true;
@@ -33,7 +45,6 @@ export function normalizeMetaMetrics(
       });
 
       if (metricDef.id === 'purchase_value') {
-        // Look in action_values instead
         matchedActions = [];
         rawInsights.forEach(row => {
           if (row.action_values && Array.isArray(row.action_values)) {
@@ -44,7 +55,6 @@ export function normalizeMetaMetrics(
 
       if (matchedActions.length > 0) {
         found = true;
-        // Basic deduplication rule
         if (metricDef.deduplicationRule === 'priority_alias') {
            const priorityType = metricDef.acceptedActionTypes?.[0];
            const hasPriority = matchedActions.some(a => a.action_type === priorityType);
@@ -53,14 +63,24 @@ export function normalizeMetaMetrics(
            }
         }
         value = matchedActions.reduce((acc, a) => acc + Number(a.value || 0), 0);
+        rawValue = value;
+        formulaOrAction = `Actions: ${Array.from(new Set(matchedActions.map(a => a.action_type))).join(', ')}`;
+      } else {
+        formulaOrAction = `No matching actions found for ${metricDef.acceptedActionTypes?.join(', ')}`;
       }
     } else if (metricDef.source === 'calculated') {
-      // Defer calculation until all base metrics are computed
       continue;
     }
 
     if (found || metricDef.missingDataRule === 'zero') {
-      normalized[key] = value;
+      flatValues[key] = value;
+      normalized[key] = {
+        value,
+        metadata: {
+          raw_value: rawValue,
+          action_type: formulaOrAction
+        }
+      };
     }
   }
 
@@ -68,9 +88,16 @@ export function normalizeMetaMetrics(
   for (const [key, metricDef] of Object.entries(METRIC_REGISTRY)) {
     if (metricDef.source === 'calculated' && metricDef.calculate) {
       if (metricDef.compatibleObjectives === 'ALL' || metricDef.compatibleObjectives.includes(classifiedObjective)) {
-        const calcValue = metricDef.calculate(normalized);
+        const calcValue = metricDef.calculate(flatValues);
         if (calcValue !== null) {
-          normalized[key] = calcValue;
+          flatValues[key] = calcValue;
+          normalized[key] = {
+            value: calcValue,
+            metadata: {
+              raw_value: calcValue,
+              formula: 'Calculated metric based on ' + (metricDef.denominator ? metricDef.denominator : 'other metrics')
+            }
+          };
         }
       }
     }
