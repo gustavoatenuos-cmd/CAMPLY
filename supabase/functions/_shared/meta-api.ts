@@ -39,6 +39,7 @@ export interface PaginatedResult<T> {
   pagesFetched: number;
   recordsFetched: number;
   isPartial: boolean;
+  completionStatus: 'complete' | 'partial_page' | 'timeout' | 'api_error';
   errorMessage?: string;
 }
 
@@ -148,7 +149,8 @@ export async function fetchMetaGraphPaginated<T = any>(
     data: [],
     pagesFetched: 0,
     recordsFetched: 0,
-    isPartial: false
+    isPartial: false,
+    completionStatus: 'complete',
   };
 
   try {
@@ -180,17 +182,17 @@ export async function fetchMetaGraphPaginated<T = any>(
 
     if (nextUrl) {
       result.isPartial = true;
+      result.completionStatus = 'partial_page';
       console.warn(`fetchMetaGraphPaginated stopped early. Pages: ${result.pagesFetched}, Records: ${result.recordsFetched}`);
     }
 
   } catch (error: any) {
     result.isPartial = true;
     result.errorMessage = error.message;
+    result.completionStatus = error?.name === 'AbortError' || /timeout|aborted/i.test(error?.message || '')
+      ? 'timeout'
+      : 'api_error';
     console.error(`fetchMetaGraphPaginated partial failure: ${error.message}`);
-    // If we have some data, we return it as partial success instead of completely throwing away the progress
-    if (result.recordsFetched === 0) {
-      throw error;
-    }
   }
 
   return result;

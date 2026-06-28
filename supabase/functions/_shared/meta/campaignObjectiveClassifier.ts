@@ -1,10 +1,10 @@
-import { MetaObjective } from './metricRegistry';
+import { MetaObjective } from './metricRegistry.ts';
 
 export interface ClassifierEntityContext {
   campaignObjective: string;
   adsetOptimizationGoal?: string;
   adsetDestinationType?: string;
-  adsetPromotedObject?: any;
+  adsetPromotedObject?: Record<string, unknown> | null;
   availableActionTypes?: string[];
 }
 

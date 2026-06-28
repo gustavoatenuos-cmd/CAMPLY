@@ -1,77 +1,112 @@
 import { classifyAdSetObjective } from './campaignObjectiveClassifier.ts';
+import type { MetaObjective } from './metricRegistry.ts';
 
-export function getStructuralMixedAttribution(adSets: any[], campaignObjective: string): boolean {
-  if (adSets.length <= 1) return false;
-  
-  const attributions = new Set<string>();
-  const validAttributions = new Set<string>();
-  const objectives = new Set<string>();
-  const destinations = new Set<string>();
-  
-  for (const a of adSets) {
-    const attr = a.attribution_setting || 'UNKNOWN';
-    attributions.add(attr);
-    if (attr !== 'UNKNOWN') validAttributions.add(attr);
-    
-    if (a.destination_type) destinations.add(a.destination_type);
-
-    const obj = classifyAdSetObjective({
-      campaignObjective,
-      adsetOptimizationGoal: a.optimization_goal,
-      adsetDestinationType: a.destination_type,
-      adsetPromotedObject: a.promoted_object
-    });
-    objectives.add(obj);
-  }
-  
-  if (validAttributions.size > 1) return true;
-  if (validAttributions.size === 1 && attributions.has('UNKNOWN')) return true;
-  if (objectives.size > 1) return true;
-  if (destinations.size > 1) return true;
-  
-  return false;
+export interface MetaAdSetForMixAnalysis {
+  id: string;
+  attribution_setting?: string | null;
+  destination_type?: string | null;
+  optimization_goal?: string | null;
+  promoted_object?: Record<string, unknown> | null;
+  classified_objective?: MetaObjective;
 }
 
-export function getEffectiveMixedAttribution(adSets: any[], adsetInsights: any[]): boolean {
-  // Check delivery
-  const deliveringAdSetIds = new Set<string>();
-  
-  for (const row of adsetInsights) {
-    const spend = Number(row.spend || 0);
-    const imp = Number(row.impressions || 0);
-    const actionsCount = Array.isArray(row.actions) ? row.actions.length : 0;
-    
-    if (spend > 0 || imp > 0 || actionsCount > 0) {
-      deliveringAdSetIds.add(row.adset_id);
-    }
+export interface MetaAdSetInsightForDelivery {
+  adset_id: string;
+  spend?: string | number | null;
+  impressions?: string | number | null;
+  actions?: Array<{ action_type?: string; value?: string | number | null }> | null;
+}
+
+export interface CampaignMixAnalysis {
+  structuralMixedAttribution: boolean;
+  effectiveMixedAttribution: boolean;
+  mixedObjective: boolean;
+  mixedDestination: boolean;
+  attributionSettings: string[];
+  effectiveAttributionSettings: string[];
+  classifiedObjectives: MetaObjective[];
+  effectiveClassifiedObjectives: MetaObjective[];
+  destinationTypes: string[];
+  deliveringAdsetIds: string[];
+}
+
+const uniqueSorted = (values: string[]) => Array.from(new Set(values)).sort();
+
+export function insightHasDelivery(row: MetaAdSetInsightForDelivery): boolean {
+  const spend = Number(row.spend || 0);
+  const impressions = Number(row.impressions || 0);
+  const hasPositiveAction = Array.isArray(row.actions)
+    && row.actions.some((action) => Number(action.value || 0) > 0);
+
+  return spend > 0 || impressions > 0 || hasPositiveAction;
+}
+
+export function analyzeCampaignMix(
+  adSets: MetaAdSetForMixAnalysis[],
+  campaignObjective: string,
+  adsetInsights: MetaAdSetInsightForDelivery[] = []
+): CampaignMixAnalysis {
+  const objectivesByAdset = new Map<string, MetaObjective>();
+  for (const adset of adSets) {
+    objectivesByAdset.set(
+      adset.id,
+      adset.classified_objective || classifyAdSetObjective({
+        campaignObjective,
+        adsetOptimizationGoal: adset.optimization_goal || undefined,
+        adsetDestinationType: adset.destination_type || undefined,
+        adsetPromotedObject: adset.promoted_object,
+      })
+    );
   }
-  
-  const deliveringAdSets = adSets.filter(a => deliveringAdSetIds.has(a.id));
-  
-  // If only one (or zero) adset delivered, it's not effectively mixed
-  if (deliveringAdSets.length <= 1) {
-    return false;
-  }
-  
-  // Re-run structural logic on delivering adsets only
-  const attributions = new Set<string>();
-  const validAttributions = new Set<string>();
-  
-  for (const a of deliveringAdSets) {
-    const attr = a.attribution_setting || 'UNKNOWN';
-    attributions.add(attr);
-    if (attr !== 'UNKNOWN') validAttributions.add(attr);
-  }
-  
-  if (validAttributions.size > 1) return true;
-  if (validAttributions.size === 1 && attributions.has('UNKNOWN')) return true;
-  
-  // NOTE: If objectives or destination_types differ among delivering adsets, it's mixed
-  const objectives = new Set<string>();
-  for (const a of deliveringAdSets) {
-    objectives.add(a.classified_objective);
-  }
-  if (objectives.size > 1) return true;
-  
-  return false;
+
+  const attributionSettings = uniqueSorted(
+    adSets.map((adset) => adset.attribution_setting || 'UNKNOWN')
+  );
+  const classifiedObjectives = uniqueSorted(
+    Array.from(objectivesByAdset.values())
+  ) as MetaObjective[];
+  const destinationTypes = uniqueSorted(
+    adSets.map((adset) => adset.destination_type || 'UNKNOWN')
+  );
+
+  const deliveringAdsetIds = uniqueSorted(
+    adsetInsights.filter(insightHasDelivery).map((row) => row.adset_id)
+  );
+  const deliveringIds = new Set(deliveringAdsetIds);
+  const deliveringAdsets = adSets.filter((adset) => deliveringIds.has(adset.id));
+  const effectiveAttributionSettings = uniqueSorted(
+    deliveringAdsets.map((adset) => adset.attribution_setting || 'UNKNOWN')
+  );
+  const effectiveClassifiedObjectives = uniqueSorted(
+    deliveringAdsets.map((adset) => objectivesByAdset.get(adset.id) || 'UNCLASSIFIED')
+  ) as MetaObjective[];
+
+  return {
+    structuralMixedAttribution: attributionSettings.length > 1,
+    effectiveMixedAttribution: effectiveAttributionSettings.length > 1,
+    mixedObjective: classifiedObjectives.length > 1,
+    mixedDestination: destinationTypes.length > 1,
+    attributionSettings,
+    effectiveAttributionSettings,
+    classifiedObjectives,
+    effectiveClassifiedObjectives,
+    destinationTypes,
+    deliveringAdsetIds,
+  };
+}
+
+// Compatibility wrappers retained for callers while keeping each signal independent.
+export function getStructuralMixedAttribution(
+  adSets: MetaAdSetForMixAnalysis[],
+  campaignObjective: string
+): boolean {
+  return analyzeCampaignMix(adSets, campaignObjective).structuralMixedAttribution;
+}
+
+export function getEffectiveMixedAttribution(
+  adSets: MetaAdSetForMixAnalysis[],
+  adsetInsights: MetaAdSetInsightForDelivery[],
+  campaignObjective = ''
+): boolean {
+  return analyzeCampaignMix(adSets, campaignObjective, adsetInsights).effectiveMixedAttribution;
 }

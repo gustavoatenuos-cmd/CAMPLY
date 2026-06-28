@@ -1,52 +1,76 @@
-import { Campaign, CamplyData } from '../../types';
+import type { Campaign } from '../../types';
+import type { GlobalMetrics, MetaSyncResponse, MetaSyncedCampaign } from './metaSyncTypes';
 
-export interface MetaSyncPayload {
-  runId: string;
-  status: string;
-  completenessByPeriod: Record<string, any>;
-  failedAdsetIds: string[];
-  campaigns: any[]; // raw campaigns from edge
-}
+export type MetaSyncPayload = MetaSyncResponse;
 
+const numericMetric = (metrics: GlobalMetrics | undefined, metricId: string): number => {
+  const value = metrics?.[metricId];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+const defaultMetrics = (campaign: MetaSyncedCampaign): GlobalMetrics | undefined =>
+  campaign.globalMetricsByPeriod.last_7d
+  || Object.values(campaign.globalMetricsByPeriod)[0];
+
+/**
+ * Maps Meta's analytical contract into a CRM campaign without inventing an
+ * optimization event or operational recommendation. New Meta campaigns enter
+ * the CRM explicitly in `setup`; Meta delivery status remains separate.
+ */
 export function mapMetaCampaigns(payload: MetaSyncPayload, clientId: string): Campaign[] {
-  return payload.campaigns.map(camp => ({
-    id: camp.id,
-    clientId,
-    name: camp.name,
-    platform: 'Meta Ads',
-    status: mapMetaStatusToCamply(camp.effective_status || camp.status),
-    objective: camp.classifiedObjective || camp.objective || 'UNCLASSIFIED',
-    budget: camp.budget !== undefined ? camp.budget : (Number(camp.daily_budget || camp.lifetime_budget || 0) / 100),
-    spent: camp.spent || 0,
-    priority: camp.priority || 'low',
-    metaCampaignId: camp.metaCampaignId || camp.id,
-    lastOptimizedAt: camp.lastOptimizedAt || new Date().toISOString(),
-    nextAction: camp.nextAction || 'Monitoramento contínuo',
-    
-    mixedAttribution: camp.mixedAttribution,
-    mixedObjective: camp.mixedObjective,
-    globalMetricsByPeriod: camp.globalMetricsByPeriod,
-    attributionGroupsByPeriod: camp.attributionGroupsByPeriod,
-    completenessByPeriod: payload.completenessByPeriod,
-    trendAvailable: camp.trendAvailable,
-    trendUnavailableReason: camp.trendUnavailableReason,
+  const attemptedAt = new Date().toISOString();
 
-    lastSyncedAt: new Date().toISOString(),
-    metaStatus: camp.status,
-    metaEffectiveStatus: camp.effective_status,
-    syncRunId: payload.runId,
-    metaMissingFromLatestSync: false
-  }));
-}
+  return payload.campaigns.map((campaign) => {
+    const metrics = defaultMetrics(campaign);
+    const isPartial = payload.status === 'partial';
 
-function mapMetaStatusToCamply(metaStatus: string): Campaign['status'] {
-  if (['live', 'paused', 'setup', 'launching', 'optimize', 'completed'].includes(metaStatus)) {
-    return metaStatus as Campaign['status'];
-  }
-  if (metaStatus === 'ACTIVE') return 'live';
-  if (metaStatus === 'PAUSED') return 'paused';
-  if (metaStatus === 'ARCHIVED') return 'paused';
-  if (metaStatus === 'IN_PROCESS') return 'launching';
-  if (metaStatus === 'WITH_ISSUES') return 'optimize';
-  return 'paused';
+    return {
+      id: campaign.id,
+      clientId,
+      name: campaign.name,
+      platform: 'Meta Ads',
+      status: 'setup',
+      objective: campaign.classifiedObjective || campaign.objective || 'UNCLASSIFIED',
+      budget: Number(campaign.daily_budget || campaign.lifetime_budget || 0) / 100,
+      spent: numericMetric(metrics, 'spend'),
+      priority: 'medium',
+      metaCampaignId: campaign.id,
+      lastOptimizedAt: undefined,
+      nextAction: '',
+      classifiedObjective: campaign.classifiedObjective,
+      activeAdSets: campaign.classifiedAdsets.map((adset) => ({
+        id: adset.id,
+        name: adset.name || adset.id,
+        status: adset.status || adset.effective_status || 'UNKNOWN',
+        effective_status: adset.effective_status,
+        optimization_goal: adset.optimization_goal,
+        destination_type: adset.destination_type,
+        attribution_setting: adset.attribution_setting,
+        classified_objective: adset.classified_objective,
+      })),
+
+      structuralMixedAttribution: campaign.structuralMixedAttribution,
+      mixedAttribution: campaign.mixedAttribution,
+      mixedAttributionByPeriod: campaign.mixedAttributionByPeriod,
+      mixedObjective: campaign.mixedObjective,
+      mixedDestination: campaign.mixedDestination,
+      globalMetricsByPeriod: campaign.globalMetricsByPeriod,
+      attributionGroupsByPeriod: campaign.attributionGroupsByPeriod,
+      completenessByPeriod: campaign.completenessByPeriod,
+      trendAvailabilityByPeriod: campaign.trendAvailabilityByPeriod,
+      trendAvailable: campaign.trendAvailable,
+      trendUnavailableReason: campaign.trendUnavailableReason || undefined,
+
+      lastSyncedAt: isPartial ? undefined : attemptedAt,
+      lastSyncAttemptAt: attemptedAt,
+      lastSyncAttemptRunId: payload.runId,
+      lastSyncStatus: payload.status,
+      metaStatus: campaign.status,
+      metaEffectiveStatus: campaign.effective_status,
+      syncRunId: isPartial ? undefined : payload.runId,
+      partialSyncRunId: isPartial ? payload.runId : undefined,
+      dataIsPartial: isPartial,
+      metaMissingFromLatestSync: false,
+    };
+  });
 }

@@ -35,14 +35,8 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
     if (!client.metaAdAccountId) return;
     setSyncingClientId(client.id);
     try {
-      const { campaigns, status, message } = await syncClientMeta(client, data.campaigns);
-      const payload = {
-        runId: crypto.randomUUID(),
-        status: status as string,
-        completenessByPeriod: {},
-        failedAdsetIds: [],
-        campaigns: campaigns
-      };
+      const payload = await syncClientMeta(client, data.campaigns);
+      const { status, message } = payload;
       updateData(curr => applyMetaSyncToWorkspace(client, payload, curr));
       
       if (status === 'partial') {

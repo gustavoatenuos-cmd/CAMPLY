@@ -19,6 +19,12 @@ function bytesToHex(bytes: Uint8Array): string {
     .join('');
 }
 
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function getEncryptionKey(): Promise<CryptoKey> {
   const keyString = Deno.env.get('META_TOKEN_ENCRYPTION_KEY');
   if (!keyString) {
@@ -47,7 +53,7 @@ export async function encryptToken(token: string): Promise<string> {
   const encryptedBuf = await crypto.subtle.encrypt(
     {
       name: ALGORITHM,
-      iv: iv,
+      iv: bytesToArrayBuffer(iv),
     },
     key,
     encodedText
@@ -71,10 +77,10 @@ export async function decryptToken(encryptedToken: string): Promise<string> {
   const decryptedBuf = await crypto.subtle.decrypt(
     {
       name: ALGORITHM,
-      iv: iv,
+      iv: bytesToArrayBuffer(iv),
     },
     key,
-    encryptedBytes
+    bytesToArrayBuffer(encryptedBytes)
   );
 
   return new TextDecoder().decode(decryptedBuf);

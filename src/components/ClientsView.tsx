@@ -134,16 +134,10 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
 
     if (shouldSyncMeta && supabase) {
       setIsSyncing(true);
-      syncClientMeta(nextClient, data.campaigns).then(({ campaigns, status, message }) => {
+      syncClientMeta(nextClient, data.campaigns).then((payload) => {
+        const { campaigns, status, message } = payload;
         setIsSyncing(false);
         updateData(curr => {
-          const payload = {
-            runId: crypto.randomUUID(),
-            status: status as string,
-            completenessByPeriod: {},
-            failedAdsetIds: [],
-            campaigns: campaigns
-          };
           const nextData = applyMetaSyncToWorkspace(nextClient, payload, curr);
           return {
             ...nextData,

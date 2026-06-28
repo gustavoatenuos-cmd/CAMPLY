@@ -1,13 +1,31 @@
-import { METRIC_REGISTRY, MetaObjective } from './metricRegistry';
-import { classifyCampaignObjective, ClassifierEntityContext } from './campaignObjectiveClassifier';
+import { METRIC_REGISTRY, MetaObjective, MetricValueMap } from './metricRegistry.ts';
+
+export interface MetaRawAction {
+  action_type?: string;
+  value?: string | number | null;
+}
+
+export interface MetaRawInsight {
+  actions?: MetaRawAction[] | null;
+  action_values?: MetaRawAction[] | null;
+  [field: string]: unknown;
+}
+
+export interface NormalizedMetricMetadata {
+  raw_value?: number;
+  source_field?: string;
+  action_types?: string[];
+  formula?: string;
+  inputs?: MetricValueMap;
+}
 
 export interface NormalizedMetricResult {
   value: number;
-  metadata: any;
+  metadata: NormalizedMetricMetadata;
 }
 
 export function normalizeMetaMetrics(
-  rawInsights: any[],
+  rawInsights: MetaRawInsight[],
   classifiedObjective: MetaObjective,
   campaignId: string,
   adsetId?: string
@@ -22,12 +40,13 @@ export function normalizeMetaMetrics(
 
     let value = 0;
     let found = false;
-    let rawValue: any = undefined;
-    let formulaOrAction = '';
+    let rawValue: number | undefined;
+    let sourceField: string | undefined;
+    let actionTypes: string[] | undefined;
 
     if (metricDef.source === 'insights') {
       const fbField = metricDef.id === 'link_clicks' ? 'inline_link_clicks' : metricDef.id;
-      formulaOrAction = `Source field: ${fbField}`;
+      sourceField = fbField;
       
       const sum = rawInsights.reduce((acc, row) => acc + Number(row[fbField] || 0), 0);
       rawValue = sum;
@@ -37,10 +56,12 @@ export function normalizeMetaMetrics(
         found = true;
       }
     } else if (metricDef.source === 'actions') {
-      let matchedActions: any[] = [];
+      let matchedActions: MetaRawAction[] = [];
       rawInsights.forEach(row => {
         if (row.actions && Array.isArray(row.actions)) {
-          matchedActions.push(...row.actions.filter((a: any) => metricDef.acceptedActionTypes?.includes(a.action_type)));
+          matchedActions.push(...row.actions.filter((action) =>
+            action.action_type ? metricDef.acceptedActionTypes?.includes(action.action_type) : false
+          ));
         }
       });
 
@@ -48,7 +69,9 @@ export function normalizeMetaMetrics(
         matchedActions = [];
         rawInsights.forEach(row => {
           if (row.action_values && Array.isArray(row.action_values)) {
-             matchedActions.push(...row.action_values.filter((a: any) => metricDef.acceptedActionTypes?.includes(a.action_type)));
+             matchedActions.push(...row.action_values.filter((action) =>
+               action.action_type ? metricDef.acceptedActionTypes?.includes(action.action_type) : false
+             ));
           }
         });
       }
@@ -64,9 +87,8 @@ export function normalizeMetaMetrics(
         }
         value = matchedActions.reduce((acc, a) => acc + Number(a.value || 0), 0);
         rawValue = value;
-        formulaOrAction = `Actions: ${Array.from(new Set(matchedActions.map(a => a.action_type))).join(', ')}`;
-      } else {
-        formulaOrAction = `No matching actions found for ${metricDef.acceptedActionTypes?.join(', ')}`;
+        sourceField = metricDef.id === 'purchase_value' ? 'action_values' : 'actions';
+        actionTypes = Array.from(new Set(matchedActions.map(a => String(a.action_type))));
       }
     } else if (metricDef.source === 'calculated') {
       continue;
@@ -78,7 +100,8 @@ export function normalizeMetaMetrics(
         value,
         metadata: {
           raw_value: rawValue,
-          action_type: formulaOrAction
+          source_field: sourceField,
+          action_types: actionTypes,
         }
       };
     }
@@ -94,8 +117,8 @@ export function normalizeMetaMetrics(
           normalized[key] = {
             value: calcValue,
             metadata: {
-              raw_value: calcValue,
-              formula: 'Calculated metric based on ' + (metricDef.denominator ? metricDef.denominator : 'other metrics')
+              formula: `${key} recalculated from compatible additive metrics`,
+              inputs: { ...flatValues },
             }
           };
         }

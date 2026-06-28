@@ -1,8 +1,17 @@
 import { METRIC_REGISTRY, MetaObjective } from './metricRegistry';
-import { classifyCampaignObjective, ClassifierEntityContext } from './campaignObjectiveClassifier';
+export interface MetaRawAction {
+  action_type?: string;
+  value?: string | number | null;
+}
+
+export interface MetaRawInsight {
+  actions?: MetaRawAction[] | null;
+  action_values?: MetaRawAction[] | null;
+  [field: string]: unknown;
+}
 
 export function normalizeMetaMetrics(
-  rawInsights: any[],
+  rawInsights: MetaRawInsight[],
   classifiedObjective: MetaObjective,
   campaignId: string,
   adsetId?: string
@@ -25,10 +34,12 @@ export function normalizeMetaMetrics(
         found = true;
       }
     } else if (metricDef.source === 'actions') {
-      let matchedActions: any[] = [];
+      let matchedActions: MetaRawAction[] = [];
       rawInsights.forEach(row => {
         if (row.actions && Array.isArray(row.actions)) {
-          matchedActions.push(...row.actions.filter((a: any) => metricDef.acceptedActionTypes?.includes(a.action_type)));
+          matchedActions.push(...row.actions.filter((action) =>
+            action.action_type ? metricDef.acceptedActionTypes?.includes(action.action_type) : false
+          ));
         }
       });
 
@@ -37,7 +48,9 @@ export function normalizeMetaMetrics(
         matchedActions = [];
         rawInsights.forEach(row => {
           if (row.action_values && Array.isArray(row.action_values)) {
-             matchedActions.push(...row.action_values.filter((a: any) => metricDef.acceptedActionTypes?.includes(a.action_type)));
+             matchedActions.push(...row.action_values.filter((action) =>
+               action.action_type ? metricDef.acceptedActionTypes?.includes(action.action_type) : false
+             ));
           }
         });
       }

@@ -142,7 +142,9 @@ export const buildInsights = (data: CamplyData): Insight[] => {
 
   data.campaigns.forEach((campaign) => {
     const client = data.clients.find((item) => item.id === campaign.clientId);
-    const daysWithoutOptimization = Math.abs(daysUntil(campaign.lastOptimizedAt));
+    const daysWithoutOptimization = campaign.lastOptimizedAt
+      ? Math.abs(daysUntil(campaign.lastOptimizedAt))
+      : 0;
     const spentRate = campaign.budget ? campaign.spent / campaign.budget : 0;
 
     if (['live', 'optimize'].includes(campaign.status) && daysWithoutOptimization >= 4) {

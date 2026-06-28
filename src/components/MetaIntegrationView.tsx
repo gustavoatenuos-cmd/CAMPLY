@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Facebook, Link as LinkIcon, Unlink, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { invokeFunction } from '../lib/invokeFunction';
 import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
+import type { MetaSyncedCampaign, MetaSyncResponse } from '../lib/meta/metaSyncTypes';
 
 import { CamplyData, Client, Campaign } from '../types';
 
@@ -16,8 +17,9 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [syncedCampaigns, setSyncedCampaigns] = useState<any[]>([]);
-  const [importingCampaign, setImportingCampaign] = useState<any | null>(null);
+  const [syncedCampaigns, setSyncedCampaigns] = useState<MetaSyncedCampaign[]>([]);
+  const [lastSyncResponse, setLastSyncResponse] = useState<MetaSyncResponse | null>(null);
+  const [importingCampaign, setImportingCampaign] = useState<MetaSyncedCampaign | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   const checkStatus = async () => {
@@ -88,9 +90,10 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     try {
       setIsLoading(true);
       setError(null);
-      const data = await invokeFunction<any>('meta-sync-ads', { adAccountId });
+      const data = await invokeFunction<MetaSyncResponse>('meta-sync-ads', { adAccountId });
       
       setSyncedCampaigns(data.campaigns || []);
+      setLastSyncResponse(data);
       alert(`Sucesso! ${data.campaigns?.length || 0} campanhas ativas sincronizadas.`);
     } catch (e: any) {
       setError(e.message);
@@ -100,15 +103,14 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
   };
 
   const handleImport = () => {
-    if (!importingCampaign || !selectedClientId) return;
+    if (!importingCampaign || !selectedClientId || !lastSyncResponse) return;
 
     const selectedClient = data.clients.find(c => c.id === selectedClientId);
+    if (!selectedClient) return;
     
     // Meta uses cents for budget
-    const metaBudget = parseFloat(importingCampaign.daily_budget || importingCampaign.lifetime_budget || '0') / 100;
+    const metaBudget = Number(importingCampaign.daily_budget || importingCampaign.lifetime_budget || 0) / 100;
     const contractBudget = selectedClient?.adInvestmentMeta || 0;
-    const spent = parseFloat(importingCampaign.normalizedMetricsByPeriod?.['last_7d']?.spend || '0');
-    
     // Determine cross-reference insights
     const newInsights: any[] = [];
     
@@ -137,12 +139,9 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
 
     updateData((prev) => {
       // Use standard sync application instead of manual construction
-      const payload = {
-        runId: importingCampaign.syncRunId || crypto.randomUUID(),
-        status: 'success', // Importing single campaign implies success for this unit
-        completenessByPeriod: importingCampaign.completenessByPeriod || {},
-        failedAdsetIds: [],
-        campaigns: [importingCampaign]
+      const payload: MetaSyncResponse = {
+        ...lastSyncResponse,
+        campaigns: [importingCampaign],
       };
       const nextState = applyMetaSyncToWorkspace(selectedClient, payload, prev);
       
@@ -306,13 +305,15 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
                 <div className="border-t border-brand-line bg-brand-ink/50 p-6">
                   <h4 className="text-sm font-bold text-white mb-4">Campanhas Prontas para Importação</h4>
                   <div className="space-y-3">
-                    {syncedCampaigns.map((camp, idx) => {
+                    {syncedCampaigns.map((camp) => {
                       const isImported = data.campaigns.some(c => c.name === camp.name && c.platform === 'Meta Ads');
+                      const metrics = camp.globalMetricsByPeriod.last_7d || Object.values(camp.globalMetricsByPeriod)[0];
+                      const spend = typeof metrics?.spend === 'number' ? metrics.spend : 0;
                       return (
-                        <div key={idx} className="flex items-center justify-between rounded-lg border border-brand-line bg-brand-surface p-4">
+                        <div key={camp.id} className="flex items-center justify-between rounded-lg border border-brand-line bg-brand-surface p-4">
                           <div>
                             <p className="font-bold text-white">{camp.name}</p>
-                            <p className="text-xs text-brand-soft">Gasto: R$ {parseFloat(camp.insights?.spend || '0').toFixed(2)} • Meta ID: {camp.id}</p>
+                            <p className="text-xs text-brand-soft">Gasto: R$ {spend.toFixed(2)} • Meta ID: {camp.id}</p>
                             {camp.activeAdsData && camp.activeAdsData.length > 0 && (
                               <p className="mt-1 inline-flex items-center gap-1 rounded bg-brand-surface2 px-1.5 py-0.5 text-[10px] font-bold text-brand-soft">
                                 {camp.activeAdsData.length} anúncios ativos

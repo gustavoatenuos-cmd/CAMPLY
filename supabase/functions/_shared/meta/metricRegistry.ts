@@ -10,6 +10,7 @@ export type MetaObjective =
   | 'ENGAGEMENT' 
   | 'AWARENESS' 
   | 'VIDEO' 
+  | 'APP'
   | 'OTHER' 
   | 'MIXED'
   | 'UNCLASSIFIED';
@@ -31,7 +32,27 @@ export interface MetaCanonicalMetric {
   missingDataRule: 'zero' | 'null' | 'unavailable';
   deduplicationRule: 'none' | 'distinct_action_type' | 'priority_alias';
   supportedLevels: ('campaign' | 'adset' | 'ad')[];
-  calculate?: (data: any) => number | null;
+  calculate?: (data: MetricValueMap) => number | null;
+}
+
+export type MetricValueMap = Record<string, number | undefined>;
+
+export interface AggregateMetricOptions {
+  sourceLevel: 'campaign' | 'adset' | 'ad';
+  /** Reach is only safe when Meta returned one deduplicated campaign-level value. */
+  deduplicatedReach?: number;
+}
+
+function getConversionCount(data: MetricValueMap): number | undefined {
+  const candidates = [
+    data.purchases,
+    data.leads,
+    data.whatsapp_conversations_started,
+    data.messenger_conversations_started,
+    data.instagram_direct_conversations_started,
+    data.messaging_conversations_started_generic,
+  ];
+  return candidates.find((value) => value !== undefined);
 }
 
 export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
@@ -83,7 +104,7 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable',
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad'],
-    calculate: (data) => (data.reach && data.reach > 0) ? (data.impressions / data.reach) : null
+    calculate: (data) => (data.reach && data.reach > 0) ? ((data.impressions || 0) / data.reach) : null
   },
   cpm: {
     id: 'cpm',
@@ -97,7 +118,7 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable',
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad'],
-    calculate: (data) => (data.impressions && data.impressions > 0) ? ((data.spend / data.impressions) * 1000) : null
+    calculate: (data) => (data.impressions && data.impressions > 0) ? (((data.spend || 0) / data.impressions) * 1000) : null
   },
   link_clicks: {
     id: 'link_clicks',
@@ -123,7 +144,7 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable',
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad'],
-    calculate: (data) => (data.impressions && data.impressions > 0) ? (data.link_clicks / data.impressions) * 100 : null
+    calculate: (data) => (data.impressions && data.impressions > 0) ? ((data.link_clicks || 0) / data.impressions) * 100 : null
   },
   link_cpc: {
     id: 'link_cpc',
@@ -137,7 +158,24 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable',
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad'],
-    calculate: (data) => (data.link_clicks && data.link_clicks > 0) ? (data.spend / data.link_clicks) : null
+    calculate: (data) => (data.link_clicks && data.link_clicks > 0) ? ((data.spend || 0) / data.link_clicks) : null
+  },
+  cpa: {
+    id: 'cpa',
+    label: 'CPA',
+    description: 'Custo por conversão compatível com o objetivo classificado.',
+    source: 'calculated',
+    compatibleObjectives: 'ALL',
+    aggregationRule: 'recalculate',
+    denominator: 'objective_conversion',
+    formatter: 'currency',
+    missingDataRule: 'unavailable',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad'],
+    calculate: (data) => {
+      const conversions = getConversionCount(data);
+      return conversions && conversions > 0 ? (data.spend || 0) / conversions : null;
+    }
   },
   whatsapp_conversations_started: {
     id: 'whatsapp_conversations_started',
@@ -229,7 +267,9 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'unavailable',
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad'],
-    calculate: (data) => (data.spend && data.spend > 0 && data.purchase_value) ? (data.purchase_value / data.spend) : null
+    calculate: (data) => (data.spend && data.spend > 0 && data.purchase_value !== undefined)
+      ? (data.purchase_value / data.spend)
+      : null
   },
   leads: {
     id: 'leads',
@@ -253,7 +293,7 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     compatibleObjectives: ['TRAFFIC', 'SALES', 'LEADS'],
     aggregationRule: 'sum',
     formatter: 'integer',
-    missingDataRule: 'zero',
+    missingDataRule: 'unavailable',
     deduplicationRule: 'priority_alias',
     supportedLevels: ['campaign', 'adset', 'ad']
   },
@@ -311,3 +351,47 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     supportedLevels: ['campaign', 'adset', 'ad']
   }
 };
+
+/**
+ * Aggregates only registry-declared additive metrics and recalculates rates from
+ * their compatible totals. Reach/frequency are deliberately omitted for
+ * Ad Set groups because those rows are not deduplicated across audiences.
+ */
+export function aggregateCompatibleMetrics(
+  metricSets: MetricValueMap[],
+  options: AggregateMetricOptions
+): MetricValueMap {
+  const aggregate: MetricValueMap = {};
+
+  for (const [metricId, definition] of Object.entries(METRIC_REGISTRY)) {
+    if (definition.aggregationRule !== 'sum') continue;
+
+    const presentValues = metricSets
+      .map((metrics) => metrics[metricId])
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+    if (presentValues.length > 0) {
+      aggregate[metricId] = presentValues.reduce((total, value) => total + value, 0);
+    }
+  }
+
+  if (
+    options.sourceLevel === 'campaign' &&
+    typeof options.deduplicatedReach === 'number' &&
+    Number.isFinite(options.deduplicatedReach)
+  ) {
+    aggregate.reach = options.deduplicatedReach;
+  }
+
+  for (const [metricId, definition] of Object.entries(METRIC_REGISTRY)) {
+    if (definition.aggregationRule !== 'recalculate' || !definition.calculate) continue;
+    if (metricId === 'frequency' && options.sourceLevel !== 'campaign') continue;
+
+    const value = definition.calculate(aggregate);
+    if (value !== null && Number.isFinite(value)) {
+      aggregate[metricId] = value;
+    }
+  }
+
+  return aggregate;
+}

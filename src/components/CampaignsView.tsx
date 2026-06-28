@@ -158,7 +158,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         objective: String(form.get('objective') ?? 'Tráfego'),
         budget: Number(form.get('budget') ?? 0),
         spent: 0,
-        lastOptimizedAt: new Date().toISOString().slice(0, 10),
+        lastOptimizedAt: undefined,
         nextAction: '',
         priority: String(form.get('priority') ?? 'medium') as Priority,
         isMatrix: true,
@@ -276,7 +276,17 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                       className="flex items-center gap-1.5 rounded-lg border border-brand-line bg-brand-surface2 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-line transition-colors"
                     >
                       <History size={14} />
-                      Conciliar Dados
+                      Conciliar último completo
+                    </button>
+                  )}
+                  {editingCampaign.partialSyncRunId && editingCampaign.partialSyncRunId !== editingCampaign.syncRunId && (
+                    <button
+                      type="button"
+                      onClick={() => setReconciliationSyncRunId(editingCampaign.partialSyncRunId || null)}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition-colors"
+                    >
+                      <ShieldAlert size={14} />
+                      Conciliar parcial
                     </button>
                   )}
                   {(editingCampaign.globalMetricsByPeriod || editingCampaign.normalizedMetricsByPeriod || editingCampaign.metricsByPeriod) && (

@@ -1,3 +1,11 @@
+import type {
+  AttributionGroup,
+  GlobalMetrics,
+  MetaSyncStatus,
+  PeriodCompleteness,
+  TrendAvailability,
+} from './lib/meta/metaSyncTypes';
+
 export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat' | 'metaIntegration' | 'creativeCritic';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
@@ -57,7 +65,7 @@ export interface Campaign {
   objective: MetaCampaignObjective | string;
   budget: number;
   spent: number;
-  lastOptimizedAt: string;
+  lastOptimizedAt?: string;
   nextAction: string;
   priority: Priority;
   metaCampaignId?: string;
@@ -68,7 +76,12 @@ export interface Campaign {
     id: string;
     name: string;
     status: string;
-    ads: Array<{
+    classified_objective?: string;
+    optimization_goal?: string;
+    destination_type?: string;
+    attribution_setting?: string;
+    effective_status?: string;
+    ads?: Array<{
       id: string;
       name: string;
       status: string;
@@ -90,11 +103,15 @@ export interface Campaign {
   normalizedMetricsByPeriod?: Record<string, Record<string, number>>; // @deprecated
 
   // New Contract
+  structuralMixedAttribution?: boolean;
   mixedAttribution?: boolean;
+  mixedAttributionByPeriod?: Record<string, boolean>;
   mixedObjective?: boolean;
-  globalMetricsByPeriod?: Record<string, any>;
-  attributionGroupsByPeriod?: Record<string, any[]>;
-  completenessByPeriod?: Record<string, any>;
+  mixedDestination?: boolean;
+  globalMetricsByPeriod?: Record<string, GlobalMetrics>;
+  attributionGroupsByPeriod?: Record<string, AttributionGroup[]>;
+  completenessByPeriod?: Record<string, PeriodCompleteness>;
+  trendAvailabilityByPeriod?: Record<string, TrendAvailability>;
   trendAvailable?: boolean;
   trendUnavailableReason?: string;
 
@@ -102,6 +119,11 @@ export interface Campaign {
   metaStatus?: string;
   metaEffectiveStatus?: string;
   syncRunId?: string;
+  lastSyncAttemptAt?: string;
+  lastSyncAttemptRunId?: string;
+  lastSyncStatus?: MetaSyncStatus;
+  partialSyncRunId?: string;
+  dataIsPartial?: boolean;
   metaMissingFromLatestSync?: boolean;
   createdAt?: string;
   updatedAt?: string;
