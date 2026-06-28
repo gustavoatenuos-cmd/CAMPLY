@@ -105,23 +105,38 @@ export interface TrendAvailability {
   comparedWith?: string;
 }
 
-const statusPriority: Record<PeriodCompletenessStatus, number> = {
-  complete: 0,
-  zero_delivery: 1,
-  missing_insight_row: 2,
-  validation_error: 3,
-  partial_page: 4,
-  timeout: 5,
-  api_error: 6,
+const errorPriority: Record<Exclude<PeriodCompletenessStatus, 'complete' | 'zero_delivery'>, number> = {
+  missing_insight_row: 1,
+  validation_error: 2,
+  partial_page: 3,
+  timeout: 4,
+  api_error: 5,
 };
 
+const isCollectionError = (
+  status: PeriodCompletenessStatus
+): status is Exclude<PeriodCompletenessStatus, 'complete' | 'zero_delivery'> =>
+  status !== 'complete' && status !== 'zero_delivery';
+
+/**
+ * Combines statuses with delivery-aware semantics:
+ * - real collection/validation errors always win;
+ * - complete + zero_delivery means the scope had delivery overall;
+ * - zero_delivery is returned only when every non-error scope had no delivery.
+ */
 export function mergeCompletenessStatuses(
   statuses: PeriodCompletenessStatus[]
 ): PeriodCompletenessStatus {
   if (statuses.length === 0) return 'complete';
-  return statuses.reduce((worst, current) =>
-    statusPriority[current] > statusPriority[worst] ? current : worst
-  );
+
+  const errors = statuses.filter(isCollectionError);
+  if (errors.length > 0) {
+    return errors.reduce((worst, current) =>
+      errorPriority[current] > errorPriority[worst] ? current : worst
+    );
+  }
+
+  return statuses.some((status) => status === 'complete') ? 'complete' : 'zero_delivery';
 }
 
 const flatMetrics = (normalized: ReturnType<typeof normalizeMetaMetrics>): MetricValueMap =>
@@ -143,41 +158,74 @@ function groupAdsetMetrics(
 
   const nested = new Map<string, Map<MetaObjective, Bucket>>();
 
-  for (const insight of insights) {
-    const adset = adsets.find((candidate) => candidate.id === insight.adset_id);
-    if (!adset) continue;
-
-    const objective = adset.classified_objective || classifyAdSetObjective({
+  const resolveObjective = (adset: MetaAdSetDefinition): MetaObjective =>
+    adset.classified_objective || classifyAdSetObjective({
       campaignObjective,
       adsetOptimizationGoal: adset.optimization_goal || undefined,
       adsetDestinationType: adset.destination_type || undefined,
       adsetPromotedObject: adset.promoted_object,
     });
+
+  const ensureBucket = (
+    adset: MetaAdSetDefinition,
+    dateStart: string | null,
+    dateStop: string | null
+  ): Bucket => {
     const attribution = adset.attribution_setting || 'UNKNOWN';
-    const metrics = flatMetrics(normalizeMetaMetrics([insight], objective, insight.campaign_id || '', adset.id));
-    const rowStatus = context.adsetCollectionStatus === 'complete'
-      ? (insightHasDelivery(insight) ? 'complete' : 'zero_delivery')
-      : context.adsetCollectionStatus;
+    const objective = resolveObjective(adset);
 
     let objectiveMap = nested.get(attribution);
     if (!objectiveMap) {
       objectiveMap = new Map<MetaObjective, Bucket>();
       nested.set(attribution, objectiveMap);
     }
+
     let bucket = objectiveMap.get(objective);
     if (!bucket) {
       bucket = {
         adsetIds: [],
         metrics: [],
         statuses: [],
-        dateStart: insight.date_start || null,
-        dateStop: insight.date_stop || null,
+        dateStart,
+        dateStop,
       };
       objectiveMap.set(objective, bucket);
     }
+
+    return bucket;
+  };
+
+  const returnedAdsetIds = new Set<string>();
+
+  for (const insight of insights) {
+    const adset = adsets.find((candidate) => candidate.id === insight.adset_id);
+    if (!adset) continue;
+
+    returnedAdsetIds.add(adset.id);
+    const objective = resolveObjective(adset);
+    const metrics = flatMetrics(
+      normalizeMetaMetrics([insight], objective, insight.campaign_id || '', adset.id)
+    );
+    const rowStatus = context.adsetCollectionStatus === 'complete'
+      ? (insightHasDelivery(insight) ? 'complete' : 'zero_delivery')
+      : context.adsetCollectionStatus;
+    const bucket = ensureBucket(adset, insight.date_start || null, insight.date_stop || null);
+
     bucket.adsetIds.push(adset.id);
     bucket.metrics.push(metrics);
     bucket.statuses.push(rowStatus);
+  }
+
+  // A complete Meta collection may omit rows for Ad Sets with no delivery.
+  // Model those omissions as zero-delivery members, not collection failures.
+  if (context.adsetCollectionStatus === 'complete') {
+    for (const adset of adsets) {
+      if (returnedAdsetIds.has(adset.id)) continue;
+      const bucket = ensureBucket(adset, null, null);
+      bucket.adsetIds.push(adset.id);
+      bucket.metrics.push({});
+      bucket.statuses.push('zero_delivery');
+    }
   }
 
   const groups: AttributionGroup[] = [];
@@ -230,8 +278,11 @@ export function buildCampaignPeriodAnalytics(
   const requiresAdsetLevel = mix.structuralMixedAttribution || mix.mixedObjective || mix.mixedDestination;
   const expectedAdsetIds = new Set(classifiedAdsets.map((adset) => adset.id));
   const returnedAdsetIds = new Set(adsetInsights.map((insight) => insight.adset_id));
-  const missingAdsetIds = requiresAdsetLevel
+  const absentAdsetIds = requiresAdsetLevel
     ? Array.from(expectedAdsetIds).filter((id) => !returnedAdsetIds.has(id)).sort()
+    : [];
+  const missingAdsetIds = requiresAdsetLevel && isCollectionError(context.adsetCollectionStatus)
+    ? absentAdsetIds
     : [];
 
   let globalMetrics: GlobalMetrics | undefined;
@@ -288,21 +339,39 @@ export function buildCampaignPeriodAnalytics(
     }];
   }
 
-  const deliveryStatuses = requiresAdsetLevel
-    ? attributionGroups.map((group) => group.completeness)
-    : attributionGroups.map((group) => group.completeness);
-  const statuses: PeriodCompletenessStatus[] = [
+  const collectionStatuses: PeriodCompletenessStatus[] = [
     context.campaignCollectionStatus,
     ...(requiresAdsetLevel ? [context.adsetCollectionStatus] : []),
-    ...deliveryStatuses,
   ];
-  if (!campaignInsight) statuses.push('missing_insight_row');
-  if (missingAdsetIds.length > 0) statuses.push('missing_insight_row');
   if (context.timezone === 'UNKNOWN' || context.currency === 'UNKNOWN') {
-    statuses.push('validation_error');
+    collectionStatuses.push('validation_error');
+  }
+  if (missingAdsetIds.length > 0) {
+    collectionStatuses.push('missing_insight_row');
   }
 
-  const completenessStatus = mergeCompletenessStatuses(statuses);
+  const collectionErrors = collectionStatuses.filter(isCollectionError);
+  const deliveryStatuses = attributionGroups.map((group) => group.completeness);
+  const campaignHadDelivery = campaignInsight ? insightHasDelivery({
+    adset_id: campaign.id,
+    spend: campaignInsight.spend,
+    impressions: campaignInsight.impressions,
+    actions: campaignInsight.actions,
+  }) : false;
+  const anyDelivery = campaignHadDelivery
+    || deliveryStatuses.some((status) => status === 'complete');
+
+  // A missing row after a complete query normally means no delivery. It is only
+  // inconsistent when lower-level data proves that delivery did occur.
+  if (!campaignInsight && context.campaignCollectionStatus === 'complete' && anyDelivery) {
+    collectionErrors.push('missing_insight_row');
+  }
+
+  const completenessStatus = collectionErrors.length > 0
+    ? mergeCompletenessStatuses(collectionErrors)
+    : anyDelivery
+      ? 'complete'
+      : 'zero_delivery';
   const dateStart = campaignInsight?.date_start || attributionGroups[0]?.dateStart || null;
   const dateStop = campaignInsight?.date_stop || attributionGroups[0]?.dateStop || null;
 
@@ -361,9 +430,7 @@ export function evaluateTrendAvailability(
   if (sortedKey(current.objectiveGroups) !== sortedKey(previous.objectiveGroups)) {
     return { available: false, reason: 'Objective groups changed', comparedWith: previous.period };
   }
-  if (
-    current.metricDefinitionVersion !== previous.metricDefinitionVersion
-  ) {
+  if (current.metricDefinitionVersion !== previous.metricDefinitionVersion) {
     return { available: false, reason: 'Metric definition changed', comparedWith: previous.period };
   }
   const currentSpan = dateSpanDays(current.dateStart, current.dateStop);
