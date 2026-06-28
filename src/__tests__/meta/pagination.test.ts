@@ -22,5 +22,20 @@ describe('Pagination & Retry', () => {
     const res = await fetchMetaGraphPaginated({ endpoint: '/test', accessToken: 'a', appSecret: 'b', params: {} });
     expect(res.data.length).toBe(1);
     expect(res.isPartial).toBe(true);
+    expect(res.completionStatus).toBe('api_error');
+  });
+
+  it('reports partial_page when a configured page limit truncates pagination', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ id: 1 }], paging: { next: 'page2' } })
+    });
+
+    const res = await fetchMetaGraphPaginated(
+      { endpoint: '/test', accessToken: 'a', appSecret: 'b', params: {} },
+      1
+    );
+    expect(res.completionStatus).toBe('partial_page');
+    expect(res.isPartial).toBe(true);
   });
 });
