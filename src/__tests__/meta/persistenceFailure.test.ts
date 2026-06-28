@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
-// Mock dependencies
 vi.mock('../../../supabase/functions/_shared/auth.ts', () => ({
   requireAuthenticatedUser: vi.fn(),
   HttpError: class HttpError extends Error {
@@ -32,7 +31,6 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   META_GRAPH_VERSION: 'v25.0',
 }));
 
-// Mock functions used in tests
 let handleRequest: any;
 let PersistenceError: any;
 let requireAuthenticatedUser: any;
@@ -40,7 +38,6 @@ let fetchMetaGraph: any;
 let fetchMetaGraphPaginated: any;
 
 beforeAll(async () => {
-  // We need to inject globals for Deno and Request/Response in Node
   vi.stubGlobal('Deno', { env: { get: (k: string) => k === 'META_APP_SECRET' ? 'secret' : '' } });
   
   const indexStr = '../../../supabase/functions/meta-sync-ads/index.ts';
@@ -61,10 +58,12 @@ beforeAll(async () => {
   fetchMetaGraphPaginated = apiModule.fetchMetaGraphPaginated;
 });
 
-const createMockSupabase = (failOnOperation?: string) => ({
-  from: vi.fn((table) => {
-    const isTarget = failOnOperation === table;
-    return {
+const createMockSupabase = (failConfig?: { table: string, operation: string }) => {
+  const isFail = (table: string, operation: string) => 
+    failConfig?.table === table && failConfig?.operation === operation;
+
+  return {
+    from: vi.fn((table) => ({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockImplementation(() => {
@@ -74,33 +73,30 @@ const createMockSupabase = (failOnOperation?: string) => ({
         return Promise.resolve({ data: null, error: null });
       }),
       insert: vi.fn().mockImplementation(() => {
-        if (isTarget && failOnOperation === 'meta_sync_runs') {
-          return Promise.resolve({ error: { message: 'DB Failure on Insert' } });
-        }
-        if (isTarget && failOnOperation === 'meta_raw_snapshots') {
-          return Promise.resolve({ error: { message: 'DB Failure on Insert' } });
+        if (isFail(table, 'insert')) {
+          return Promise.resolve({ error: { message: `DB Failure on Insert ${table}` } });
         }
         return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'mock_run_id' }, error: null }) }) };
       }),
       upsert: vi.fn().mockImplementation(() => {
-        if (isTarget) {
-          return Promise.resolve({ error: { message: 'DB Failure on Upsert' } });
+        if (isFail(table, 'upsert')) {
+          return Promise.resolve({ error: { message: `DB Failure on Upsert ${table}` } });
         }
         return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'mock_id' }, error: null }) }) };
       }),
       update: vi.fn().mockImplementation(() => {
         return {
           eq: vi.fn().mockImplementation(() => {
-            if (isTarget && failOnOperation === 'meta_sync_runs_update') {
-              return Promise.resolve({ error: { message: 'DB Failure on Update' } });
+            if (isFail(table, 'update')) {
+              return Promise.resolve({ error: { message: `DB Failure on Update ${table}` } });
             }
             return Promise.resolve({ error: null });
           })
         };
       })
-    };
-  })
-});
+    }))
+  };
+};
 
 const createMockRequest = (body: any) => {
   return {
@@ -111,7 +107,6 @@ const createMockRequest = (body: any) => {
 };
 
 describe('Persistence Failure Handling through Orchestrator', () => {
-
   beforeEach(() => {
     vi.clearAllMocks();
     fetchMetaGraphPaginated.mockResolvedValue({
@@ -143,8 +138,8 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     });
   });
 
-  const runScenario = async (failTable: string | undefined) => {
-    const supabaseClient = createMockSupabase(failTable);
+  const runScenario = async (failConfig: { table: string, operation: string } | undefined) => {
+    const supabaseClient = createMockSupabase(failConfig);
     requireAuthenticatedUser.mockResolvedValue({
       user: { id: 'user_123' },
       adminClient: supabaseClient
@@ -156,38 +151,41 @@ describe('Persistence Failure Handling through Orchestrator', () => {
   };
 
   it('handles database insert failures for meta_sync_runs safely', async () => {
-    const { response, json } = await runScenario('meta_sync_runs');
+    const { response, json } = await runScenario({ table: 'meta_sync_runs', operation: 'insert' });
     expect(response.status).toBe(500);
-    expect(json.error).toBe('insert meta_sync_runs: DB Failure on Insert');
+    expect(json.error).toBe('insert meta_sync_runs: DB Failure on Insert meta_sync_runs');
   });
 
   it('handles database insert failures for meta_raw_snapshots safely', async () => {
-    const { response, json } = await runScenario('meta_raw_snapshots');
+    const { response, json } = await runScenario({ table: 'meta_raw_snapshots', operation: 'insert' });
     expect(response.status).toBe(200);
     expect(json.message).toContain('DB Failure');
   });
 
   it('handles database upsert failures for meta_campaign_entities safely', async () => {
-    const { response, json } = await runScenario('meta_campaign_entities');
+    const { response, json } = await runScenario({ table: 'meta_campaign_entities', operation: 'upsert' });
     expect(response.status).toBe(200);
     expect(json.message).toContain('DB Failure');
   });
 
   it('handles database upsert failures for meta_adset_entities safely', async () => {
-    const { response, json } = await runScenario('meta_adset_entities');
+    const { response, json } = await runScenario({ table: 'meta_adset_entities', operation: 'upsert' });
     expect(response.status).toBe(200);
     expect(json.message).toContain('DB Failure');
   });
 
   it('handles database upsert failures for meta_normalized_metrics safely', async () => {
-    const { response, json } = await runScenario('meta_normalized_metrics');
+    const { response, json } = await runScenario({ table: 'meta_normalized_metrics', operation: 'upsert' });
     expect(response.status).toBe(200);
     expect(json.message).toContain('DB Failure');
   });
 
   it('handles database update failures for final sync run safely', async () => {
-    const { response, json } = await runScenario('meta_sync_runs_update');
-    expect(response.status).toBe(200); // the response is still sent
-    // The final update failure is just logged, the HTTP response doesn't change.
+    const { response, json, supabaseClient } = await runScenario({ table: 'meta_sync_runs', operation: 'update' });
+    expect(response.status).toBe(500);
+    expect(json.error).toContain('DB Failure on Update meta_sync_runs');
+    // Ensure that it tries to mark the run as failed in the catch block!
+    expect(supabaseClient.from).toHaveBeenCalledWith('meta_sync_runs');
+    // We can't trivially assert the second update call arguments in this simplified mock, but we assert it doesn't return success silently.
   });
 });

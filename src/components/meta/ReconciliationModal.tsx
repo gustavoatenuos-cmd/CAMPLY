@@ -131,6 +131,7 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   <Summary label="Status" value={runInfo.status} warning={runInfo.status !== 'success'} />
+                  <Summary label="Timezone" value={`${(runInfo as any).timezone || 'UNKNOWN'} (${(runInfo as any).currency || 'UNKNOWN'})`} />
                   <Summary label="Graph API" value={runInfo.graph_api_version} />
                   <Summary label="Início" value={new Date(runInfo.started_at).toLocaleString()} />
                   <Summary label="Registros lidos" value={String(runInfo.records_fetched || 0)} />
