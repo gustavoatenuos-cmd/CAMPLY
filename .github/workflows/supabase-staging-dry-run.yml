@@ -1,10 +1,7 @@
 name: Supabase Staging Dry Run
 
 on:
-  push:
-    branches:
-      - refactor/meta-analytics-engine
-
+    workflow_dispatch:
 permissions:
   contents: read
 
