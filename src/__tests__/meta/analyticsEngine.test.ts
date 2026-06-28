@@ -112,6 +112,65 @@ describe('Meta analytics campaign mixing and period engine', () => {
     expect(result.completeness.status).toBe('zero_delivery');
   });
 
+  it('keeps the period complete when one Ad Set delivered and another had zero delivery', () => {
+    const result = buildCampaignPeriodAnalytics(
+      { id: 'c1', objective: 'OUTCOME_SALES' },
+      [adset(), adset({ id: 'a2', attribution_setting: '1d_click' })],
+      insight({ adset_id: 'c1', spend: '25', impressions: '250' }),
+      [
+        insight({ spend: '25', impressions: '250' }),
+        insight({ adset_id: 'a2', spend: '0', impressions: '0', inline_link_clicks: '0' }),
+      ],
+      context
+    );
+
+    expect(result.completeness.status).toBe('complete');
+    expect(result.attributionGroups.find((group) => group.adsetIds.includes('a2'))?.completeness)
+      .toBe('zero_delivery');
+  });
+
+  it('treats an omitted Ad Set row as zero delivery when pagination completed', () => {
+    const result = buildCampaignPeriodAnalytics(
+      { id: 'c1', objective: 'OUTCOME_SALES' },
+      [adset(), adset({ id: 'a2', attribution_setting: '1d_click' })],
+      insight({ adset_id: 'c1', spend: '10', impressions: '100' }),
+      [insight()],
+      context
+    );
+
+    expect(result.completeness.status).toBe('complete');
+    expect(result.completeness.missingAdsetIds).toEqual([]);
+    expect(result.attributionGroups.find((group) => group.adsetIds.includes('a2'))?.completeness)
+      .toBe('zero_delivery');
+  });
+
+  it('marks an omitted Ad Set as incomplete when pagination is partial', () => {
+    const result = buildCampaignPeriodAnalytics(
+      { id: 'c1', objective: 'OUTCOME_SALES' },
+      [adset(), adset({ id: 'a2', attribution_setting: '1d_click' })],
+      insight({ adset_id: 'c1', spend: '10', impressions: '100' }),
+      [insight()],
+      { ...context, adsetCollectionStatus: 'partial_page' as const }
+    );
+
+    expect(result.completeness.status).toBe('partial_page');
+    expect(result.completeness.missingAdsetIds).toEqual(['a2']);
+  });
+
+  it('keeps a fully collected campaign at zero delivery when no Ad Set has a row', () => {
+    const result = buildCampaignPeriodAnalytics(
+      { id: 'c1', objective: 'OUTCOME_SALES' },
+      [adset(), adset({ id: 'a2', attribution_setting: '1d_click' })],
+      insight({ adset_id: 'c1', spend: '0', impressions: '0' }),
+      [],
+      context
+    );
+
+    expect(result.completeness.status).toBe('zero_delivery');
+    expect(result.completeness.missingAdsetIds).toEqual([]);
+    expect(result.attributionGroups.every((group) => group.completeness === 'zero_delivery')).toBe(true);
+  });
+
   it('normalizes a structurally mixed campaign with the objective that delivered', () => {
     const adsets = [
       adset({ classified_objective: 'WHATSAPP', destination_type: 'WHATSAPP' }),
@@ -157,18 +216,6 @@ describe('Meta analytics campaign mixing and period engine', () => {
     const groupedSpend = result.attributionGroups.reduce((total, group) => total + Number(group.metrics.spend || 0), 0);
     expect(result.globalMetrics?.spend).toBe(100);
     expect(groupedSpend).toBe(100);
-  });
-
-  it('marks a missing Ad Set insight row separately', () => {
-    const result = buildCampaignPeriodAnalytics(
-      { id: 'c1', objective: 'OUTCOME_SALES' },
-      [adset(), adset({ id: 'a2', attribution_setting: '1d_click' })],
-      insight({ adset_id: 'c1' }),
-      [insight()],
-      context
-    );
-    expect(result.completeness.status).toBe('missing_insight_row');
-    expect(result.completeness.missingAdsetIds).toEqual(['a2']);
   });
 
   it('marks unavailable account timezone as a validation error', () => {
