@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "preview": "vite preview --host=0.0.0.0"
+    "preview": "vite preview --host=0.0.0.0",
+    "validate:meta:local": "bash scripts/validate-meta-local.sh",
+    "test:meta:e2e": "node scripts/test-edge-e2e.cjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

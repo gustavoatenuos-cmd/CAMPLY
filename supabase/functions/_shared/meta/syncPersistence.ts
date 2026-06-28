@@ -9,12 +9,17 @@ export interface PersistenceFailure {
 }
 
 export class PersistenceError extends Error {
+  operation: string;
+  adsetId?: string;
+
   constructor(
-    public operation: string,
+    operation: string,
     message: string,
-    public adsetId?: string
+    adsetId?: string
   ) {
     super(`${operation}: ${message}`);
+    this.operation = operation;
+    this.adsetId = adsetId;
   }
 }
 

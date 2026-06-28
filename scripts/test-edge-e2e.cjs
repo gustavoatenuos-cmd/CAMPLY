@@ -24,23 +24,34 @@ async function run() {
   
   const signupData = await signupRes.json();
   const accessToken = signupData.access_token;
-  const userId = signupData.user.id;
-  const serviceRoleKey = status.SERVICE_ROLE_KEY;
+  const userId = signupData?.user?.id;
   
   if (!accessToken || !userId) {
      console.error('Failed to create user', signupData);
      process.exit(1);
   }
 
-  // Insert mock integration using psql directly to bypass REST issues
+  // 3. Encrypt the mock token using Node script
+  const encryptOut = execSync(`node scripts/encrypt-token.cjs "mock_token"`).toString().trim();
+
+  const cryptoLib = require('crypto');
+  const integrationId = cryptoLib.randomUUID();
+  const assetId = cryptoLib.randomUUID();
+
+  // 4. Insert mock integration using psql directly to bypass REST issues
   execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
+    GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+    
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) 
-    VALUES ('11111111-1111-1111-1111-111111111111', '${userId}', 'mock_token', 'active') ON CONFLICT DO NOTHING;
+    VALUES ('${integrationId}', '${userId}', '${encryptOut}', 'active');
     INSERT INTO meta_assets (id, integration_id, asset_id, asset_type, asset_name) 
-    VALUES ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', 'act_123', 'ad_account', 'Mock Account') ON CONFLICT DO NOTHING;
+    VALUES ('${assetId}', '${integrationId}', 'act_123', 'adaccount', 'Mock Account');
   "`);
 
-  // 3. Call Edge Function
+  // 5. Call Edge Function
   const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
     method: 'POST',
     headers: {
@@ -48,22 +59,30 @@ async function run() {
       'Authorization': `Bearer ${accessToken}`
     },
     body: JSON.stringify({
-      integrationId: '11111111-1111-1111-1111-111111111111',
       adAccountId: 'act_123',
-      graphApiVersion: 'v20.0',
-      accessToken: 'mock_token',
-      requestedPeriod: 'today'
+      periods: ['today']
     })
   });
 
   const text = await res.text();
-  console.log('Edge Function HTTP Response:', res.status, text);
-
+  console.log('Edge Function HTTP Response Status:', res.status);
+  
   if (!res.ok) {
-    console.error('Test failed: non-200 response');
+    console.error('Test failed: non-200 response', text);
     process.exit(1);
   }
-  console.log('E2E validation passed.');
+
+  // 6. DB Verification
+  const dbOut = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -t -c "
+    SELECT count(*) FROM meta_normalized_metrics;
+  "`).toString().trim();
+
+  if (parseInt(dbOut, 10) === 0) {
+    console.error('Test failed: No metrics found in meta_normalized_metrics');
+    process.exit(1);
+  }
+
+  console.log(`E2E validation passed. Found ${dbOut} normalized metrics.`);
   process.exit(0);
 }
 

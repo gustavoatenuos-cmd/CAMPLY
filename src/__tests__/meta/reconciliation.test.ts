@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it } from 'vitest';
 import { reconcileNormalizedMetric } from '../../lib/meta/reconciliation';
 

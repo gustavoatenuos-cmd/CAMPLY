@@ -1,8 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 export class HttpError extends Error {
-  constructor(message: string, public status = 400) {
+  status: number;
+  constructor(message: string, status = 400) {
     super(message)
+    this.status = status;
   }
 }
 

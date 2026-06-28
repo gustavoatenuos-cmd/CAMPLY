@@ -59,7 +59,7 @@ const collectionStatus = <T>(result: PaginatedResult<T>): PeriodCompletenessStat
 const isIncomplete = (status: PeriodCompletenessStatus) =>
   status !== 'complete' && status !== 'zero_delivery';
 
-serve(async (req) => {
+export async function handleRequest(req: Request) {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -575,4 +575,5 @@ serve(async (req) => {
     }
     return errorResponse(error, corsHeaders);
   }
-});
+}
+serve(handleRequest);

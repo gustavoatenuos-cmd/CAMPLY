@@ -7,3 +7,4 @@ dist
 .env*
 supabase/.temp/
 supabase/secrets.local
+supabase/.branches/

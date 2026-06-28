@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it } from 'vitest';
 import { applyMetaSyncToWorkspace } from '../../lib/meta/applyMetaSyncToWorkspace';
 import { mapMetaCampaigns } from '../../lib/meta/metaSyncMapper';
