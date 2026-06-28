@@ -106,7 +106,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     // Meta uses cents for budget
     const metaBudget = parseFloat(importingCampaign.daily_budget || importingCampaign.lifetime_budget || '0') / 100;
     const contractBudget = selectedClient?.adInvestmentMeta || 0;
-    const spent = parseFloat(importingCampaign.insights?.spend || '0');
+    const spent = parseFloat(importingCampaign.normalizedMetricsByPeriod?.['last_7d']?.spend || '0');
     
     // Determine cross-reference insights
     const newInsights: any[] = [];
@@ -144,11 +144,16 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
       budget: metaBudget,
       spent: spent,
       metaCampaignId: importingCampaign.id,
-      activeAdSets: importingCampaign.activeAdsData || [],
-      lastOptimizedAt: new Date().toISOString(),
-      nextAction: 'Monitorar resultados e otimizar',
+      activeAdSets: importingCampaign.classifiedAdsets || [],
       priority: hasOverdue ? 'high' : 'medium',
-      results: parseInt(importingCampaign.insights?.actions || importingCampaign.insights?.clicks || '0'),
+      classifiedObjective: importingCampaign.classifiedObjective || 'UNCLASSIFIED',
+      normalizedMetricsByPeriod: importingCampaign.normalizedMetricsByPeriod || {},
+      metaStatus: importingCampaign.status || importingCampaign.metaStatus,
+      metaEffectiveStatus: importingCampaign.effective_status || importingCampaign.metaEffectiveStatus,
+      syncRunId: importingCampaign.syncRunId,
+      lastSyncedAt: importingCampaign.lastSyncedAt || new Date().toISOString(),
+      lastOptimizedAt: new Date().toISOString().slice(0, 10),
+      nextAction: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
