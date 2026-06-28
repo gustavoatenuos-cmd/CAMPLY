@@ -1,4 +1,4 @@
-import { MetaObjective } from './metricRegistry';
+import { MetaObjective } from './objectives';
 
 export interface AnalysisAlert {
   status: 'active' | 'resolved' | 'ignored';

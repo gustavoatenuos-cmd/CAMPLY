@@ -1,4 +1,5 @@
-import { METRIC_REGISTRY, MetaObjective, MetricValueMap } from './metricRegistry.ts';
+import { MetaObjective } from "./objectives.ts";
+import { METRIC_REGISTRY, type MetricValueMap } from './metricRegistry.ts';
 
 export interface MetaRawAction {
   action_type?: string;

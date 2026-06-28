@@ -1,5 +1,5 @@
-import { classifyAdSetObjective } from './campaignObjectiveClassifier.ts';
-import type { MetaObjective } from './metricRegistry.ts';
+import { MetaObjective } from "./objectives.ts";
+import { classifyAdSetObjective } from './classifier.ts';
 
 export interface MetaAdSetForMixAnalysis {
   id: string;

@@ -1,4 +1,4 @@
-import { MetaObjective } from './metricRegistry.ts';
+import { MetaObjective } from "./objectives.ts";
 
 export interface ClassifierEntityContext {
   campaignObjective: string;
@@ -36,12 +36,16 @@ export function classifyAdSetObjective(context: ClassifierEntityContext): MetaOb
   }
 
   // 2. SALES
-  if (obj === 'OUTCOME_SALES' || obj === 'CONVERSIONS' || obj === 'PRODUCT_CATALOG_SALES') {
+  if (optGoal === 'OFFSITE_CONVERSIONS' || obj === 'OUTCOME_SALES' || obj === 'CONVERSIONS' || obj === 'PRODUCT_CATALOG_SALES') {
+    // If adset explicitly overrides to leads, respect it
+    if (optGoal === 'LEAD_GENERATION') {
+        return 'LEADS';
+    }
     return 'SALES';
   }
 
   // 3. LEADS (Web/Forms)
-  if (obj === 'OUTCOME_LEADS' || obj === 'LEAD_GENERATION') {
+  if (optGoal === 'LEAD_GENERATION' || obj === 'OUTCOME_LEADS') {
     return 'LEADS';
   }
 
@@ -50,27 +54,27 @@ export function classifyAdSetObjective(context: ClassifierEntityContext): MetaOb
     return 'PROFILE_VISITS';
   }
 
-  if (obj === 'OUTCOME_TRAFFIC' || obj === 'LINK_CLICKS') {
+  if (optGoal === 'LINK_CLICKS' || obj === 'OUTCOME_TRAFFIC') {
     return 'TRAFFIC';
   }
 
   // 6. ENGAGEMENT
-  if (obj === 'OUTCOME_ENGAGEMENT' || obj === 'POST_ENGAGEMENT' || obj === 'PAGE_LIKES' || obj === 'EVENT_RESPONSES') {
+  if (optGoal === 'POST_ENGAGEMENT' || optGoal === 'PAGE_LIKES' || optGoal === 'EVENT_RESPONSES' || obj === 'OUTCOME_ENGAGEMENT' || obj === 'POST_ENGAGEMENT' || obj === 'PAGE_LIKES' || obj === 'EVENT_RESPONSES') {
     return 'ENGAGEMENT';
   }
 
   // 7. AWARENESS
-  if (obj === 'OUTCOME_AWARENESS' || obj === 'BRAND_AWARENESS' || obj === 'REACH') {
+  if (optGoal === 'REACH' || optGoal === 'BRAND_AWARENESS' || obj === 'OUTCOME_AWARENESS' || obj === 'BRAND_AWARENESS' || obj === 'REACH') {
     return 'AWARENESS';
   }
 
   // 8. VIDEO
-  if (obj === 'VIDEO_VIEWS') {
+  if (optGoal === 'VIDEO_VIEWS' || obj === 'VIDEO_VIEWS') {
     return 'VIDEO';
   }
 
   // 9. APP
-  if (obj === 'OUTCOME_APP_PROMOTION' || obj === 'APP_INSTALLS') {
+  if (optGoal === 'APP_INSTALLS' || obj === 'OUTCOME_APP_PROMOTION' || obj === 'APP_INSTALLS') {
     return 'APP';
   }
 

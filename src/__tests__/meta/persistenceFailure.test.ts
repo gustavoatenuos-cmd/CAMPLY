@@ -58,46 +58,6 @@ beforeAll(async () => {
   fetchMetaGraphPaginated = apiModule.fetchMetaGraphPaginated;
 });
 
-const createMockSupabase = (failConfig?: { table: string, operation: string }) => {
-  const isFail = (table: string, operation: string) => 
-    failConfig?.table === table && failConfig?.operation === operation;
-
-  return {
-    from: vi.fn((table) => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockImplementation(() => {
-        if (table === 'meta_integrations') {
-          return Promise.resolve({ data: { access_token_encrypted: 'abc' }, error: null });
-        }
-        return Promise.resolve({ data: null, error: null });
-      }),
-      insert: vi.fn().mockImplementation(() => {
-        if (isFail(table, 'insert')) {
-          return Promise.resolve({ error: { message: `DB Failure on Insert ${table}` } });
-        }
-        return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'mock_run_id' }, error: null }) }) };
-      }),
-      upsert: vi.fn().mockImplementation(() => {
-        if (isFail(table, 'upsert')) {
-          return Promise.resolve({ error: { message: `DB Failure on Upsert ${table}` } });
-        }
-        return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'mock_id' }, error: null }) }) };
-      }),
-      update: vi.fn().mockImplementation(() => {
-        return {
-          eq: vi.fn().mockImplementation(() => {
-            if (isFail(table, 'update')) {
-              return Promise.resolve({ error: { message: `DB Failure on Update ${table}` } });
-            }
-            return Promise.resolve({ error: null });
-          })
-        };
-      })
-    }))
-  };
-};
-
 const createMockRequest = (body: any) => {
   return {
     method: 'POST',
@@ -138,7 +98,44 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     });
   });
 
-  const runScenario = async (failConfig: { table: string, operation: string } | undefined) => {
+  const createMockSupabase = (failConfig?: { target: string }) => {
+    return {
+      from: vi.fn((table) => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockImplementation(() => {
+          if (table === 'meta_integrations') {
+            return Promise.resolve({ data: { access_token_encrypted: 'abc' }, error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        }),
+        insert: vi.fn().mockImplementation(() => {
+          if (failConfig?.target === 'insert_run') {
+            return Promise.resolve({ error: { message: `DB Failure on Insert meta_sync_runs` } });
+          }
+          return { select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'mock_run_id' }, error: null }) }) };
+        }),
+        update: vi.fn().mockImplementation(() => {
+          return {
+            match: vi.fn().mockImplementation(() => {
+              if (failConfig?.target === 'update_run') {
+                return Promise.resolve({ error: { message: `DB Failure on Update meta_sync_runs` } });
+              }
+              return Promise.resolve({ error: null });
+            })
+          };
+        })
+      })),
+      rpc: vi.fn().mockImplementation((rpcName) => {
+        if (rpcName === 'persist_meta_sync_run' && failConfig?.target === 'rpc_persist') {
+           return Promise.resolve({ error: { message: `DB Failure on RPC persist` } });
+        }
+        return Promise.resolve({ error: null });
+      })
+    };
+  };
+
+  const runScenario = async (failConfig?: { target: string }) => {
     const supabaseClient = createMockSupabase(failConfig);
     requireAuthenticatedUser.mockResolvedValue({
       user: { id: 'user_123' },
@@ -151,41 +148,16 @@ describe('Persistence Failure Handling through Orchestrator', () => {
   };
 
   it('handles database insert failures for meta_sync_runs safely', async () => {
-    const { response, json } = await runScenario({ table: 'meta_sync_runs', operation: 'insert' });
+    const { response, json } = await runScenario({ target: 'insert_run' });
     expect(response.status).toBe(500);
-    expect(json.error).toBe('insert meta_sync_runs: DB Failure on Insert meta_sync_runs');
+    expect(json.error).toContain('DB Failure on Insert meta_sync_runs');
   });
 
-  it('handles database insert failures for meta_raw_snapshots safely', async () => {
-    const { response, json } = await runScenario({ table: 'meta_raw_snapshots', operation: 'insert' });
-    expect(response.status).toBe(200);
-    expect(json.message).toContain('DB Failure');
-  });
-
-  it('handles database upsert failures for meta_campaign_entities safely', async () => {
-    const { response, json } = await runScenario({ table: 'meta_campaign_entities', operation: 'upsert' });
-    expect(response.status).toBe(200);
-    expect(json.message).toContain('DB Failure');
-  });
-
-  it('handles database upsert failures for meta_adset_entities safely', async () => {
-    const { response, json } = await runScenario({ table: 'meta_adset_entities', operation: 'upsert' });
-    expect(response.status).toBe(200);
-    expect(json.message).toContain('DB Failure');
-  });
-
-  it('handles database upsert failures for meta_normalized_metrics safely', async () => {
-    const { response, json } = await runScenario({ table: 'meta_normalized_metrics', operation: 'upsert' });
-    expect(response.status).toBe(200);
-    expect(json.message).toContain('DB Failure');
-  });
-
-  it('handles database update failures for final sync run safely', async () => {
-    const { response, json, supabaseClient } = await runScenario({ table: 'meta_sync_runs', operation: 'update' });
+  it('handles RPC persistence failures safely (atomicity)', async () => {
+    const { response, json, supabaseClient } = await runScenario({ target: 'rpc_persist' });
     expect(response.status).toBe(500);
-    expect(json.error).toContain('DB Failure on Update meta_sync_runs');
+    expect(json.error).toContain('Database persistence failed: DB Failure on RPC persist');
     // Ensure that it tries to mark the run as failed in the catch block!
     expect(supabaseClient.from).toHaveBeenCalledWith('meta_sync_runs');
-    // We can't trivially assert the second update call arguments in this simplified mock, but we assert it doesn't return success silently.
   });
 });

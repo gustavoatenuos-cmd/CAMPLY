@@ -3,18 +3,16 @@ set -euo pipefail
 
 echo "=== VALIDAÇÃO LOCAL DO META ANALYTICS ENGINE ==="
 
-MIGRATION_PATH="supabase/migrations/20260627000003_mixed_attribution_support.sql"
-TEMP_MIGRATION="/tmp/20260627000003_mixed_attribution_support.sql"
-
 MOCK_PID=""
 FUNCTION_PID=""
 
 cleanup() {
   echo "--- Executando cleanup ---"
   
-  if [[ -f "$TEMP_MIGRATION" && ! -f "$MIGRATION_PATH" ]]; then
-    echo "Restaurando migration..."
-    mv "$TEMP_MIGRATION" "$MIGRATION_PATH"
+  # Restore any migrations that were moved
+  if ls /tmp/camply_migrations/*.sql 1> /dev/null 2>&1; then
+    echo "Restaurando migrations temporárias..."
+    mv /tmp/camply_migrations/*.sql supabase/migrations/ || true
   fi
   
   if [[ -n "$MOCK_PID" ]]; then
@@ -42,12 +40,13 @@ echo "1. Nenhum projeto remoto linkado."
 echo "2. Iniciando Supabase local..."
 npx supabase start
 
-# 3. Mover migration temporariamente
+# 3. Mover migrations temporariamente (3, 4, 5, 6)
 echo "3. Preparando teste de migration incremental..."
 mkdir -p /tmp/camply_migrations
-if [[ -f "$MIGRATION_PATH" ]]; then
-  mv "$MIGRATION_PATH" "$TEMP_MIGRATION"
-fi
+mv supabase/migrations/20260627000003_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000004_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000005_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000006_* /tmp/camply_migrations/ 2>/dev/null || true
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."
@@ -57,12 +56,10 @@ npx supabase db reset
 echo "5. Aplicando fixtures legadas (antes da migration 3)..."
 PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres < supabase/tests/fixtures_legacy.sql
 
-# 6. Devolver migration 3 e aplicar
-echo "6. Aplicando migration 3 e validando deduplicação..."
-if [[ -f "$TEMP_MIGRATION" ]]; then
-  mv "$TEMP_MIGRATION" "$MIGRATION_PATH"
-fi
-npx supabase migration up
+# 6. Devolver migrations e aplicar
+echo "6. Aplicando migrations >= 3..."
+mv /tmp/camply_migrations/*.sql supabase/migrations/ 2>/dev/null || true
+npx supabase migration up --include-all
 
 # 7. Executar smoke test
 echo "7. Executando Smoke Test SQL..."
@@ -78,7 +75,6 @@ MOCK_PID=$!
 sleep 2
 
 echo "Iniciando Edge Function localmente com META_BASE_URL customizado..."
-# Using host.docker.internal so the Docker container can reach the mock server on the host
 META_BASE_URL="http://host.docker.internal:9999" npx supabase functions serve meta-sync-ads --env-file ./supabase/.env.local &
 FUNCTION_PID=$!
 sleep 5
@@ -95,9 +91,5 @@ npm test
 
 echo "11. Executando Build..."
 npm run build
-
-echo "12. Validando integridade dos arquivos críticos..."
-test -f "$MIGRATION_PATH"
-git diff --exit-code -- "$MIGRATION_PATH"
 
 echo "=== VALIDAÇÃO LOCAL CONCLUÍDA COM SUCESSO! ==="

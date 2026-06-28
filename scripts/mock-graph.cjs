@@ -72,8 +72,8 @@ const server = http.createServer((req, res) => {
       ];
     } else if (accountId === 'act_mixed_attr') {
       adsets = [
-        { id: 'adset_attr1', campaign_id: 'camp_mix_attr', name: 'Adset Attr 1', optimization_goal: 'OFFSITE_CONVERSIONS', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
-        { id: 'adset_attr2', campaign_id: 'camp_mix_attr', name: 'Adset Attr 2', optimization_goal: 'OFFSITE_CONVERSIONS', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }] }
+        { id: 'adset_attr1', campaign_id: 'camp_mix_attr', name: 'Adset Attr 1', optimization_goal: 'OFFSITE_CONVERSIONS', effective_status: 'ACTIVE', attribution_setting: '7d_click', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
+        { id: 'adset_attr2', campaign_id: 'camp_mix_attr', name: 'Adset Attr 2', optimization_goal: 'OFFSITE_CONVERSIONS', effective_status: 'ACTIVE', attribution_setting: '1d_click', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }] }
       ];
     } else if (accountId === 'act_partial') {
       adsets = [{ id: 'adset_partial', campaign_id: 'camp_partial', name: 'Adset Partial', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
@@ -86,7 +86,7 @@ const server = http.createServer((req, res) => {
     let insights = [];
     
     if (accountId === 'act_partial') {
-      const isSecondRun = requestCounts[accountId] > 2;
+      const isSecondRun = requestCounts[accountId] > 1;
       const page = parsedUrl.query.after || '1';
       if (page === '1') {
         if (isSecondRun) {
@@ -118,16 +118,16 @@ const server = http.createServer((req, res) => {
       insights = isAdsetLevel 
         ? [
             { campaign_id: 'camp_mix_obj', adset_id: 'adset_obj1', impressions: '1000', spend: '20.00', date_start, date_stop },
-            { campaign_id: 'camp_mix_obj', adset_id: 'adset_obj2', impressions: '2000', spend: '40.00', actions: [{action_type: 'purchase', value: '2'}], date_start, date_stop }
+            { campaign_id: 'camp_mix_obj', adset_id: 'adset_obj2', impressions: '2000', spend: '40.00', actions: [{action_type: 'purchase', value: '2'}], action_values: [{action_type: 'purchase', value: '80'}], date_start, date_stop }
           ]
         : [{ campaign_id: 'camp_mix_obj', impressions: '3000', spend: '60.00', reach: '2500', date_start, date_stop }];
     } else if (accountId === 'act_mixed_attr') {
       insights = isAdsetLevel 
         ? [
-            { campaign_id: 'camp_mix_attr', adset_id: 'adset_attr1', impressions: '1000', spend: '20.00', actions: [{action_type: 'purchase', value: '2'}], date_start, date_stop, attribution_setting: '7d_click' },
-            { campaign_id: 'camp_mix_attr', adset_id: 'adset_attr2', impressions: '2000', spend: '40.00', actions: [{action_type: 'purchase', value: '5'}], date_start, date_stop, attribution_setting: '1d_click' }
+            { campaign_id: 'camp_mix_attr', adset_id: 'adset_attr1', impressions: '1000', spend: '20.00', actions: [{action_type: 'purchase', value: '2'}], action_values: [{action_type: 'purchase', value: '40'}], date_start, date_stop, attribution_setting: '7d_click' },
+            { campaign_id: 'camp_mix_attr', adset_id: 'adset_attr2', impressions: '2000', spend: '40.00', actions: [{action_type: 'purchase', value: '5'}], action_values: [{action_type: 'purchase', value: '80'}], date_start, date_stop, attribution_setting: '1d_click' }
           ]
-        : [{ campaign_id: 'camp_mix_attr', impressions: '3000', spend: '60.00', reach: '2500', date_start, date_stop }];
+        : [{ campaign_id: 'camp_mix_attr', impressions: '3000', spend: '60.00', actions: [{action_type: 'purchase', value: '7'}], action_values: [{action_type: 'purchase', value: '120'}], date_start, date_stop }];
     }
     
     return res.end(JSON.stringify({ data: insights, paging: { cursors: { after: 'cursor' } } }));

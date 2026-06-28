@@ -1,0 +1,15 @@
+export type MetaObjective = 
+  | 'MIXED'
+  | 'UNCLASSIFIED'
+  | 'SALES' 
+  | 'LEADS' 
+  | 'TRAFFIC' 
+  | 'ENGAGEMENT' 
+  | 'AWARENESS' 
+  | 'VIDEO'
+  | 'WHATSAPP' 
+  | 'INSTAGRAM_DIRECT' 
+  | 'MESSENGER'
+  | 'MESSAGING_OTHER'
+  | 'PROFILE_VISITS'
+  | 'APP';

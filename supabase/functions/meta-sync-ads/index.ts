@@ -8,8 +8,8 @@ import {
   META_GRAPH_VERSION,
   type PaginatedResult,
 } from '../_shared/meta-api.ts';
-import { classifyAdSetObjective, classifyCampaignObjective } from '../_shared/meta/campaignObjectiveClassifier.ts';
-import { normalizeMetaMetrics } from '../_shared/meta/metaNormalizer.ts';
+import { classifyAdSetObjective, classifyCampaignObjective } from '../_shared/meta/classifier.ts';
+import { normalizeMetaMetrics } from '../_shared/meta/normalizer.ts';
 import { analyzeCampaignMix } from '../_shared/meta/mixedAttributionDetector.ts';
 import {
   buildCampaignPeriodAnalytics,
@@ -20,13 +20,7 @@ import {
   type PeriodCompleteness,
   type PeriodCompletenessStatus,
   type TrendPeriodSignature,
-} from '../_shared/meta/analyticsEngine.ts';
-import {
-  capturePersistenceFailure,
-  markSyncRunFailed,
-  requirePersistence,
-  type PersistenceFailure,
-} from '../_shared/meta/syncPersistence.ts';
+} from '../_shared/meta/aggregation.ts';
 
 interface SyncRequestBody {
   adAccountId?: string;
@@ -67,10 +61,11 @@ export async function handleRequest(req: Request) {
   const generatedRunId = crypto.randomUUID();
   let usedRunId: string = generatedRunId;
   let supabaseClient: Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'] | null = null;
+  let userId: string | null = null;
 
   try {
     const auth = await requireAuthenticatedUser(req);
-    const userId = auth.user.id;
+    userId = auth.user.id;
     supabaseClient = auth.adminClient;
 
     const body = await req.json() as SyncRequestBody;
@@ -124,20 +119,19 @@ export async function handleRequest(req: Request) {
       collectionMessages.push(`Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
 
-    await requirePersistence(
-      supabaseClient.from('meta_sync_runs').insert({
-        id: usedRunId,
-        user_id: userId,
-        integration_id: integration.id,
-        ad_account_id: adAccountId,
-        graph_api_version: META_GRAPH_VERSION,
-        requested_period: periods.join(','),
-        timezone: timezone === 'UNKNOWN' ? null : timezone,
-        currency: currency === 'UNKNOWN' ? null : currency,
-        status: 'running',
-      }),
-      'insert meta_sync_runs'
-    );
+    // 1. Create run as running
+    const { error: runError } = await supabaseClient.from('meta_sync_runs').insert({
+      id: usedRunId,
+      user_id: userId,
+      integration_id: integration.id,
+      ad_account_id: adAccountId,
+      graph_api_version: META_GRAPH_VERSION,
+      requested_period: periods.join(','),
+      timezone: timezone === 'UNKNOWN' ? null : timezone,
+      currency: currency === 'UNKNOWN' ? null : currency,
+      status: 'running',
+    });
+    if (runError) throw new HttpError(`Failed to create sync run: ${runError.message}`, 500);
 
     const campaignsResult = await fetchMetaGraphPaginated<MetaCampaign>({
       endpoint: `/${adAccountId}/campaigns`,
@@ -177,34 +171,29 @@ export async function handleRequest(req: Request) {
       }),
     }));
 
-    const persistenceFailures: PersistenceFailure[] = [];
-    const failedAdsetIds = new Set<string>();
-
-    for (const adset of activeAdSets) {
-      const ok = await capturePersistenceFailure(
-        supabaseClient.from('meta_adset_entities').upsert({
-          user_id: userId,
-          ad_account_id: adAccountId,
-          campaign_id: adset.campaign_id,
-          adset_id: adset.id,
-          adset_name: adset.name,
-          optimization_goal: adset.optimization_goal || null,
-          destination_type: adset.destination_type || null,
-          promoted_object: adset.promoted_object || null,
-          attribution_setting: adset.attribution_setting || null,
-          classified_objective: adset.classified_objective,
-          meta_status: adset.status || null,
-          effective_status: adset.effective_status || null,
-        }, { onConflict: 'user_id,ad_account_id,adset_id' }),
-        'upsert meta_adset_entities',
-        persistenceFailures,
-        adset.id
-      );
-      if (!ok) failedAdsetIds.add(adset.id);
-    }
-
     const classifiedObjectives = new Map<string, ReturnType<typeof classifyCampaignObjective>>();
     const requiresAdsetInsights = new Set<string>();
+    
+    // Arrays for bulk RPC insert
+    const p_historical_campaigns: any[] = [];
+    const p_historical_adsets: any[] = [];
+    const p_raw_snapshots: any[] = [];
+    const p_normalized_metrics: any[] = [];
+
+    for (const adset of activeAdSets) {
+      p_historical_adsets.push({
+        campaign_id: adset.campaign_id,
+        adset_id: adset.id,
+        adset_name: adset.name,
+        optimization_goal: adset.optimization_goal || null,
+        destination_type: adset.destination_type || null,
+        promoted_object: adset.promoted_object || null,
+        attribution_setting: adset.attribution_setting || null,
+        meta_status: adset.status || null,
+        effective_status: adset.effective_status || null,
+      });
+    }
+
     for (const campaign of activeCampaigns) {
       const campaignAdsets = activeAdSets.filter((adset) => adset.campaign_id === campaign.id);
       const classifiedObjective = classifyCampaignObjective(campaignAdsets.map((adset) => ({
@@ -219,21 +208,14 @@ export async function handleRequest(req: Request) {
         requiresAdsetInsights.add(campaign.id);
       }
 
-      await capturePersistenceFailure(
-        supabaseClient.from('meta_campaign_entities').upsert({
-          user_id: userId,
-          ad_account_id: adAccountId,
-          campaign_id: campaign.id,
-          campaign_name: campaign.name,
-          raw_objective: campaign.objective,
-          classified_objective: classifiedObjective,
-          meta_status: campaign.status || null,
-          effective_status: campaign.effective_status || null,
-          last_synced_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,ad_account_id,campaign_id' }),
-        'upsert meta_campaign_entities',
-        persistenceFailures
-      );
+      p_historical_campaigns.push({
+        campaign_id: campaign.id,
+        campaign_name: campaign.name,
+        raw_objective: campaign.objective,
+        classified_objective: classifiedObjective,
+        meta_status: campaign.status || null,
+        effective_status: campaign.effective_status || null,
+      });
     }
 
     const campaignInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
@@ -242,6 +224,7 @@ export async function handleRequest(req: Request) {
       campaign: PeriodCompletenessStatus;
       adset: PeriodCompletenessStatus;
     }> = {};
+    
     let totalPagesFetched = campaignsResult.pagesFetched + adsetsResult.pagesFetched;
     let totalRecordsFetched = campaignsResult.recordsFetched + adsetsResult.recordsFetched;
 
@@ -304,44 +287,26 @@ export async function handleRequest(req: Request) {
         ]),
       };
 
-      const campaignSnapshotOk = await capturePersistenceFailure(
-        supabaseClient.from('meta_raw_snapshots').insert({
-          user_id: userId,
-          sync_run_id: usedRunId,
-          ad_account_id: adAccountId,
-          entity_level: 'campaign',
-          entity_id: period,
-          endpoint: `/${adAccountId}/insights?level=campaign&date_preset=${period}`,
-          payload: campaignInsightsResult.data,
-          date_start: campaignInsightsResult.data[0]?.date_start || null,
-          date_stop: campaignInsightsResult.data[0]?.date_stop || null,
-        }),
-        `insert campaign raw snapshot ${period}`,
-        persistenceFailures
-      );
-      if (!campaignSnapshotOk) {
-        collectionStatusByPeriod[period].campaign = 'validation_error';
-      }
+      p_raw_snapshots.push({
+        entity_level: 'campaign',
+        entity_id: period,
+        endpoint: `/${adAccountId}/insights?level=campaign&date_preset=${period}`,
+        payload: campaignInsightsResult.data,
+        date_start: campaignInsightsResult.data[0]?.date_start || null,
+        date_stop: campaignInsightsResult.data[0]?.date_stop || null,
+        page_number: 1,
+      });
 
       if (requiresAdsetInsights.size > 0) {
-        const adsetSnapshotOk = await capturePersistenceFailure(
-          supabaseClient.from('meta_raw_snapshots').insert({
-            user_id: userId,
-            sync_run_id: usedRunId,
-            ad_account_id: adAccountId,
-            entity_level: 'adset',
-            entity_id: period,
-            endpoint: `/${adAccountId}/insights?level=adset&date_preset=${period}`,
-            payload: adsetInsightsByPeriod[period],
-            date_start: adsetInsightsByPeriod[period][0]?.date_start || null,
-            date_stop: adsetInsightsByPeriod[period][0]?.date_stop || null,
-          }),
-          `insert Ad Set raw snapshot ${period}`,
-          persistenceFailures
-        );
-        if (!adsetSnapshotOk) {
-          collectionStatusByPeriod[period].adset = 'validation_error';
-        }
+        p_raw_snapshots.push({
+          entity_level: 'adset',
+          entity_id: period,
+          endpoint: `/${adAccountId}/insights?level=adset&date_preset=${period}`,
+          payload: adsetInsightsByPeriod[period],
+          date_start: adsetInsightsByPeriod[period][0]?.date_start || null,
+          date_stop: adsetInsightsByPeriod[period][0]?.date_stop || null,
+          page_number: 1,
+        });
       }
     }
 
@@ -362,6 +327,8 @@ export async function handleRequest(req: Request) {
           .find((row) => row.campaign_id === campaign.id);
         const adsetInsights = adsetInsightsByPeriod[period]
           .filter((row) => row.campaign_id === campaign.id);
+        
+        // Pass adset insights properly to analytics aggregation
         const analytics = buildCampaignPeriodAnalytics(
           campaign,
           campaignAdsets,
@@ -372,7 +339,7 @@ export async function handleRequest(req: Request) {
             adsetCollectionStatus: collectionStatusByPeriod[period].adset,
             timezone,
             currency,
-            failedAdsetIds: Array.from(failedAdsetIds),
+            failedAdsetIds: [],
           }
         );
         structuralMix = analytics.mix;
@@ -390,50 +357,33 @@ export async function handleRequest(req: Request) {
           for (const insight of adsetInsights) {
             const adset = campaignAdsets.find((candidate) => candidate.id === insight.adset_id);
             if (!adset) continue;
+            
+            // IMPORTANT: Overwrite insight.attribution_setting with the DB value if the API didn't return it!
+            // Wait, the API returns it if we ask for it (which we don't in the mock graph insights right now, but we do for adsets).
+            // Normalizer expects the insight object.
             const normalized = normalizeMetaMetrics(
               [insight],
               adset.classified_objective || 'UNCLASSIFIED',
               campaign.id,
               adset.id
             );
-            const rows = Object.entries(normalized).map(([metricId, result]) => ({
-              user_id: userId,
-              sync_run_id: usedRunId,
-              ad_account_id: adAccountId,
-              campaign_id: campaign.id,
-              adset_id: adset.id,
-              metric_id: metricId,
-              metric_value: result.value,
-              action_type: result.metadata.action_types?.join(',') || null,
-              source_field: result.metadata.source_field || null,
-              date_start: insight.date_start || null,
-              date_stop: insight.date_stop || null,
-              timezone: timezone === 'UNKNOWN' ? null : timezone,
-              attribution_setting: adset.attribution_setting || null,
-              source_level: 'adset',
-              completeness_status: analytics.completeness.status,
-              calculation_metadata: result.metadata,
-            }));
-            if (rows.length > 0) {
-              const ok = await capturePersistenceFailure(
-                supabaseClient.from('meta_normalized_metrics').upsert(rows, {
-                  onConflict: 'user_id,sync_run_id,ad_account_id,campaign_id,adset_id,metric_id,date_start,date_stop,attribution_setting,source_level',
-                }),
-                `upsert normalized metrics for Ad Set ${adset.id}`,
-                persistenceFailures,
-                adset.id
-              );
-              if (!ok) {
-                failedAdsetIds.add(adset.id);
-                completenessByPeriod[period] = {
-                  ...completenessByPeriod[period],
-                  status: 'validation_error',
-                  failedAdsetIds: Array.from(failedAdsetIds).sort(),
-                  reason: 'Normalized metric persistence was incomplete.',
-                };
-                overallCompletenessByPeriod[period] = 'validation_error';
-              }
-            }
+            Object.entries(normalized).forEach(([metricId, result]) => {
+              p_normalized_metrics.push({
+                campaign_id: campaign.id,
+                adset_id: adset.id,
+                metric_id: metricId,
+                metric_value: result.value,
+                action_type: result.metadata.action_types?.join(',') || null,
+                source_field: result.metadata.source_field || null,
+                date_start: insight.date_start || null,
+                date_stop: insight.date_stop || null,
+                timezone: timezone === 'UNKNOWN' ? null : timezone,
+                attribution_setting: adset.attribution_setting || null,
+                source_level: analytics.completeness.sourceLevel,
+                completeness_status: analytics.completeness.status,
+                calculation_metadata: result.metadata,
+              });
+            });
           }
         } else if (campaignInsight) {
           const normalized = normalizeMetaMetrics(
@@ -441,41 +391,23 @@ export async function handleRequest(req: Request) {
             classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
             campaign.id
           );
-          const rows = Object.entries(normalized).map(([metricId, result]) => ({
-            user_id: userId,
-            sync_run_id: usedRunId,
-            ad_account_id: adAccountId,
-            campaign_id: campaign.id,
-            adset_id: null,
-            metric_id: metricId,
-            metric_value: result.value,
-            action_type: result.metadata.action_types?.join(',') || null,
-            source_field: result.metadata.source_field || null,
-            date_start: campaignInsight.date_start || null,
-            date_stop: campaignInsight.date_stop || null,
-            timezone: timezone === 'UNKNOWN' ? null : timezone,
-            attribution_setting: campaignAdsets[0]?.attribution_setting || null,
-            source_level: 'campaign',
-            completeness_status: analytics.completeness.status,
-            calculation_metadata: result.metadata,
-          }));
-          if (rows.length > 0) {
-            const ok = await capturePersistenceFailure(
-              supabaseClient.from('meta_normalized_metrics').upsert(rows, {
-                onConflict: 'user_id,sync_run_id,ad_account_id,campaign_id,adset_id,metric_id,date_start,date_stop,attribution_setting,source_level',
-              }),
-              `upsert normalized metrics for campaign ${campaign.id}`,
-              persistenceFailures
-            );
-            if (!ok) {
-              completenessByPeriod[period] = {
-                ...completenessByPeriod[period],
-                status: 'validation_error',
-                reason: 'Normalized metric persistence was incomplete.',
-              };
-              overallCompletenessByPeriod[period] = 'validation_error';
-            }
-          }
+          Object.entries(normalized).forEach(([metricId, result]) => {
+            p_normalized_metrics.push({
+              campaign_id: campaign.id,
+              adset_id: null,
+              metric_id: metricId,
+              metric_value: result.value,
+              action_type: result.metadata.action_types?.join(',') || null,
+              source_field: result.metadata.source_field || null,
+              date_start: campaignInsight.date_start || null,
+              date_stop: campaignInsight.date_stop || null,
+              timezone: timezone === 'UNKNOWN' ? null : timezone,
+              attribution_setting: campaignAdsets[0]?.attribution_setting || null,
+              source_level: analytics.completeness.sourceLevel,
+              completeness_status: analytics.completeness.status,
+              calculation_metadata: result.metadata,
+            });
+          });
         }
 
         trendSignatures.push({
@@ -517,34 +449,36 @@ export async function handleRequest(req: Request) {
       || campaignsResult.completionStatus !== 'complete'
       || adsetsResult.completionStatus !== 'complete'
       || accountContextStatus !== 'complete';
-    const syncStatus = collectionIncomplete || persistenceFailures.length > 0 ? 'partial' : 'success';
-    const errorMessage = [
-      ...collectionMessages,
-      ...persistenceFailures.map((failure) => failure.message),
-    ].join(' ').trim();
-    const firstPeriod = periods[0];
-    const firstCampaignInsight = campaignInsightsByPeriod[firstPeriod]?.[0];
+    
+    // Using partial if collection is incomplete.
+    const syncStatus = collectionIncomplete ? 'partial' : 'success';
+    const errorMessage = collectionMessages.join(' ').trim();
+    
+    const p_metadata = {
+      error_message: errorMessage || null,
+      completeness_by_period: overallCompletenessByPeriod,
+    };
 
-    await requirePersistence(
-      supabaseClient.from('meta_sync_runs').update({
-        status: syncStatus,
-        finished_at: new Date().toISOString(),
-        pages_fetched: totalPagesFetched,
-        records_fetched: totalRecordsFetched,
-        date_start: firstCampaignInsight?.date_start || null,
-        date_stop: firstCampaignInsight?.date_stop || null,
-        timezone: timezone === 'UNKNOWN' ? null : timezone,
-        currency: currency === 'UNKNOWN' ? null : currency,
-        error_message: errorMessage || null,
-        metadata: {
-          error_message: errorMessage || null,
-          failed_adsets: Array.from(failedAdsetIds).sort(),
-          completeness_by_period: overallCompletenessByPeriod,
-          persistence_failures: persistenceFailures,
-        },
-      }).eq('id', usedRunId),
-      'finalize meta_sync_runs'
-    );
+    // CALL THE ATOMIC RPC!
+    const { error: rpcError } = await supabaseClient.rpc('persist_meta_sync_run', {
+        p_run_id: usedRunId,
+        p_user_id: userId,
+        p_integration_id: integration.id,
+        p_ad_account_id: adAccountId,
+        p_status: syncStatus,
+        p_raw_snapshots: p_raw_snapshots,
+        p_historical_campaigns: p_historical_campaigns,
+        p_historical_adsets: p_historical_adsets,
+        p_normalized_metrics: p_normalized_metrics,
+        p_metadata: p_metadata,
+        p_pages_fetched: totalPagesFetched,
+        p_records_fetched: totalRecordsFetched
+    });
+
+    if (rpcError) {
+       console.error("RPC Error:", rpcError);
+       throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
+    }
 
     return new Response(JSON.stringify({
       success: syncStatus === 'success',
@@ -553,7 +487,7 @@ export async function handleRequest(req: Request) {
       campaigns: campaignsWithInsights,
       message: errorMessage || undefined,
       completenessByPeriod: overallCompletenessByPeriod,
-      failedAdsetIds: Array.from(failedAdsetIds).sort(),
+      failedAdsetIds: [],
       timezone,
       currency,
     }), {
@@ -562,13 +496,13 @@ export async function handleRequest(req: Request) {
     });
   } catch (error) {
     console.error('Meta Sync Error:', error);
-    if (supabaseClient) {
+    if (supabaseClient && userId) {
       try {
-        await markSyncRunFailed(
-          supabaseClient,
-          usedRunId,
-          error instanceof Error ? error.message : 'Unexpected Meta sync error'
-        );
+        await supabaseClient.from('meta_sync_runs').update({
+           status: 'failed',
+           error_message: error instanceof Error ? error.message : 'Unexpected Meta sync error',
+           finished_at: new Date().toISOString()
+        }).match({ id: usedRunId, user_id: userId });
       } catch (persistenceError) {
         console.error('Failed to persist Meta sync failure:', persistenceError);
       }

@@ -167,13 +167,13 @@ async function run() {
   // Scenario 6: act_error
   await runScenario('API Error', 'act_error', accessToken, (res, json, q) => {
     assertEqual(res.status, 502, 'HTTP Status');
-    assertEqual(json.success, false, 'JSON Success');
-    assertEqual(json.status, 'failed', 'JSON Status');
+    assertEqual(json.isError, true, 'JSON isError');
+    assertEqual(json.error.includes('Meta campaign collection failed'), true, 'JSON error message');
     
-    if (json.runId) {
-       const runStatus = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-       assertEqual(runStatus, 'failed', 'DB run status is failed');
-    }
+    // DB run status is updated in the catch block if runId exists, but the payload doesn't return runId on 500/502
+    // We check if the last run for act_error is failed instead
+    const runStatus = q(`SELECT status FROM meta_sync_runs WHERE ad_account_id='act_error' ORDER BY created_at DESC LIMIT 1`);
+    assertEqual(runStatus, 'failed', 'DB run status is failed');
   });
 
   console.log('\n\n=== ALL E2E SCENARIOS PASSED ===');

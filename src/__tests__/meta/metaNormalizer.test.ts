@@ -14,10 +14,10 @@ describe('metaNormalizer', () => {
       ]
     }];
     const res = normalizeMetaMetrics(raw, 'SALES', 'test-1');
-    expect(res.spend).toBe(100);
-    expect(res.purchases).toBe(3);
-    expect(res.purchase_value).toBe(250.50);
-    expect(res.purchase_roas).toBeCloseTo(2.505);
+    expect(res.spend?.value).toBe(100);
+    expect(res.purchases?.value).toBe(3);
+    expect(res.purchase_value?.value).toBe(250.50);
+    expect(res.purchase_roas?.value).toBeCloseTo(2.505);
   });
 
   it('normalizes WHATSAPP and checks missing conversions', () => {
@@ -28,7 +28,7 @@ describe('metaNormalizer', () => {
       ]
     }];
     const res = normalizeMetaMetrics(raw, 'WHATSAPP', 'test-2');
-    expect(res.whatsapp_conversations_started).toBe(5);
+    expect(res.whatsapp_conversations_started?.value).toBe(5);
     
   });
 });

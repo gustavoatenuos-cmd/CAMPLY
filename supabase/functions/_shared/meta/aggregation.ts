@@ -1,4 +1,5 @@
-import { classifyAdSetObjective, classifyCampaignObjective } from './campaignObjectiveClassifier.ts';
+import { MetaObjective } from "./objectives.ts";
+import { classifyAdSetObjective, classifyCampaignObjective } from './classifier.ts';
 import {
   analyzeCampaignMix,
   insightHasDelivery,
@@ -6,10 +7,9 @@ import {
   type MetaAdSetForMixAnalysis,
   type MetaAdSetInsightForDelivery,
 } from './mixedAttributionDetector.ts';
-import { normalizeMetaMetrics } from './metaNormalizer.ts';
+import { normalizeMetaMetrics } from './normalizer.ts';
 import {
   aggregateCompatibleMetrics,
-  type MetaObjective,
   type MetricValueMap,
 } from './metricRegistry.ts';
 
@@ -234,7 +234,7 @@ function groupAdsetMetrics(
       groups.push({
         attributionSetting,
         classifiedObjective,
-        adsetIds: Array.from(new Set(bucket.adsetIds)).sort(),
+        adsetIds: Array.from<string>(new Set<string>(bucket.adsetIds)).sort(),
         metrics: aggregateCompatibleMetrics(bucket.metrics, { sourceLevel: 'adset' }),
         sourceLevel: 'adset',
         dateStart: bucket.dateStart,

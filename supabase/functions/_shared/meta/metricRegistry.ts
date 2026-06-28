@@ -1,19 +1,4 @@
-export type MetaObjective = 
-  | 'WHATSAPP' 
-  | 'MESSENGER' 
-  | 'INSTAGRAM_DIRECT' 
-  | 'MESSAGING_OTHER' 
-  | 'SALES' 
-  | 'LEADS' 
-  | 'TRAFFIC' 
-  | 'PROFILE_VISITS' 
-  | 'ENGAGEMENT' 
-  | 'AWARENESS' 
-  | 'VIDEO' 
-  | 'APP'
-  | 'OTHER' 
-  | 'MIXED'
-  | 'UNCLASSIFIED';
+import { MetaObjective } from "./objectives.ts";
 
 export type AggregationRule = 'sum' | 'recalculate' | 'none';
 export type FormatterType = 'integer' | 'currency' | 'percentage' | 'decimal';

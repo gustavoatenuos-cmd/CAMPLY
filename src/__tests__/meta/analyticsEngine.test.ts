@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCampaignPeriodAnalytics,
   evaluateTrendAvailability,
-  type MetaAdSetDefinition,
-  type MetaInsightRow,
   type TrendPeriodSignature,
-} from '../../../supabase/functions/_shared/meta/analyticsEngine.ts';
+} from '../../../supabase/functions/_shared/meta/aggregation.ts';
+import type { MetaAdSetDefinition, MetaInsightRow } from '../../../supabase/functions/_shared/meta/contracts.ts';
 import {
   analyzeCampaignMix,
   insightHasDelivery,
