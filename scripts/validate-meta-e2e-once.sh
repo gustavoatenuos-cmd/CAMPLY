@@ -70,7 +70,7 @@ docker run -d --name "$MOCK_CONTAINER_NAME" \
   -p 9999:9999 \
   -e MOCK_PORT=9999 \
   -e MOCK_HOST="mock-graph:9999" \
-  node:18 node /scripts/mock-graph.cjs >/dev/null
+  node:18 node /scripts/start-mock-stack.cjs >/dev/null
 
 wait_for_http() {
   local description="$1"
