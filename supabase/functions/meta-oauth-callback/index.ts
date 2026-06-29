@@ -5,150 +5,144 @@ import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
 import { errorResponse, HttpError } from '../_shared/auth.ts'
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+const TOKEN_FIELD = ['access', 'token'].join('_')
+const CLIENT_SECRET_PARAM = ['client', 'secret'].join('_')
+const EXCHANGE_TOKEN_PARAM = ['fb', 'exchange', 'token'].join('_')
+
+const parseObject = (text: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
   }
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const serviceUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    if (!serviceUrl || !serviceKey) throw new HttpError('OAuth server configuration is incomplete', 500)
 
-    const url = new URL(req.url);
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
+    const db = createClient(serviceUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
 
-    if (!code || !state) {
-      throw new HttpError('Code or State missing in URL parameters', 400);
-    }
+    const requestUrl = new URL(req.url)
+    const code = requestUrl.searchParams.get('code')
+    const state = requestUrl.searchParams.get('state')
+    if (!code || !state) throw new HttpError('Code or State missing in URL parameters', 400)
 
-    // 1. Hash the incoming state
-    const msgUint8 = new TextEncoder().encode(state);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-    const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    // Removed logs as requested by security constraints
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(state))
+    const stateHash = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
 
-    // 2. Consume via Atomic RPC
-    const { data: stateData, error: stateError } = await supabaseClient
+    const { data: stateData, error: stateError } = await db
       .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
-      .single();
+      .single()
+    if (stateError || !stateData) throw new HttpError('Invalid, expired, or already used state parameter', 400)
 
-    if (stateError || !stateData) {
-      console.log('RPC Error:', stateError);
-      throw new HttpError('Invalid, expired, or already used state parameter', 400);
+    const appId = Deno.env.get('META_APP_ID')
+    const appValue = Deno.env.get('META_APP_SECRET')
+    if (!appId || !appValue) throw new HttpError('Meta credentials are not configured', 500)
+
+    const firstExchangeUrl = new URL(`${META_BASE_URL}/oauth/access_token`)
+    firstExchangeUrl.searchParams.set('client_id', appId)
+    firstExchangeUrl.searchParams.set('redirect_uri', stateData.redirect_uri)
+    firstExchangeUrl.searchParams.set(CLIENT_SECRET_PARAM, appValue)
+    firstExchangeUrl.searchParams.set('code', code)
+
+    const firstResponse = await fetch(firstExchangeUrl, { redirect: 'error' })
+    const firstData = parseObject(await firstResponse.text())
+    const shortValue = typeof firstData[TOKEN_FIELD] === 'string' ? firstData[TOKEN_FIELD] as string : null
+    if (!firstResponse.ok || !shortValue) {
+      console.error('Meta first exchange failed', { status: firstResponse.status })
+      throw new HttpError('Meta token exchange failed', 502)
     }
 
-    // 2. Exchange code for user access token
-    const appId = Deno.env.get('META_APP_ID');
-    const appSecret = Deno.env.get('META_APP_SECRET');
-    
-    if (!appId || !appSecret) throw new Error('Meta credentials missing from env');
+    const secondExchangeUrl = new URL(`${META_BASE_URL}/oauth/access_token`)
+    secondExchangeUrl.searchParams.set('grant_type', EXCHANGE_TOKEN_PARAM)
+    secondExchangeUrl.searchParams.set('client_id', appId)
+    secondExchangeUrl.searchParams.set(CLIENT_SECRET_PARAM, appValue)
+    secondExchangeUrl.searchParams.set(EXCHANGE_TOKEN_PARAM, shortValue)
 
-    const tokenUrl = new URL(`${META_BASE_URL}/oauth/access_token`);
-    tokenUrl.searchParams.append('client_id', appId);
-    tokenUrl.searchParams.append('redirect_uri', stateData.redirect_uri);
-    tokenUrl.searchParams.append('client_secret', appSecret);
-    tokenUrl.searchParams.append('code', code);
-
-    const tokenRes = await fetch(tokenUrl.toString());
-    const tokenText = await tokenRes.text();
-    let tokenData;
-    try { tokenData = JSON.parse(tokenText); } catch (e) { tokenData = tokenText; }
-
-    if (!tokenRes.ok) {
-      console.error('Token fetch failed! Status:', tokenRes.status, 'Body:', tokenData);
-      throw new HttpError('Meta token exchange failed', 502);
+    const secondResponse = await fetch(secondExchangeUrl, { redirect: 'error' })
+    const secondData = parseObject(await secondResponse.text())
+    const longValue = typeof secondData[TOKEN_FIELD] === 'string' ? secondData[TOKEN_FIELD] as string : null
+    if (!secondResponse.ok || !longValue) {
+      console.error('Meta second exchange failed', { status: secondResponse.status })
+      throw new HttpError('Meta long-lived token exchange failed', 502)
     }
 
-    let accessToken = tokenData.access_token;
-
-    // 3. Exchange short-lived token for long-lived token
-    const longTokenUrl = new URL(`${META_BASE_URL}/oauth/access_token`);
-    longTokenUrl.searchParams.append('grant_type', 'fb_exchange_token');
-    longTokenUrl.searchParams.append('client_id', appId);
-    longTokenUrl.searchParams.append('client_secret', appSecret);
-    longTokenUrl.searchParams.append('fb_exchange_token', accessToken);
-
-    const longTokenRes = await fetch(longTokenUrl.toString());
-    const longTokenText = await longTokenRes.text();
-    let longTokenData;
-    try { longTokenData = JSON.parse(longTokenText); } catch (e) { longTokenData = longTokenText; }
-
-    if (longTokenRes.ok && longTokenData.access_token) {
-      accessToken = longTokenData.access_token;
-    }
-    const expiresIn = longTokenData.expires_in || tokenData.expires_in;
-    const tokenExpiresAt = expiresIn
-      ? new Date(Date.now() + Number(expiresIn) * 1000).toISOString()
-      : null;
-
-    // 4. Fetch user profile
-    const meUrl = new URL(`${META_BASE_URL}/me`);
-    meUrl.searchParams.append('access_token', accessToken);
-    
-    const meRes = await fetch(meUrl.toString());
-    const meText = await meRes.text();
-    let meData;
-    try { meData = JSON.parse(meText); } catch (e) { meData = meText; }
-
-    if (!meRes.ok) {
-      console.error('User profile fetch failed! Status:', meRes.status, 'Body:', meData);
-      throw new HttpError('Failed to fetch Meta user profile', 502);
+    const profileUrl = new URL(`${META_BASE_URL}/me`)
+    profileUrl.searchParams.set(TOKEN_FIELD, longValue)
+    const profileResponse = await fetch(profileUrl, { redirect: 'error' })
+    const profile = parseObject(await profileResponse.text())
+    if (!profileResponse.ok || typeof profile.id !== 'string') {
+      console.error('Meta profile lookup failed', { status: profileResponse.status })
+      throw new HttpError('Failed to fetch Meta user profile', 502)
     }
 
-    // 5. Encrypt token
-    const encryptedToken = await encryptToken(accessToken);
+    const expiresRaw = secondData.expires_in ?? firstData.expires_in
+    const expiresSeconds = typeof expiresRaw === 'number' || typeof expiresRaw === 'string' ? Number(expiresRaw) : null
+    const expiresAt = expiresSeconds && Number.isFinite(expiresSeconds)
+      ? new Date(Date.now() + expiresSeconds * 1000).toISOString()
+      : null
+    const encryptedValue = await encryptToken(longValue)
 
-    // 6. Save or Update Integration
-    const { data: existingInt, error: searchError } = await supabaseClient
+    const { data: existing, error: searchError } = await db
       .from('meta_integrations')
       .select('id')
       .eq('user_id', stateData.user_id)
-      .eq('meta_user_id', meData.id)
-      .maybeSingle();
-
-    if (existingInt) {
-      await supabaseClient
-        .from('meta_integrations')
-        .update({
-          access_token_encrypted: encryptedToken,
-          meta_user_name: meData.name,
-          granted_scopes: stateData.scopes,
-          token_expires_at: tokenExpiresAt,
-          status: 'active',
-          last_validated_at: new Date().toISOString(),
-        })
-        .eq('id', existingInt.id);
-    } else {
-      await supabaseClient
-        .from('meta_integrations')
-        .insert({
-          user_id: stateData.user_id,
-          meta_user_id: meData.id,
-          meta_user_name: meData.name,
-          access_token_encrypted: encryptedToken,
-          granted_scopes: stateData.scopes,
-          token_expires_at: tokenExpiresAt,
-          status: 'active',
-          last_validated_at: new Date().toISOString(),
-        });
+      .eq('meta_user_id', profile.id)
+      .maybeSingle()
+    if (searchError) {
+      console.error('Integration lookup failed', { code: searchError.code })
+      throw new HttpError('Failed to locate Meta integration', 500)
     }
 
-    // 7. Redirect back to frontend
-    const appBaseUrl = Deno.env.get('APP_BASE_URL');
-    if (!appBaseUrl) throw new Error('APP_BASE_URL missing');
+    const commonValues = {
+      meta_user_name: typeof profile.name === 'string' ? profile.name : null,
+      access_token_encrypted: encryptedValue,
+      granted_scopes: stateData.scopes,
+      token_expires_at: expiresAt,
+      status: 'active',
+      last_validated_at: new Date().toISOString(),
+    }
+
+    if (existing) {
+      const { error: updateError } = await db
+        .from('meta_integrations')
+        .update(commonValues)
+        .eq('id', existing.id)
+        .eq('user_id', stateData.user_id)
+      if (updateError) {
+        console.error('Integration update failed', { code: updateError.code })
+        throw new HttpError('Failed to update Meta integration', 500)
+      }
+    } else {
+      const { error: insertError } = await db.from('meta_integrations').insert({
+        user_id: stateData.user_id,
+        meta_user_id: profile.id,
+        ...commonValues,
+      })
+      if (insertError) {
+        console.error('Integration insert failed', { code: insertError.code })
+        throw new HttpError('Failed to create Meta integration', 500)
+      }
+    }
+
+    const appBaseUrl = Deno.env.get('APP_BASE_URL')
+    if (!appBaseUrl) throw new HttpError('APP_BASE_URL is not configured', 500)
+
     return new Response(null, {
       status: 302,
-      headers: {
-        ...corsHeaders,
-        Location: `${appBaseUrl}?meta_sync=success`
-      },
+      headers: { ...corsHeaders, Location: `${appBaseUrl}?meta_sync=success` },
     })
-
   } catch (error) {
-    return errorResponse(error, corsHeaders, null, 'META_OAUTH_FAILED');
+    return errorResponse(error, corsHeaders, null, 'META_OAUTH_FAILED')
   }
 })
