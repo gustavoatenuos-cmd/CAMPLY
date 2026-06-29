@@ -6,6 +6,7 @@ BEGIN;
 -- Drop old signatures to avoid overloading ambiguity
 DROP FUNCTION IF EXISTS public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSONB, JSONB, JSONB, JSONB, JSONB, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSONB, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS public.persist_meta_sync_run(UUID, UUID, UUID, VARCHAR, VARCHAR, JSONB, JSONB[], JSONB[], JSONB[], JSONB[], INTEGER, INTEGER);
 
 CREATE OR REPLACE FUNCTION public.persist_meta_sync_run(
   p_run_id UUID,
@@ -22,20 +23,30 @@ CREATE OR REPLACE FUNCTION public.persist_meta_sync_run(
   p_records_fetched INT DEFAULT 0
 )
 RETURNS void AS $$
+    v_run_record RECORD;
 BEGIN
-    -- 1. Verify Run
-    UPDATE public.meta_sync_runs 
-    SET status = p_final_status::public.meta_sync_status,
-        metadata = COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('pages_fetched', p_pages_fetched, 'records_fetched', p_records_fetched),
-        finished_at = now()
-    WHERE id = p_run_id 
-      AND user_id = p_user_id 
-      AND integration_id = p_integration_id
-      AND ad_account_id = p_ad_account_id
-      AND status = 'running';
+    -- 1. Lock and Verify Run
+    SELECT * INTO v_run_record FROM public.meta_sync_runs 
+    WHERE id = p_run_id FOR UPDATE;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'SYNC_RUN_NOT_FOUND_OR_NOT_RUNNING';
+    END IF;
+
+    IF v_run_record.status != 'running' THEN
+        RAISE EXCEPTION 'Sync run % is not in running state', p_run_id;
+    END IF;
+
+    IF v_run_record.user_id != p_user_id THEN
+        RAISE EXCEPTION 'Sync run % user_id mismatch', p_run_id;
+    END IF;
+
+    IF v_run_record.integration_id != p_integration_id THEN
+        RAISE EXCEPTION 'Sync run % integration_id mismatch', p_run_id;
+    END IF;
+
+    IF v_run_record.ad_account_id != p_ad_account_id THEN
+        RAISE EXCEPTION 'Sync run % ad_account_id mismatch', p_run_id;
     END IF;
 
     -- 2. Insert Raw Snapshots
@@ -50,20 +61,20 @@ BEGIN
 
     -- 3. Insert Historical Campaigns and UPSERT Latest Entities
     IF p_campaign_entities IS NOT NULL AND array_length(p_campaign_entities, 1) > 0 THEN
-        -- Insert Snapshots (which are now properly immutable)
-        INSERT INTO public.meta_campaign_snapshots (sync_run_id, user_id, integration_id, ad_account_id, campaign_id, date_start, date_stop, metrics)
+        -- Insert Snapshots (Structural)
+        INSERT INTO public.meta_campaign_snapshots (sync_run_id, user_id, integration_id, ad_account_id, campaign_id, campaign_name, raw_objective, classified_objective, meta_status, effective_status)
         SELECT 
             p_run_id, p_user_id, p_integration_id, p_ad_account_id,
-            (c->>'campaign_id')::varchar, (c->>'date_start')::date, (c->>'date_stop')::date, (c->'metrics')::jsonb
-        FROM unnest(p_campaign_entities) AS c
-        WHERE (c->'metrics') IS NOT NULL; -- Ensure metrics are present for snapshots
+            (c->>'campaign_id')::varchar, (c->>'campaign_name')::varchar, (c->>'raw_objective')::varchar, (c->>'classified_objective')::public.meta_objective,
+            (c->>'meta_status')::varchar, (c->>'effective_status')::varchar
+        FROM unnest(p_campaign_entities) AS c;
 
         -- Upsert Entities
-        INSERT INTO public.meta_campaign_entities (user_id, integration_id, ad_account_id, campaign_id, campaign_name, raw_objective, classified_objective, meta_status, effective_status, last_synced_at)
+        INSERT INTO public.meta_campaign_entities (user_id, integration_id, ad_account_id, campaign_id, campaign_name, raw_objective, classified_objective, meta_status, effective_status, last_synced_at, last_sync_run_id)
         SELECT 
             p_user_id, p_integration_id, p_ad_account_id,
             (c->>'campaign_id')::varchar, (c->>'campaign_name')::varchar, (c->>'raw_objective')::varchar, (c->>'classified_objective')::public.meta_objective,
-            (c->>'meta_status')::varchar, (c->>'effective_status')::varchar, now()
+            (c->>'meta_status')::varchar, (c->>'effective_status')::varchar, now(), p_run_id
         FROM unnest(p_campaign_entities) AS c
         ON CONFLICT (user_id, integration_id, ad_account_id, campaign_id) DO UPDATE SET
             campaign_name = EXCLUDED.campaign_name,
@@ -71,26 +82,28 @@ BEGIN
             classified_objective = EXCLUDED.classified_objective,
             meta_status = EXCLUDED.meta_status,
             effective_status = EXCLUDED.effective_status,
-            last_synced_at = EXCLUDED.last_synced_at;
+            last_synced_at = EXCLUDED.last_synced_at,
+            last_sync_run_id = EXCLUDED.last_sync_run_id;
     END IF;
 
     -- 4. Insert Historical AdSets and UPSERT Latest Entities
     IF p_adset_entities IS NOT NULL AND array_length(p_adset_entities, 1) > 0 THEN
-        -- Insert Snapshots
-        INSERT INTO public.meta_adset_snapshots (sync_run_id, user_id, integration_id, ad_account_id, campaign_id, adset_id, date_start, date_stop, metrics)
+        -- Insert Snapshots (Structural)
+        INSERT INTO public.meta_adset_snapshots (sync_run_id, user_id, integration_id, ad_account_id, campaign_id, adset_id, adset_name, optimization_goal, destination_type, promoted_object, attribution_setting, meta_status, effective_status)
         SELECT 
             p_run_id, p_user_id, p_integration_id, p_ad_account_id,
-            (a->>'campaign_id')::varchar, (a->>'adset_id')::varchar, (a->>'date_start')::date, (a->>'date_stop')::date, (a->'metrics')::jsonb
-        FROM unnest(p_adset_entities) AS a
-        WHERE (a->'metrics') IS NOT NULL;
+            (a->>'campaign_id')::varchar, (a->>'adset_id')::varchar, (a->>'adset_name')::varchar, (a->>'optimization_goal')::varchar,
+            (a->>'destination_type')::varchar, (a->'promoted_object')::jsonb, (a->>'attribution_setting')::varchar,
+            (a->>'meta_status')::varchar, (a->>'effective_status')::varchar
+        FROM unnest(p_adset_entities) AS a;
 
         -- Upsert Entities
-        INSERT INTO public.meta_adset_entities (user_id, integration_id, ad_account_id, campaign_id, adset_id, adset_name, optimization_goal, destination_type, promoted_object, attribution_setting, meta_status, effective_status)
+        INSERT INTO public.meta_adset_entities (user_id, integration_id, ad_account_id, campaign_id, adset_id, adset_name, optimization_goal, destination_type, promoted_object, attribution_setting, meta_status, effective_status, last_sync_run_id)
         SELECT 
             p_user_id, p_integration_id, p_ad_account_id,
             (a->>'campaign_id')::varchar, (a->>'adset_id')::varchar, (a->>'adset_name')::varchar, (a->>'optimization_goal')::varchar,
             (a->>'destination_type')::varchar, (a->'promoted_object')::jsonb, (a->>'attribution_setting')::varchar,
-            (a->>'meta_status')::varchar, (a->>'effective_status')::varchar
+            (a->>'meta_status')::varchar, (a->>'effective_status')::varchar, p_run_id
         FROM unnest(p_adset_entities) AS a
         ON CONFLICT (user_id, integration_id, ad_account_id, adset_id) DO UPDATE SET
             campaign_id = EXCLUDED.campaign_id,
@@ -100,7 +113,8 @@ BEGIN
             promoted_object = EXCLUDED.promoted_object,
             attribution_setting = EXCLUDED.attribution_setting,
             meta_status = EXCLUDED.meta_status,
-            effective_status = EXCLUDED.effective_status;
+            effective_status = EXCLUDED.effective_status,
+            last_sync_run_id = EXCLUDED.last_sync_run_id;
     END IF;
 
     -- 5. Insert Normalized Metrics
@@ -113,6 +127,13 @@ BEGIN
             (m->>'timezone')::varchar, (m->>'attribution_setting')::varchar, (m->>'source_level')::varchar, (m->>'completeness_status')::varchar, (m->'calculation_metadata')::jsonb
         FROM unnest(p_normalized_metrics) AS m;
     END IF;
+
+    -- 6. Update Run Status
+    UPDATE public.meta_sync_runs 
+    SET status = p_final_status::public.meta_sync_status,
+        metadata = COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('pages_fetched', p_pages_fetched, 'records_fetched', p_records_fetched),
+        finished_at = now()
+    WHERE id = p_run_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 

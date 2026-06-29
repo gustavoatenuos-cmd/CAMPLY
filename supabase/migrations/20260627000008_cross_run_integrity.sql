@@ -3,41 +3,35 @@
 
 BEGIN;
 
--- 1. Add nullable integration_id columns
+-- 1. Add integration_id and last_sync_run_id to all relevant tables (NULLable initially)
 ALTER TABLE public.meta_raw_snapshots ADD COLUMN IF NOT EXISTS integration_id UUID;
 ALTER TABLE public.meta_campaign_entities ADD COLUMN IF NOT EXISTS integration_id UUID;
+ALTER TABLE public.meta_campaign_entities ADD COLUMN IF NOT EXISTS last_sync_run_id UUID REFERENCES public.meta_sync_runs(id) ON DELETE SET NULL;
 ALTER TABLE public.meta_adset_entities ADD COLUMN IF NOT EXISTS integration_id UUID;
+ALTER TABLE public.meta_adset_entities ADD COLUMN IF NOT EXISTS last_sync_run_id UUID REFERENCES public.meta_sync_runs(id) ON DELETE SET NULL;
 ALTER TABLE public.meta_normalized_metrics ADD COLUMN IF NOT EXISTS integration_id UUID;
 ALTER TABLE public.meta_sync_runs ADD COLUMN IF NOT EXISTS integration_id UUID;
 
--- 2. Populate integration_id from meta_sync_runs where missing (using sync_run_id)
+-- 2. Populate integration_id via sync_run_id (Backfill)
 UPDATE public.meta_raw_snapshots s 
 SET integration_id = r.integration_id 
 FROM public.meta_sync_runs r 
 WHERE s.sync_run_id = r.id AND s.integration_id IS NULL;
 
 UPDATE public.meta_campaign_entities e 
-SET integration_id = r.integration_id 
-FROM public.meta_sync_runs r 
-WHERE e.sync_run_id = r.id AND e.integration_id IS NULL;
+SET integration_id = s.integration_id, last_sync_run_id = s.sync_run_id
+FROM public.meta_campaign_snapshots s 
+WHERE e.user_id = s.user_id AND e.campaign_id = s.campaign_id AND e.integration_id IS NULL;
 
 UPDATE public.meta_adset_entities e 
+SET integration_id = s.integration_id, last_sync_run_id = s.sync_run_id
+FROM public.meta_adset_snapshots s 
+WHERE e.user_id = s.user_id AND e.adset_id = s.adset_id AND e.integration_id IS NULL;
+
+UPDATE public.meta_normalized_metrics s 
 SET integration_id = r.integration_id 
 FROM public.meta_sync_runs r 
-WHERE e.sync_run_id = r.id AND e.integration_id IS NULL;
-
-UPDATE public.meta_normalized_metrics m 
-SET integration_id = r.integration_id 
-FROM public.meta_sync_runs r 
-WHERE m.sync_run_id = r.id AND m.integration_id IS NULL;
-
--- Note: In a real system with existing data, we would handle NULLs here. 
--- For our testing environment, any remaining NULLs will just be deleted.
-DELETE FROM public.meta_raw_snapshots WHERE integration_id IS NULL;
-DELETE FROM public.meta_campaign_entities WHERE integration_id IS NULL;
-DELETE FROM public.meta_adset_entities WHERE integration_id IS NULL;
-DELETE FROM public.meta_normalized_metrics WHERE integration_id IS NULL;
-DELETE FROM public.meta_sync_runs WHERE integration_id IS NULL;
+WHERE s.sync_run_id = r.id AND s.integration_id IS NULL;
 
 -- 3. Make them NOT NULL
 ALTER TABLE public.meta_sync_runs ALTER COLUMN integration_id SET NOT NULL;

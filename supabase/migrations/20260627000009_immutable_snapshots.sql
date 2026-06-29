@@ -16,9 +16,6 @@ SET integration_id = r.integration_id
 FROM public.meta_sync_runs r 
 WHERE s.sync_run_id = r.id AND s.integration_id IS NULL;
 
-DELETE FROM public.meta_campaign_snapshots WHERE integration_id IS NULL;
-DELETE FROM public.meta_adset_snapshots WHERE integration_id IS NULL;
-
 -- 2. Drop existing foreign keys
 ALTER TABLE public.meta_campaign_snapshots DROP CONSTRAINT IF EXISTS meta_campaign_snapshots_sync_run_id_fkey;
 ALTER TABLE public.meta_adset_snapshots DROP CONSTRAINT IF EXISTS meta_adset_snapshots_sync_run_id_fkey;
