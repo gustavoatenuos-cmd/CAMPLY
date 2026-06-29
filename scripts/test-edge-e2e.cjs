@@ -116,7 +116,7 @@ async function run() {
 
   // SCENARIO: RLS and Permissions Blocking
   console.log(`\n\n--- Running Scenario: RLS / RPC Access Control ---`);
-  const rpcAnon = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -c "SELECT has_function_privilege('anon', 'persist_meta_sync_run(UUID, UUID, UUID, VARCHAR, VARCHAR, JSONB, JSONB[], JSONB[], JSONB[], JSONB[], INT, INT)', 'EXECUTE');" -t`).toString().trim();
+  const rpcAnon = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -c "SELECT has_function_privilege('anon', 'persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSONB, INT, INT)', 'EXECUTE');" -t`).toString().trim();
   assertEqual(rpcAnon, 'f', 'Anon should NOT have execute on persist_meta_sync_run');
   const rpcAuth = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -c "SELECT has_function_privilege('authenticated', 'consume_meta_oauth_state(VARCHAR)', 'EXECUTE');" -t`).toString().trim();
   assertEqual(rpcAuth, 'f', 'Auth should NOT have execute on consume_meta_oauth_state');

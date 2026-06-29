@@ -23,10 +23,20 @@ SET integration_id = s.integration_id, last_sync_run_id = s.sync_run_id
 FROM public.meta_campaign_snapshots s 
 WHERE e.user_id = s.user_id AND e.campaign_id = s.campaign_id AND e.integration_id IS NULL;
 
+UPDATE public.meta_campaign_entities e 
+SET integration_id = r.integration_id 
+FROM public.meta_sync_runs r 
+WHERE e.ad_account_id = r.ad_account_id AND e.user_id = r.user_id AND e.integration_id IS NULL;
+
 UPDATE public.meta_adset_entities e 
 SET integration_id = s.integration_id, last_sync_run_id = s.sync_run_id
 FROM public.meta_adset_snapshots s 
 WHERE e.user_id = s.user_id AND e.adset_id = s.adset_id AND e.integration_id IS NULL;
+
+UPDATE public.meta_adset_entities e 
+SET integration_id = r.integration_id 
+FROM public.meta_sync_runs r 
+WHERE e.ad_account_id = r.ad_account_id AND e.user_id = r.user_id AND e.integration_id IS NULL;
 
 UPDATE public.meta_normalized_metrics s 
 SET integration_id = r.integration_id 

@@ -25,6 +25,7 @@ import {
 interface SyncRequestBody {
   metaAssetId?: string;
   periods?: string[];
+  selectedCampaigns?: string[];
 }
 
 interface MetaCampaign {
@@ -72,6 +73,7 @@ export async function handleRequest(req: Request) {
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
+    const selectedCampaigns = Array.isArray(body.selectedCampaigns) ? body.selectedCampaigns : null;
       
     if (body.syncRunId) {
       throw new HttpError('O parâmetro syncRunId não é permitido. O sistema o gera exclusivamente.', 400);
@@ -174,8 +176,12 @@ export async function handleRequest(req: Request) {
       throw new HttpError('Meta campaign collection failed', 502);
     }
 
-    const activeCampaigns = campaignsResult.data;
-    const activeAdSets = adsetsResult.data.map((adset) => ({
+    let activeCampaigns = campaignsResult.data;
+    if (selectedCampaigns && selectedCampaigns.length > 0) {
+      activeCampaigns = activeCampaigns.filter(c => selectedCampaigns.includes(c.id));
+    }
+
+    let activeAdSets = adsetsResult.data.map((adset) => ({
       ...adset,
       classified_objective: classifyAdSetObjective({
         campaignObjective: activeCampaigns.find((campaign) => campaign.id === adset.campaign_id)?.objective || '',
@@ -184,6 +190,9 @@ export async function handleRequest(req: Request) {
         adsetPromotedObject: adset.promoted_object,
       }),
     }));
+    if (selectedCampaigns && selectedCampaigns.length > 0) {
+      activeAdSets = activeAdSets.filter(a => selectedCampaigns.includes(a.campaign_id));
+    }
 
     const classifiedObjectives = new Map<string, ReturnType<typeof classifyCampaignObjective>>();
     const requiresAdsetInsights = new Set<string>();

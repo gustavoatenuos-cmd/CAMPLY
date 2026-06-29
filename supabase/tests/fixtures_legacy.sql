@@ -17,8 +17,11 @@ INSERT INTO auth.users (id, instance_id, role, aud, email, encrypted_password, e
 VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test@camply.com', '', now(), now(), '{}', '{}', now(), now(), '', '', '', '');
 
 -- Insere Sync Run
-INSERT INTO meta_sync_runs (id, user_id, ad_account_id, graph_api_version, requested_period, status)
-VALUES ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001', 'act_12345', 'v20.0', 'today', 'success');
+INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) 
+VALUES ('55555555-5555-5555-5555-555555555555', '00000000-0000-0000-0000-000000000001', 'token', 'active');
+
+INSERT INTO meta_sync_runs (id, user_id, integration_id, ad_account_id, graph_api_version, requested_period, status)
+VALUES ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001', '55555555-5555-5555-5555-555555555555', 'act_12345', 'v20.0', 'today', 'success');
 
 -- Insere Snapshot Raw
 INSERT INTO meta_raw_snapshots (id, user_id, sync_run_id, ad_account_id, entity_level, entity_id, endpoint, payload)

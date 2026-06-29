@@ -23,6 +23,7 @@ CREATE OR REPLACE FUNCTION public.persist_meta_sync_run(
   p_records_fetched INT DEFAULT 0
 )
 RETURNS void AS $$
+DECLARE
     v_run_record RECORD;
 BEGIN
     -- 1. Lock and Verify Run
