@@ -25,6 +25,7 @@ for run in 1 2 3; do
   docker rm -f camply-mock-graph >/dev/null 2>&1 || true
 
   ./scripts/validate-meta-e2e-once.sh
+  node scripts/test-external-gates.cjs
 
   npx supabase stop --no-backup >/dev/null 2>&1 || true
   docker rm -f camply-mock-graph >/dev/null 2>&1 || true
