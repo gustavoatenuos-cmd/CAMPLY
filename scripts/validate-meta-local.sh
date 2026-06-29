@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== VALIDAÇÃO LOCAL (1X) ==="
-./scripts/validate-meta-e2e-once.sh
-echo "Execução completada com sucesso."
+for run in 1 2 3; do
+  echo "=== VALIDAÇÃO LOCAL ${run}/3 ==="
+  ./scripts/validate-meta-e2e-once.sh
+done
+
+echo "Três execuções independentes concluídas com sucesso."
