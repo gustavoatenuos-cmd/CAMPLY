@@ -34,6 +34,20 @@ fi
 
 echo "1. Nenhum projeto remoto linkado."
 
+# 1.5. Prepare environment variables for local testing
+cat << 'EOF' > supabase/functions/.env
+META_TEST_MODE=true
+META_API_ENV=local
+TEST_TIMEOUT_MS=100
+TEST_MAX_RETRIES=2
+TEST_BACKOFF_MS=50
+META_APP_ID=123
+META_APP_SECRET=abc
+APP_BASE_URL=http://localhost:3000
+META_BASE_URL=http://mock-graph:9999
+META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
+EOF
+
 # 2. Iniciar o Supabase local
 echo "2. Iniciando Supabase local..."
 npx supabase start
@@ -60,6 +74,7 @@ mv supabase/migrations/20260627000009_* /tmp/camply_migrations/ 2>/dev/null || t
 mv supabase/migrations/20260627000010_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000011_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000012_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000013_* /tmp/camply_migrations/ 2>/dev/null || true
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."
@@ -107,10 +122,17 @@ until curl -s http://localhost:9999/health > /dev/null; do
 done
 echo "Mock API está saudável."
 
-echo "Iniciando Edge Function localmente com META_BASE_URL customizado para a internal network..."
-META_BASE_URL="http://mock-graph:9999" npx supabase functions serve meta-sync-ads --env-file ./supabase/.env.local &
-FUNCTION_PID=$!
-sleep 5
+echo "Aguardando Edge Functions (mock) ficarem saudáveis..."
+TIMEOUT=30
+until curl -s -f http://localhost:54321/functions/v1/meta-sync-ads -X OPTIONS > /dev/null && curl -s -f http://localhost:54321/functions/v1/meta-oauth-callback -X OPTIONS > /dev/null; do
+  sleep 1
+  ((TIMEOUT--))
+  if [[ $TIMEOUT -le 0 ]]; then
+    echo "Erro: Edge Functions não responderam após 30 segundos."
+    exit 1
+  fi
+done
+echo "Edge Functions estão saudáveis."
 
 # RLS / OAuth
 node scripts/test-rls-api.cjs

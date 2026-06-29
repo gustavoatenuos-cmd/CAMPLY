@@ -5,17 +5,19 @@ let requestCounts = {};
 let forcedTimeout = false;
 let forcedRateLimit = false;
 
+let reconciliationState = 'A'; // 'A' or 'B'
+let oauthTokenExchangeCount = 0;
+let oauthMeCount = 0;
+
 const MOCK_PORT = process.env.MOCK_PORT || 9999;
 const MOCK_HOST = process.env.MOCK_HOST || `mock-graph:${MOCK_PORT}`;
 
 const server = http.createServer((req, res) => {
+  console.log(`[MOCK] Received request: ${req.method} ${req.url}`);
   res.setHeader('Content-Type', 'application/json');
   
   const parsedUrl = url.parse(req.url, true);
   const path = parsedUrl.pathname;
-
-  // Mask logging (don't log secrets)
-  // console.log(`[MOCK] ${req.method} ${path}`);
   
   if (path === '/health') {
     res.statusCode = 200;
@@ -26,16 +28,33 @@ const server = http.createServer((req, res) => {
     requestCounts = {};
     forcedTimeout = false;
     forcedRateLimit = false;
+    reconciliationState = 'A';
+    oauthTokenExchangeCount = 0;
+    oauthMeCount = 0;
     res.statusCode = 200;
     return res.end(JSON.stringify({ status: 'reset' }));
   }
+  
+  if (path === '/set_reconciliation_state') {
+    reconciliationState = parsedUrl.query.state || 'A';
+    res.statusCode = 200;
+    return res.end(JSON.stringify({ status: 'ok', state: reconciliationState }));
+  }
 
-  const match = path.match(/(act_[a-z_]+)/);
+  // OAuth endpoints
+  if (path.includes('/oauth/access_token')) {
+    oauthTokenExchangeCount++;
+    return res.end(JSON.stringify({ access_token: 'mock_long_lived_token', token_type: 'bearer', expires_in: 3600 }));
+  }
+  if (path.includes('/me')) {
+    oauthMeCount++;
+    return res.end(JSON.stringify({ id: '123456789', name: 'Mock User' }));
+  }
+
+  const match = path.match(/(act_[a-z0-9_]+)/);
   const accountId = match ? match[1] : 'act_unknown';
 
   if (!requestCounts[accountId]) requestCounts[accountId] = 0;
-  
-  // Increment for all paths so rate limit recovers after 3 tries
   requestCounts[accountId]++;
 
   let date_start = '2026-06-27';
@@ -62,32 +81,36 @@ const server = http.createServer((req, res) => {
     }));
   }
 
-  if (accountId === 'act_rate_limit') {
+  if (accountId === 'act_rate_limit_recovered') {
     if (requestCounts[accountId] <= 2) {
       res.statusCode = 429;
       return res.end(JSON.stringify({
         error: { message: "Rate limit exceeded.", type: "OAuthException", code: 17 }
       }));
     }
-    // rate_limit_recovered works by returning success on 3rd try, though our function doesn't retry automatically yet,
-    // we can simulate it if needed, or just let it fail.
+  }
+
+  if (accountId === 'act_rate_limit_exhausted') {
+    res.statusCode = 429;
+    return res.end(JSON.stringify({
+      error: { message: "Rate limit exceeded.", type: "OAuthException", code: 17 }
+    }));
   }
 
   if (accountId === 'act_timeout') {
-    // In node, we just don't end the response for a while
     setTimeout(() => {
       res.statusCode = 504;
       res.end(JSON.stringify({ error: { message: "Gateway Timeout" } }));
-    }, 100); // 100ms timeout
+    }, 250); // 250ms is larger than 200ms timeout
     return;
   }
 
   if (accountId === 'act_invalid_payload') {
     res.statusCode = 200;
-    return res.end("<html><body>Not JSON</body></html>"); // Simulate bad gateway or parsing error
+    return res.end("<html><body>Not JSON</body></html>");
   }
 
-  if (path.match(/\/act_[a-z_]+$/)) {
+  if (path.match(/\/act_[a-z0-9_]+$/)) {
     return res.end(JSON.stringify({
       id: accountId,
       timezone_name: 'America/Sao_Paulo',
@@ -98,7 +121,11 @@ const server = http.createServer((req, res) => {
   if (path.includes('/campaigns')) {
     let campaigns = [];
     if (accountId === 'act_simple') {
-      campaigns = [{ id: 'camp_simple', name: 'Simple Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE', daily_budget: '1000' }];
+      campaigns = [
+        { id: 'camp_123', name: 'Simple Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE', daily_budget: '1000' },
+        { id: 'camp_456', name: 'Other Campaign', objective: 'OUTCOME_TRAFFIC', effective_status: 'ACTIVE' },
+        { id: 'camp_789', name: 'Third Campaign', objective: 'OUTCOME_ENGAGEMENT', effective_status: 'PAUSED' }
+      ];
     } else if (accountId === 'act_zero') {
       campaigns = [{ id: 'camp_zero', name: 'Zero Delivery Campaign', objective: 'OUTCOME_TRAFFIC', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_mixed_obj') {
@@ -107,10 +134,14 @@ const server = http.createServer((req, res) => {
       campaigns = [{ id: 'camp_mix_attr', name: 'Mixed Attribution', objective: 'OUTCOME_SALES', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_mixed_dest') {
       campaigns = [{ id: 'camp_mix_dest', name: 'Mixed Destination', objective: 'OUTCOME_ENGAGEMENT', effective_status: 'ACTIVE' }];
-    } else if (accountId === 'act_partial') {
-      campaigns = [{ id: 'camp_partial', name: 'Partial Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
+    } else if (accountId === 'act_partial_success') {
+      campaigns = [{ id: 'camp_partial_success', name: 'Partial Campaign Success', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
+    } else if (accountId === 'act_partial_fail_page_2') {
+      campaigns = [{ id: 'camp_partial_fail', name: 'Partial Campaign Fail', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_ssrf') {
       campaigns = [{ id: 'camp_ssrf', name: 'SSRF Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
+    } else if (accountId === 'act_reconciliation') {
+      campaigns = [{ id: 'camp_recon', name: reconciliationState === 'A' ? 'Recon Campaign A' : 'Recon Campaign B', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     }
     return res.end(JSON.stringify({ data: campaigns }));
   }
@@ -118,7 +149,11 @@ const server = http.createServer((req, res) => {
   if (path.includes('/adsets')) {
     let adsets = [];
     if (accountId === 'act_simple') {
-      adsets = [{ id: 'adset_simple', campaign_id: 'camp_simple', name: 'Adset Simple', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
+      adsets = [
+        { id: 'adset_123', campaign_id: 'camp_123', name: 'Adset 123', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
+        { id: 'adset_456', campaign_id: 'camp_456', name: 'Adset 456', optimization_goal: 'LINK_CLICKS', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
+        { id: 'adset_789', campaign_id: 'camp_789', name: 'Adset 789', optimization_goal: 'POST_ENGAGEMENT', effective_status: 'PAUSED', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }
+      ];
     } else if (accountId === 'act_zero') {
       adsets = [{ id: 'adset_zero', campaign_id: 'camp_zero', name: 'Adset Zero', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 1 }] }];
     } else if (accountId === 'act_mixed_obj') {
@@ -136,10 +171,12 @@ const server = http.createServer((req, res) => {
         { id: 'adset_dest1', campaign_id: 'camp_mix_dest', name: 'Adset Dest 1', optimization_goal: 'PAGE_LIKES', effective_status: 'ACTIVE', destination_type: 'FACEBOOK' },
         { id: 'adset_dest2', campaign_id: 'camp_mix_dest', name: 'Adset Dest 2', optimization_goal: 'MESSAGING_CONVERSATIONS', effective_status: 'ACTIVE', destination_type: 'MESSENGER' }
       ];
-    } else if (accountId === 'act_partial') {
-      adsets = [{ id: 'adset_partial', campaign_id: 'camp_partial', name: 'Adset Partial', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
+    } else if (accountId === 'act_partial_success' || accountId === 'act_partial_fail_page_2') {
+      adsets = [{ id: 'adset_partial', campaign_id: 'camp_partial_' + (accountId === 'act_partial_success' ? 'success' : 'fail'), name: 'Adset Partial', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     } else if (accountId === 'act_ssrf') {
       adsets = [{ id: 'adset_ssrf', campaign_id: 'camp_ssrf', name: 'Adset SSRF', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
+    } else if (accountId === 'act_reconciliation') {
+      adsets = [{ id: 'adset_recon', campaign_id: 'camp_recon', name: 'Adset Recon', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', destination_type: reconciliationState === 'A' ? 'FACEBOOK' : 'WEBSITE' }];
     }
     return res.end(JSON.stringify({ data: adsets, paging: { cursors: { after: 'cursor' } } }));
   }
@@ -148,25 +185,24 @@ const server = http.createServer((req, res) => {
     const isAdsetLevel = parsedUrl.search.includes('level=adset');
     let insights = [];
     
-    if (accountId === 'act_partial') {
-      const isSecondRun = requestCounts[accountId] > 1;
+    if (accountId === 'act_partial_fail_page_2') {
       const page = parsedUrl.query.after || '1';
       if (page === '1') {
-        if (isSecondRun) {
-          return res.end(JSON.stringify({
-            data: [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', date_start, date_stop }],
-            paging: { cursors: { after: 'page2' }, next: `http://${MOCK_HOST}/v25.0/${accountId}/insights?after=page2&level=${isAdsetLevel?'adset':'campaign'}` }
-          }));
-        } else {
-          return res.end(JSON.stringify({
-            data: [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }],
-            paging: { cursors: { after: 'cursor' } }
-          }));
-        }
+        return res.end(JSON.stringify({
+          data: [{ campaign_id: 'camp_partial_fail', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', date_start, date_stop }],
+          paging: { cursors: { after: 'page2' }, next: `http://${MOCK_HOST}/v25.0/${accountId}/insights?after=page2&level=${isAdsetLevel?'adset':'campaign'}` }
+        }));
       } else {
         res.statusCode = 500;
         return res.end(JSON.stringify({ error: { message: 'Pagination failed on page 2' } }));
       }
+    }
+    
+    if (accountId === 'act_partial_success') {
+      return res.end(JSON.stringify({
+        data: [{ campaign_id: 'camp_partial_success', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }],
+        paging: { cursors: { after: 'cursor' } }
+      }));
     }
 
     if (accountId === 'act_ssrf') {
@@ -174,7 +210,6 @@ const server = http.createServer((req, res) => {
       if (page === '1') {
         return res.end(JSON.stringify({
           data: [{ campaign_id: 'camp_ssrf', impressions: '10', spend: '1.00', date_start, date_stop }],
-          // SSRF attempt: redirecting pagination to an internal metadata endpoint or internal network
           paging: { cursors: { after: 'page2' }, next: `http://169.254.169.254/latest/meta-data/` }
         }));
       }
@@ -182,12 +217,18 @@ const server = http.createServer((req, res) => {
 
     if (accountId === 'act_simple') {
       insights = isAdsetLevel 
-        ? [{ campaign_id: 'camp_simple', adset_id: 'adset_simple', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop }]
-        : [{ campaign_id: 'camp_simple', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], reach: '800', date_start, date_stop }];
+        ? [
+            { campaign_id: 'camp_123', adset_id: 'adset_123', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop },
+            { campaign_id: 'camp_456', adset_id: 'adset_456', impressions: '500', spend: '25.00', actions: [{action_type: 'link_click', value: '10'}], date_start, date_stop },
+            { campaign_id: 'camp_789', adset_id: 'adset_789', impressions: '200', spend: '10.00', actions: [{action_type: 'post_engagement', value: '20'}], date_start, date_stop }
+          ]
+        : [
+            { campaign_id: 'camp_123', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], reach: '800', date_start, date_stop },
+            { campaign_id: 'camp_456', impressions: '500', spend: '25.00', actions: [{action_type: 'link_click', value: '10'}], reach: '400', date_start, date_stop },
+            { campaign_id: 'camp_789', impressions: '200', spend: '10.00', actions: [{action_type: 'post_engagement', value: '20'}], reach: '100', date_start, date_stop }
+          ];
     } else if (accountId === 'act_zero') {
-      insights = isAdsetLevel 
-        ? [{ campaign_id: 'camp_zero', adset_id: 'adset_zero', impressions: '0', spend: '0', date_start, date_stop }]
-        : [{ campaign_id: 'camp_zero', impressions: '0', spend: '0', reach: '0', date_start, date_stop }];
+      insights = [];
     } else if (accountId === 'act_mixed_obj') {
       insights = isAdsetLevel 
         ? [
@@ -209,6 +250,11 @@ const server = http.createServer((req, res) => {
             { campaign_id: 'camp_mix_dest', adset_id: 'adset_dest2', impressions: '1500', spend: '30.00', date_start, date_stop }
           ]
         : [{ campaign_id: 'camp_mix_dest', impressions: '2500', spend: '50.00', date_start, date_stop }];
+    } else if (accountId === 'act_reconciliation') {
+      let attr = reconciliationState === 'A' ? '7d_click' : '1d_click';
+      insights = isAdsetLevel
+        ? [{ campaign_id: 'camp_recon', adset_id: 'adset_recon', impressions: '100', spend: '10', date_start, date_stop, attribution_setting: attr }]
+        : [{ campaign_id: 'camp_recon', impressions: '100', spend: '10', date_start, date_stop }];
     }
     
     return res.end(JSON.stringify({ data: insights, paging: { cursors: { after: 'cursor' } } }));

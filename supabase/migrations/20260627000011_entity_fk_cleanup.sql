@@ -1,5 +1,5 @@
 -- Migration 000011: FK Cleanup and Delete Policy
--- Description: Sets run_scope on sync runs, makes last_sync_run_id NOT NULL on entities, and enforces immutable delete policy for snapshots.
+-- Description: Sets run_scope on sync runs, safely backfills last_sync_run_id, makes it NOT NULL, and enforces immutable delete policy.
 
 BEGIN;
 
@@ -7,10 +7,42 @@ BEGIN;
 ALTER TABLE public.meta_sync_runs ADD COLUMN IF NOT EXISTS run_scope TEXT DEFAULT 'full_account' NOT NULL;
 ALTER TABLE public.meta_sync_runs ADD CONSTRAINT run_scope_check CHECK (run_scope IN ('full_account', 'selected_campaigns'));
 
--- 2. Clean up orphans and make last_sync_run_id NOT NULL on entities
-DELETE FROM public.meta_campaign_entities WHERE last_sync_run_id IS NULL;
+-- 2. Clean up orphans via backfill and make last_sync_run_id NOT NULL safely
+DO $$
+DECLARE
+    orphan_campaigns INT;
+    orphan_adsets INT;
+BEGIN
+    -- Backfill campaigns
+    UPDATE public.meta_campaign_entities c
+    SET last_sync_run_id = (
+        SELECT id FROM public.meta_sync_runs r 
+        WHERE r.integration_id = c.integration_id 
+          AND r.ad_account_id = c.ad_account_id 
+        ORDER BY created_at DESC LIMIT 1
+    )
+    WHERE c.last_sync_run_id IS NULL;
+
+    -- Backfill adsets
+    UPDATE public.meta_adset_entities a
+    SET last_sync_run_id = (
+        SELECT id FROM public.meta_sync_runs r 
+        WHERE r.integration_id = a.integration_id 
+          AND r.ad_account_id = a.ad_account_id 
+        ORDER BY created_at DESC LIMIT 1
+    )
+    WHERE a.last_sync_run_id IS NULL;
+
+    -- Check if any orphans remain
+    SELECT count(*) INTO orphan_campaigns FROM public.meta_campaign_entities WHERE last_sync_run_id IS NULL;
+    SELECT count(*) INTO orphan_adsets FROM public.meta_adset_entities WHERE last_sync_run_id IS NULL;
+    
+    IF orphan_campaigns > 0 OR orphan_adsets > 0 THEN
+        RAISE EXCEPTION 'Cannot apply NOT NULL to last_sync_run_id. Found % orphan campaigns and % orphan adsets after backfill attempt.', orphan_campaigns, orphan_adsets;
+    END IF;
+END $$;
+
 ALTER TABLE public.meta_campaign_entities ALTER COLUMN last_sync_run_id SET NOT NULL;
-DELETE FROM public.meta_adset_entities WHERE last_sync_run_id IS NULL;
 ALTER TABLE public.meta_adset_entities ALTER COLUMN last_sync_run_id SET NOT NULL;
 
 -- 3. Composite Foreign Keys using last_sync_run_id
@@ -29,7 +61,6 @@ CREATE OR REPLACE FUNCTION prevent_direct_snapshot_delete()
 RETURNS TRIGGER AS $$
 BEGIN
     IF pg_trigger_depth() = 1 THEN
-        -- Level 1 means it was called directly by the user statement.
         RAISE EXCEPTION 'Direct deletes to historical snapshots are not allowed. Snapshots are immutable.';
     END IF;
     RETURN OLD;

@@ -39,7 +39,9 @@ export function validateMetaPagingUrl(
     const isIPv6Literal = hostname.startsWith('[') && hostname.endsWith(']');
     
     if (isIPv4Literal || isIPv6Literal) {
-      return { isValid: false, reason: 'IP literals are not permitted' };
+      if (!(config.environment === 'local' && config.testMode && config.allowedTestHosts.includes(hostname))) {
+        return { isValid: false, reason: 'IP literals are not permitted' };
+      }
     }
 
     if (config.environment === 'local') {

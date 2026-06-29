@@ -515,7 +515,7 @@ export async function handleRequest(req: Request) {
     }
 
     return new Response(JSON.stringify({
-      success: syncStatus === 'success',
+      success: syncStatus === 'success' || syncStatus === 'partial',
       status: syncStatus,
       runId: usedRunId,
       campaigns: campaignsWithInsights,
@@ -526,7 +526,7 @@ export async function handleRequest(req: Request) {
       currency,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
+      status: syncStatus === 'partial' ? 206 : 200,
     });
   } catch (error) {
     console.error('Meta Sync Error:', error);
@@ -541,7 +541,8 @@ export async function handleRequest(req: Request) {
         console.error('Failed to persist Meta sync failure:', persistenceError);
       }
     }
-    return errorResponse(error, corsHeaders);
+    const errorCode = error instanceof HttpError && error.status === 502 ? 'META_API_ERROR' : 'META_PERSISTENCE_FAILED';
+    return errorResponse(error, corsHeaders, usedRunId, errorCode);
   }
 }
 serve(handleRequest);

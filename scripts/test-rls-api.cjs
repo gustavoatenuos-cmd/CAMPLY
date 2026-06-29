@@ -35,10 +35,6 @@ async function run() {
       
       INSERT INTO meta_campaign_snapshots (id, user_id, integration_id, ad_account_id, sync_run_id, campaign_id, campaign_name, meta_status, effective_status)
       VALUES (gen_random_uuid(), '${userA}', '${integrationA}', '${adAccountA}', '${runA}', 'camp_123', 'Campaign 123', 'ACTIVE', 'ACTIVE');
-      
-      GRANT SELECT ON public.meta_sync_runs TO authenticated;
-      GRANT SELECT ON public.meta_campaign_snapshots TO authenticated;
-      GRANT SELECT ON public.meta_normalized_metrics TO authenticated;
     "`);
   } catch (err) {
     console.error('Failed setup', err.message);

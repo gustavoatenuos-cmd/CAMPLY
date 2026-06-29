@@ -6,7 +6,13 @@ describe('Pagination & Retry', () => {
   beforeEach(() => {
     vi.stubGlobal('Deno', {
       env: {
-        get: vi.fn(() => 'https://graph.facebook.com')
+        get: vi.fn((key) => {
+          if (key === 'META_BASE_URL') return 'https://graph.facebook.com';
+          if (key === 'META_TEST_MODE') return 'false';
+          if (key === 'TEST_MAX_RETRIES') return '2';
+          if (key === 'TEST_TIMEOUT_MS') return '1500';
+          return undefined;
+        })
       }
     });
   });
@@ -17,7 +23,7 @@ describe('Pagination & Retry', () => {
       if (callCount === 1) {
          return Promise.resolve({
            ok: true,
-           json: () => Promise.resolve({ data: [{ id: 1 }], paging: { next: 'page2' } })
+           json: () => Promise.resolve({ data: [{ id: 1 }], paging: { next: 'https://graph.facebook.com/page2?after=123', cursors: { after: '123' } } })
          });
       }
       return Promise.resolve({
@@ -36,7 +42,7 @@ describe('Pagination & Retry', () => {
   it('reports partial_page when a configured page limit truncates pagination', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ data: [{ id: 1 }], paging: { next: 'page2' } })
+      json: () => Promise.resolve({ data: [{ id: 1 }], paging: { next: 'https://graph.facebook.com/page2?after=123', cursors: { after: '123' } } })
     });
 
     const res = await fetchMetaGraphPaginated(

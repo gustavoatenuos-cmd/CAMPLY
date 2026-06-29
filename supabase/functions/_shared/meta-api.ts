@@ -46,6 +46,10 @@ export interface PaginatedResult<T> {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 function getExponentialBackoffWithJitter(attempt: number, baseMs = 1000, maxMs = 30000): number {
+  const isTest = getEnvVar('META_TEST_MODE') === 'true';
+  if (isTest) {
+    return parseInt(getEnvVar('TEST_BACKOFF_MS') || '10', 10); // deterministic, no jitter for tests
+  }
   const backoff = Math.min(maxMs, baseMs * Math.pow(2, attempt));
   const jitter = Math.random() * (backoff * 0.2); // 20% jitter
   return backoff + jitter;
@@ -80,11 +84,15 @@ export async function fetchMetaGraph(options: MetaApiOptions) {
   }
 
   let retries = 0;
-  const maxRetries = 4;
+  const maxRetriesOverride = getEnvVar('TEST_MAX_RETRIES');
+  const maxRetries = maxRetriesOverride ? parseInt(maxRetriesOverride, 10) : 4;
+  
+  const timeoutOverride = getEnvVar('TEST_TIMEOUT_MS');
+  const actualTimeoutMs = timeoutOverride ? parseInt(timeoutOverride, 10) : timeoutMs;
 
   while (retries <= maxRetries) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), actualTimeoutMs);
     
     try {
       const response = await fetch(urlStr, { ...fetchOptions, signal: controller.signal });

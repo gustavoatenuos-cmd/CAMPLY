@@ -29,8 +29,7 @@ serve(async (req) => {
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
     const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
     
-    console.log('Incoming state:', state);
-    console.log('Generated hash:', stateHash);
+    // Removed logs as requested by security constraints
 
     // 2. Consume via Atomic RPC
     const { data: stateData, error: stateError } = await supabaseClient
@@ -55,9 +54,12 @@ serve(async (req) => {
     tokenUrl.searchParams.append('code', code);
 
     const tokenRes = await fetch(tokenUrl.toString());
-    const tokenData = await tokenRes.json();
+    const tokenText = await tokenRes.text();
+    let tokenData;
+    try { tokenData = JSON.parse(tokenText); } catch (e) { tokenData = tokenText; }
 
     if (!tokenRes.ok) {
+      console.error('Token fetch failed! Status:', tokenRes.status, 'Body:', tokenData);
       throw new HttpError('Meta token exchange failed', 502);
     }
 
@@ -71,7 +73,9 @@ serve(async (req) => {
     longTokenUrl.searchParams.append('fb_exchange_token', accessToken);
 
     const longTokenRes = await fetch(longTokenUrl.toString());
-    const longTokenData = await longTokenRes.json();
+    const longTokenText = await longTokenRes.text();
+    let longTokenData;
+    try { longTokenData = JSON.parse(longTokenText); } catch (e) { longTokenData = longTokenText; }
 
     if (longTokenRes.ok && longTokenData.access_token) {
       accessToken = longTokenData.access_token;
@@ -86,9 +90,14 @@ serve(async (req) => {
     meUrl.searchParams.append('access_token', accessToken);
     
     const meRes = await fetch(meUrl.toString());
-    const meData = await meRes.json();
+    const meText = await meRes.text();
+    let meData;
+    try { meData = JSON.parse(meText); } catch (e) { meData = meText; }
 
-    if (!meRes.ok) throw new HttpError('Failed to fetch Meta user profile', 502);
+    if (!meRes.ok) {
+      console.error('User profile fetch failed! Status:', meRes.status, 'Body:', meData);
+      throw new HttpError('Failed to fetch Meta user profile', 502);
+    }
 
     // 5. Encrypt token
     const encryptedToken = await encryptToken(accessToken);
