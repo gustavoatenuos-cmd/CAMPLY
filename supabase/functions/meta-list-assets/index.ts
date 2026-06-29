@@ -80,6 +80,15 @@ serve(async (req) => {
       if (upsertError) throw upsertError;
     }
 
+    const { data: persistedAssets, error: persistedAssetsError } = await supabaseClient
+      .from('meta_assets')
+      .select('id,integration_id,asset_type,asset_id,asset_name,asset_status,currency,timezone_name,is_selected,created_at,updated_at')
+      .eq('integration_id', integration.id)
+      .order('asset_type')
+      .order('asset_name');
+
+    if (persistedAssetsError) throw persistedAssetsError;
+
     // Log sync
     await supabaseClient.from('meta_sync_logs').insert({
       integration_id: integration.id,
@@ -89,7 +98,7 @@ serve(async (req) => {
       metadata: { ad_accounts_count: adAccountsData.data?.length || 0, pages_count: pagesData.data?.length || 0 }
     });
 
-    return new Response(JSON.stringify({ success: true, assets: assetsToInsert }), {
+    return new Response(JSON.stringify({ success: true, assets: persistedAssets || [] }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })

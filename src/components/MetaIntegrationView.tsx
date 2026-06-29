@@ -86,11 +86,18 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
     }
   };
 
-  const handleSyncAds = async (adAccountId: string) => {
+  const handleSyncAds = async (asset: { id?: string; asset_id?: string }) => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await invokeFunction<MetaSyncResponse>('meta-sync-ads', { adAccountId });
+      const payload = asset.id
+        ? { metaAssetId: asset.id }
+        : { adAccountId: asset.asset_id };
+      if (!payload.metaAssetId && !payload.adAccountId) {
+        throw new Error('Ativo Meta inválido para sincronização.');
+      }
+
+      const data = await invokeFunction<MetaSyncResponse>('meta-sync-ads', payload);
       
       setSyncedCampaigns(data.campaigns || []);
       setLastSyncResponse(data);
@@ -290,7 +297,7 @@ export function MetaIntegrationView({ data, updateData }: MetaIntegrationViewPro
                       </div>
                       {asset.asset_type === 'adaccount' && (
                         <div className="flex gap-2">
-                          <button onClick={() => handleSyncAds(asset.asset_id)} className="rounded-lg bg-brand-green/10 px-3 py-1.5 text-xs font-bold text-brand-green hover:bg-brand-green/20">
+                          <button onClick={() => handleSyncAds(asset)} className="rounded-lg bg-brand-green/10 px-3 py-1.5 text-xs font-bold text-brand-green hover:bg-brand-green/20">
                             Sincronizar Campanhas da Meta
                           </button>
                         </div>

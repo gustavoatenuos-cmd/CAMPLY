@@ -9,6 +9,12 @@ const TOKEN_FIELD = ['access', 'token'].join('_')
 const CLIENT_SECRET_PARAM = ['client', 'secret'].join('_')
 const EXCHANGE_TOKEN_PARAM = ['fb', 'exchange', 'token'].join('_')
 
+interface ConsumedMetaOAuthState {
+  user_id: string;
+  redirect_uri: string;
+  scopes: string[];
+}
+
 const parseObject = (text: string): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(text)
@@ -44,6 +50,14 @@ serve(async (req) => {
       .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
       .single()
     if (stateError || !stateData) throw new HttpError('Invalid, expired, or already used state parameter', 400)
+    const consumedState = stateData as ConsumedMetaOAuthState
+    if (
+      !consumedState.user_id ||
+      !consumedState.redirect_uri ||
+      !Array.isArray(consumedState.scopes)
+    ) {
+      throw new HttpError('Invalid OAuth state payload', 400)
+    }
 
     const appId = Deno.env.get('META_APP_ID')
     const appValue = Deno.env.get('META_APP_SECRET')
@@ -51,7 +65,7 @@ serve(async (req) => {
 
     const firstExchangeUrl = new URL(`${META_BASE_URL}/oauth/access_token`)
     firstExchangeUrl.searchParams.set('client_id', appId)
-    firstExchangeUrl.searchParams.set('redirect_uri', stateData.redirect_uri)
+    firstExchangeUrl.searchParams.set('redirect_uri', consumedState.redirect_uri)
     firstExchangeUrl.searchParams.set(CLIENT_SECRET_PARAM, appValue)
     firstExchangeUrl.searchParams.set('code', code)
 
@@ -96,7 +110,7 @@ serve(async (req) => {
     const { data: existing, error: searchError } = await db
       .from('meta_integrations')
       .select('id')
-      .eq('user_id', stateData.user_id)
+      .eq('user_id', consumedState.user_id)
       .eq('meta_user_id', profile.id)
       .maybeSingle()
     if (searchError) {
@@ -107,7 +121,7 @@ serve(async (req) => {
     const commonValues = {
       meta_user_name: typeof profile.name === 'string' ? profile.name : null,
       access_token_encrypted: encryptedValue,
-      granted_scopes: stateData.scopes,
+      granted_scopes: consumedState.scopes,
       token_expires_at: expiresAt,
       status: 'active',
       last_validated_at: new Date().toISOString(),
@@ -118,14 +132,14 @@ serve(async (req) => {
         .from('meta_integrations')
         .update(commonValues)
         .eq('id', existing.id)
-        .eq('user_id', stateData.user_id)
+        .eq('user_id', consumedState.user_id)
       if (updateError) {
         console.error('Integration update failed', { code: updateError.code })
         throw new HttpError('Failed to update Meta integration', 500)
       }
     } else {
       const { error: insertError } = await db.from('meta_integrations').insert({
-        user_id: stateData.user_id,
+        user_id: consumedState.user_id,
         meta_user_id: profile.id,
         ...commonValues,
       })
