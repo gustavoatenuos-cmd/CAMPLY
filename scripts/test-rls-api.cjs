@@ -1,126 +1,183 @@
 const { execSync } = require('child_process');
+const fs = require('fs');
 const crypto = require('crypto');
+
+const RESULT_FILE = '/tmp/camply-rls-result.json';
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
 
 function assertEqual(actual, expected, message) {
   if (actual !== expected) {
-    console.error(`❌ [FAIL] ${message}: Expected ${expected}, but got ${actual}`);
-    process.exitCode = 1;
-    throw new Error('Assertion failed');
+    throw new Error(`${message}: expected ${expected}, got ${actual}`);
   }
 }
 
 async function run() {
   console.log('--- TEST: RLS A vs B ---');
-  
-  const userA = crypto.randomUUID();
-  const userB = crypto.randomUUID();
-  const integrationA = crypto.randomUUID();
-  const adAccountA = 'act_' + crypto.randomUUID().substring(0, 8);
-  const runA = crypto.randomUUID();
-  const emailA = `a_${Date.now()}@camply.test`;
-  const emailB = `b_${Date.now()}@camply.test`;
-  
-  console.log('Setup: Inserting Users and Mock Data...');
-  try {
-    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -c "
-      INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ('${userA}', '${emailA}', '{}');
-      INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ('${userB}', '${emailB}', '{}');
-      
-      INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${integrationA}', '${userA}', 'tokenA', 'active');
-      INSERT INTO meta_assets (id, integration_id, asset_type, asset_id, asset_name) 
-      VALUES (gen_random_uuid(), '${integrationA}', 'adaccount', '${adAccountA}', 'Test Account');
-      
-      INSERT INTO meta_sync_runs (id, user_id, integration_id, ad_account_id, graph_api_version, requested_period, status) 
-      VALUES ('${runA}', '${userA}', '${integrationA}', '${adAccountA}', 'v20.0', 'last_7d', 'success');
-      
-      INSERT INTO meta_campaign_snapshots (id, user_id, integration_id, ad_account_id, sync_run_id, campaign_id, campaign_name, meta_status, effective_status)
-      VALUES (gen_random_uuid(), '${userA}', '${integrationA}', '${adAccountA}', '${runA}', 'camp_123', 'Campaign 123', 'ACTIVE', 'ACTIVE');
-    "`);
-  } catch (err) {
-    console.error('Failed setup', err.message);
-    process.exit(1);
-  }
+  fs.rmSync(RESULT_FILE, { force: true });
 
-  function generateSupabaseToken(userId, role = 'authenticated') {
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({
-      iss: 'supabase',
-      sub: userId,
-      aud: role,
-      role: role,
-      exp: Math.floor(Date.now() / 1000) + (60 * 60)
-    })).toString('base64url');
-    const secret = 'super-secret-jwt-token-with-at-least-32-characters-long';
-    const signature = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
-    return `${header}.${payload}.${signature}`;
-  }
+  const localStatus = JSON.parse(execSync('npx supabase status --output json').toString());
+  const apiUrl = localStatus.API_URL;
+  const anonKey = localStatus.ANON_KEY;
 
-  const tokenA = generateSupabaseToken(userA);
-  const tokenB = generateSupabaseToken(userB);
-  const tokenAnon = generateSupabaseToken('anon', 'anon');
-
-  const restUrl = 'http://127.0.0.1:54321/rest/v1';
-  
-  async function checkResource(token, endpoint) {
-    const res = await fetch(`${restUrl}/${endpoint}`, {
-      headers: {
-        'apikey': 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-        'Authorization': `Bearer ${token}`
-      }
+  async function signUp(label) {
+    const response = await fetch(`${apiUrl}/auth/v1/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: anonKey },
+      body: JSON.stringify({
+        email: `${label}_${Date.now()}_${crypto.randomUUID()}@camply.test`,
+        password: 'password123',
+      }),
     });
-    const json = await res.json();
-    return json;
+    const body = await response.json();
+    assertEqual(response.status, 200, `${label} signup should succeed`);
+    assert(body.access_token && body.user?.id, `${label} signup should return a session`);
+    return { token: body.access_token, userId: body.user.id };
   }
 
-  console.log('Testing User A access...');
-  const runsA = await checkResource(tokenA, 'meta_sync_runs');
-  if (runsA.error || runsA.code || !Array.isArray(runsA)) {
-     console.log("Error querying runsA:", runsA);
+  const userA = await signUp('rls_a');
+  const userB = await signUp('rls_b');
+  const integrationA = crypto.randomUUID();
+  const assetA = crypto.randomUUID();
+  const runA = crypto.randomUUID();
+  const adAccountA = `act_${crypto.randomUUID().slice(0, 8)}`;
+
+  execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status)
+    VALUES ('${integrationA}', '${userA.userId}', 'local-test-token', 'active');
+
+    INSERT INTO meta_assets (id, integration_id, asset_type, asset_id, asset_name)
+    VALUES ('${assetA}', '${integrationA}', 'adaccount', '${adAccountA}', 'RLS Test Account');
+
+    INSERT INTO meta_sync_runs (id, user_id, integration_id, ad_account_id, graph_api_version, requested_period, status)
+    VALUES ('${runA}', '${userA.userId}', '${integrationA}', '${adAccountA}', 'v25.0', 'last_7d', 'success');
+
+    INSERT INTO meta_campaign_snapshots
+      (user_id, integration_id, ad_account_id, sync_run_id, campaign_id, campaign_name, meta_status, effective_status)
+    VALUES
+      ('${userA.userId}', '${integrationA}', '${adAccountA}', '${runA}', 'camp_rls', 'RLS Campaign', 'ACTIVE', 'ACTIVE');
+
+    INSERT INTO meta_adset_snapshots
+      (user_id, integration_id, ad_account_id, sync_run_id, campaign_id, adset_id, adset_name, meta_status, effective_status)
+    VALUES
+      ('${userA.userId}', '${integrationA}', '${adAccountA}', '${runA}', 'camp_rls', 'adset_rls', 'RLS Adset', 'ACTIVE', 'ACTIVE');
+
+    INSERT INTO meta_raw_snapshots
+      (user_id, integration_id, sync_run_id, ad_account_id, entity_level, entity_id, endpoint, payload)
+    VALUES
+      ('${userA.userId}', '${integrationA}', '${runA}', '${adAccountA}', 'campaign', 'camp_rls', '/insights', '{}');
+
+    INSERT INTO meta_normalized_metrics
+      (user_id, integration_id, sync_run_id, ad_account_id, campaign_id, metric_id, metric_value, source_level, completeness_status)
+    VALUES
+      ('${userA.userId}', '${integrationA}', '${runA}', '${adAccountA}', 'camp_rls', 'spend', 10, 'campaign', 'complete');
+  "`);
+
+  const restUrl = `${apiUrl}/rest/v1`;
+
+  async function request(path, token, options = {}) {
+    const response = await fetch(`${restUrl}/${path}`, {
+      ...options,
+      headers: {
+        apikey: anonKey,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+    const text = await response.text();
+    let body = null;
+    try { body = JSON.parse(text); } catch { body = text; }
+    return { response, body };
   }
-  assertEqual(Array.isArray(runsA) && runsA.length > 0, true, 'User A should see their runs');
 
-  console.log('Testing User B access...');
-  const runsB = await checkResource(tokenB, 'meta_sync_runs');
-  assertEqual(Array.isArray(runsB) && runsB.length, 0, 'User B should NOT see A runs');
-  
-  const snapsB = await checkResource(tokenB, 'meta_campaign_snapshots');
-  assertEqual(Array.isArray(snapsB) && snapsB.length, 0, 'User B should NOT see A campaign snapshots');
-  
-  const metricsB = await checkResource(tokenB, 'meta_normalized_metrics');
-  assertEqual(Array.isArray(metricsB) && metricsB.length, 0, 'User B should NOT see A metrics');
+  const resources = [
+    'meta_sync_runs',
+    'meta_campaign_snapshots',
+    'meta_adset_snapshots',
+    'meta_raw_snapshots',
+    'meta_normalized_metrics',
+  ];
 
-  console.log('Testing Anon access...');
-  const runsAnon = await checkResource(tokenAnon, 'meta_sync_runs');
-  console.log('Anon output:', runsAnon);
-  assertEqual(runsAnon.code === '401' || runsAnon.code === '42501' || runsAnon.code === '22P02' || (Array.isArray(runsAnon) && runsAnon.length === 0) || runsAnon.error === 'invalid_token', true, 'Anon should be rejected or see 0 runs depending on policy');
+  for (const resource of resources) {
+    const own = await request(`${resource}?select=id`, userA.token);
+    assertEqual(own.response.status, 200, `User A should query ${resource}`);
+    assert(Array.isArray(own.body) && own.body.length === 1, `User A should see one row in ${resource}`);
 
-  console.log('Testing RPC execution security...');
-  const rpcResAnon = await fetch(`${restUrl}/rpc/persist_meta_sync_run`, {
+    const foreign = await request(`${resource}?select=id`, userB.token);
+    assertEqual(foreign.response.status, 200, `User B query should be RLS-filtered for ${resource}`);
+    assert(Array.isArray(foreign.body) && foreign.body.length === 0, `User B should see zero rows in ${resource}`);
+
+    const anonymous = await request(`${resource}?select=id`, null);
+    assertEqual(anonymous.response.status, 200, `Anonymous query should be RLS-filtered for ${resource}`);
+    assert(Array.isArray(anonymous.body) && anonymous.body.length === 0, `Anonymous should see zero rows in ${resource}`);
+  }
+
+  const foreignAssetResponse = await fetch(`${apiUrl}/functions/v1/meta-sync-ads`, {
     method: 'POST',
     headers: {
-      'apikey': 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-      'Authorization': `Bearer ${tokenAnon}`,
-      'Content-Type': 'application/json'
+      apikey: anonKey,
+      Authorization: `Bearer ${userB.token}`,
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({})
+    body: JSON.stringify({ metaAssetId: assetA, periods: ['last_7d'] }),
   });
-  assertEqual(rpcResAnon.status === 404 || rpcResAnon.status === 401 || rpcResAnon.status === 403, true, 'Anon should not execute RPC');
+  assertEqual(foreignAssetResponse.status, 403, 'User B must not use User A asset');
 
-  const rpcResAuth = await fetch(`${restUrl}/rpc/persist_meta_sync_run`, {
+  const insertAttempt = await request('meta_sync_runs', userB.token, {
     method: 'POST',
-    headers: {
-      'apikey': 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-      'Authorization': `Bearer ${tokenA}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({})
+    body: JSON.stringify({
+      user_id: userB.userId,
+      integration_id: integrationA,
+      ad_account_id: adAccountA,
+      graph_api_version: 'v25.0',
+      requested_period: 'last_7d',
+      status: 'running',
+    }),
   });
-  assertEqual(rpcResAuth.status === 404 || rpcResAuth.status === 401 || rpcResAuth.status === 403, true, 'Authenticated should not execute RPC');
+  assert([401, 403].includes(insertAttempt.response.status), 'Authenticated users must not insert sync runs directly');
 
+  const updateAttempt = await request(`meta_sync_runs?id=eq.${runA}`, userB.token, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'failed' }),
+  });
+  assert([401, 403].includes(updateAttempt.response.status), 'Authenticated users must not update sync runs directly');
+
+  const privilegeOutput = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -t -A -F ',' -c "
+    SELECT
+      has_function_privilege('anon', p.oid, 'EXECUTE'),
+      has_function_privilege('authenticated', p.oid, 'EXECUTE'),
+      has_function_privilege('service_role', p.oid, 'EXECUTE')
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'persist_meta_sync_run';
+  "`).toString().trim();
+  assertEqual(privilegeOutput, 'f,f,t', 'RPC privileges must be anon=false, authenticated=false, service_role=true');
+
+  for (const token of [null, userA.token]) {
+    const rpcAttempt = await request('rpc/persist_meta_sync_run', token, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    assertEqual(rpcAttempt.response.status, 404, 'Restricted RPC should be hidden by PostgREST');
+    assertEqual(rpcAttempt.body?.code, 'PGRST202', 'Restricted RPC should return PGRST202');
+  }
+
+  const result = {
+    resources_checked: resources.length,
+    foreign_asset_status: foreignAssetResponse.status,
+    insert_status: insertAttempt.response.status,
+    update_status: updateAttempt.response.status,
+    rpc_privileges: privilegeOutput,
+  };
+  fs.writeFileSync(RESULT_FILE, JSON.stringify(result));
   console.log('✅ RLS and API Security validated');
 }
 
-run().catch(err => {
-  console.error('Test script failed:', err);
+run().catch((error) => {
+  fs.rmSync(RESULT_FILE, { force: true });
+  console.error('RLS API test failed:', error.message);
   process.exit(1);
 });
