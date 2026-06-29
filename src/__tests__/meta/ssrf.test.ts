@@ -11,6 +11,7 @@ describe('SSRF Protection in fetchMetaGraphPaginated', () => {
         get: vi.fn((key) => {
           if (key === 'META_BASE_URL') return 'https://graph.facebook.com';
           if (key === 'META_TEST_MODE') return 'false'; // simulate production environment
+          if (key === 'SUPABASE_ENVIRONMENT') return 'production';
           return undefined;
         })
       }

@@ -1,5 +1,5 @@
-// supabase/functions/_shared/meta-api.ts
-import { validateMetaPagingUrl } from './meta/ssr_validator.ts';
+import { validateMetaPagingUrl, type PagingValidationConfig } from './meta/ssr_validator.ts';
+import { getEnvVar } from './env_adapter.ts';
 
 // Helper function to generate appsecret_proof for Meta Graph API server-to-server calls
 // https://developers.facebook.com/docs/graph-api/security#appsecret_proof
@@ -21,10 +21,8 @@ export async function generateAppSecretProof(accessToken: string, appSecret: str
   return signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export const META_GRAPH_VERSION = // @ts-ignore
-    (typeof Deno !== "undefined" ? Deno.env.get : () => "")('META_GRAPH_VERSION') || 'v25.0';
-export const META_BASE_URL = // @ts-ignore
-    (typeof Deno !== "undefined" ? Deno.env.get : () => "")('META_BASE_URL') || `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+export const META_GRAPH_VERSION = getEnvVar('META_GRAPH_VERSION') || 'v25.0';
+export const META_BASE_URL = getEnvVar('META_BASE_URL') || `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 export interface MetaApiOptions {
   endpoint: string;
@@ -170,9 +168,18 @@ export async function fetchMetaGraphPaginated<T = any>(
     while (nextUrl && result.pagesFetched < maxPages && result.recordsFetched < maxRecords) {
       // Robust SSRF Defense & Paging Rebuild
       // Do not trust paging.next blindly. Validate it, extract cursor, and reconstruct it.
-      const env = Deno.env.get('META_BASE_URL')?.includes('localhost') || Deno.env.get('META_BASE_URL')?.includes('mock-graph') ? 'local' : 'production';
-      const validation = validateMetaPagingUrl(nextUrl, env);
+      const environment = getEnvVar('SUPABASE_ENVIRONMENT') === 'production' ? 'production' : 'local';
+      const isTestMode = getEnvVar('META_TEST_MODE') === 'true';
       
+      const config: PagingValidationConfig = {
+        environment,
+        testMode: isTestMode,
+        allowedProductionHosts: ['graph.facebook.com'],
+        allowedTestHosts: ['mock-graph', 'localhost', '127.0.0.1'],
+        allowedTestPorts: ['54321', '9999', '']
+      };
+
+      const validation = validateMetaPagingUrl(nextUrl, config);
       if (!validation.isValid) {
         throw new Error(`SSRF Blocked: ${validation.reason}`);
       }

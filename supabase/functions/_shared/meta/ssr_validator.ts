@@ -1,6 +1,14 @@
+export interface PagingValidationConfig {
+  environment: 'local' | 'production';
+  testMode: boolean;
+  allowedProductionHosts: string[];
+  allowedTestHosts: string[];
+  allowedTestPorts: string[];
+}
+
 export function validateMetaPagingUrl(
   urlStr: string,
-  environment: 'local' | 'production'
+  config: PagingValidationConfig
 ): { isValid: boolean; cursorAfter?: string; reason?: string } {
   try {
     const url = new URL(urlStr);
@@ -13,7 +21,7 @@ export function validateMetaPagingUrl(
       return { isValid: false, reason: 'Credentials embedded in URL' };
     }
 
-    if (url.protocol !== 'https:' && (environment === 'production' || url.protocol !== 'http:')) {
+    if (url.protocol !== 'https:' && (config.environment === 'production' || url.protocol !== 'http:')) {
       return { isValid: false, reason: 'Protocol must be HTTPS' };
     }
 
@@ -34,25 +42,27 @@ export function validateMetaPagingUrl(
       return { isValid: false, reason: 'IP literals are not permitted' };
     }
 
-    if (environment === 'local') {
-      const isTestMode = Deno.env.get('META_TEST_MODE') === 'true';
-      if (isTestMode) {
+    if (config.environment === 'local') {
+      if (config.testMode) {
         // In test mode, we allow mock-graph
-        if (hostname !== 'mock-graph' && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-           return { isValid: false, reason: 'Only mock-graph or localhost allowed in local test mode' };
+        if (!config.allowedTestHosts.includes(hostname)) {
+           return { isValid: false, reason: `Host ${hostname} not allowed in local test mode` };
+        }
+        if (url.port && !config.allowedTestPorts.includes(url.port)) {
+           return { isValid: false, reason: `Port ${url.port} not allowed in local test mode` };
         }
         return { isValid: true, cursorAfter };
       }
     } else {
       // In production, META_TEST_MODE cannot be true
-      if (Deno.env.get('META_TEST_MODE') === 'true') {
+      if (config.testMode) {
         return { isValid: false, reason: 'META_TEST_MODE is forbidden in production environment' };
       }
     }
 
     // Strict Production Check
-    if (hostname !== 'graph.facebook.com') {
-      return { isValid: false, reason: 'Hostname must be exactly graph.facebook.com' };
+    if (!config.allowedProductionHosts.includes(hostname)) {
+      return { isValid: false, reason: `Hostname must be exactly one of: ${config.allowedProductionHosts.join(', ')}` };
     }
     
     if (url.port && url.port !== '443') {
