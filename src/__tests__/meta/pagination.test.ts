@@ -1,8 +1,15 @@
 // @ts-nocheck
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchMetaGraphPaginated } from '../../../supabase/functions/_shared/meta-api';
 
 describe('Pagination & Retry', () => {
+  beforeEach(() => {
+    vi.stubGlobal('Deno', {
+      env: {
+        get: vi.fn(() => 'https://graph.facebook.com')
+      }
+    });
+  });
   it('handles partial state when next page fetch fails', async () => {
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation(() => {

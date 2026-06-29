@@ -1,4 +1,5 @@
 // supabase/functions/_shared/meta-api.ts
+import { validateMetaPagingUrl } from './meta/ssr_validator.ts';
 
 // Helper function to generate appsecret_proof for Meta Graph API server-to-server calls
 // https://developers.facebook.com/docs/graph-api/security#appsecret_proof
@@ -164,11 +165,30 @@ export async function fetchMetaGraphPaginated<T = any>(
     }
 
     let nextUrl = currentData.paging?.next;
+    let nextCursor = currentData.paging?.cursors?.after;
 
     while (nextUrl && result.pagesFetched < maxPages && result.recordsFetched < maxRecords) {
+      // Robust SSRF Defense & Paging Rebuild
+      // Do not trust paging.next blindly. Validate it, extract cursor, and reconstruct it.
+      const env = Deno.env.get('META_BASE_URL')?.includes('localhost') || Deno.env.get('META_BASE_URL')?.includes('mock-graph') ? 'local' : 'production';
+      const validation = validateMetaPagingUrl(nextUrl, env);
+      
+      if (!validation.isValid) {
+        throw new Error(`SSRF Blocked: ${validation.reason}`);
+      }
+      
+      const afterCursor = validation.cursorAfter || nextCursor;
+      if (!afterCursor) {
+        // Without a cursor, we cannot reconstruct the URL safely.
+        break;
+      }
+      
+      // Reconstruct the URL securely
+      const safeParams = { ...options.params, after: afterCursor };
+      
       currentData = await fetchMetaGraph({
         ...options,
-        rawUrl: nextUrl
+        params: safeParams
       });
       
       result.pagesFetched++;
@@ -179,6 +199,7 @@ export async function fetchMetaGraphPaginated<T = any>(
       }
       
       nextUrl = currentData.paging?.next;
+      nextCursor = currentData.paging?.cursors?.after;
     }
 
     if (nextUrl) {
