@@ -23,8 +23,7 @@ import {
 } from '../_shared/meta/aggregation.ts';
 
 interface SyncRequestBody {
-  adAccountId?: string;
-  syncRunId?: string;
+  metaAssetId?: string;
   periods?: string[];
 }
 
@@ -68,26 +67,41 @@ export async function handleRequest(req: Request) {
     userId = auth.user.id;
     supabaseClient = auth.adminClient;
 
-    const body = await req.json() as SyncRequestBody;
-    const adAccountId = body.adAccountId?.trim();
+    const body = await req.json() as SyncRequestBody & { syncRunId?: string };
+    const metaAssetId = body.metaAssetId?.trim();
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
-    usedRunId = body.syncRunId || generatedRunId;
+      
+    if (body.syncRunId) {
+      throw new HttpError('O parâmetro syncRunId não é permitido. O sistema o gera exclusivamente.', 400);
+    }
+    usedRunId = generatedRunId;
 
-    if (!adAccountId) throw new HttpError('adAccountId is required', 400);
-    if (!/^[0-9a-f-]{36}$/i.test(usedRunId)) throw new HttpError('syncRunId must be a UUID', 400);
+    if (!metaAssetId) throw new HttpError('metaAssetId is required', 400);
 
-    const { data: integration, error: integrationError } = await supabaseClient
-      .from('meta_integrations')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
+    const { data: asset, error: assetError } = await supabaseClient
+      .from('meta_assets')
+      .select('*, meta_integrations!inner(*)')
+      .eq('id', metaAssetId)
+      .eq('asset_type', 'adaccount')
       .single();
 
-    if (integrationError || !integration) {
-      throw new HttpError('No active Meta integration found', 409);
+    if (assetError || !asset) {
+      console.error('Failed to fetch asset:', assetError);
+      throw new HttpError('Asset não localizado ou inválido para esta operação', 403);
     }
+
+    if (asset.meta_integrations.user_id !== userId) {
+      throw new HttpError('Integração não pertence ao usuário', 403);
+    }
+
+    if (asset.meta_integrations.status !== 'active') {
+      throw new HttpError('A integração não está ativa', 403);
+    }
+
+    const integration = asset.meta_integrations;
+    const adAccountId = asset.asset_id;
 
     const accessToken = await decryptToken(integration.access_token_encrypted);
     const appSecret = Deno.env.get('META_APP_SECRET');
@@ -347,12 +361,39 @@ export async function handleRequest(req: Request) {
         attributionGroupsByPeriod[period] = analytics.attributionGroups;
         completenessByPeriod[period] = analytics.completeness;
         mixedAttributionByPeriod[period] = analytics.mix.effectiveMixedAttribution;
-        overallCompletenessByPeriod[period] = mergeCompletenessStatuses([
-          overallCompletenessByPeriod[period] || 'complete',
-          analytics.completeness.status,
-        ]);
+        overallCompletenessByPeriod[period] = overallCompletenessByPeriod[period]
+          ? mergeCompletenessStatuses([overallCompletenessByPeriod[period], analytics.completeness.status])
+          : analytics.completeness.status;
 
         const persistAtAdsetLevel = requiresAdsetInsights.has(campaign.id);
+        
+        // ALWAYS persist global campaign metrics
+        if (campaignInsight) {
+          const globalNormalized = normalizeMetaMetrics(
+            [campaignInsight],
+            classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
+            campaign.id
+          );
+          Object.entries(globalNormalized).forEach(([metricId, result]) => {
+            p_normalized_metrics.push({
+              campaign_id: campaign.id,
+              adset_id: null,
+              metric_id: metricId,
+              metric_value: result.value,
+              action_type: result.metadata.action_types?.join(',') || null,
+              source_field: result.metadata.source_field || null,
+              date_start: campaignInsight.date_start || null,
+              date_stop: campaignInsight.date_stop || null,
+              timezone: timezone === 'UNKNOWN' ? null : timezone,
+              attribution_setting: campaignAdsets[0]?.attribution_setting || null,
+              source_level: 'campaign', // explicitly global
+              completeness_status: collectionStatusByPeriod[period].campaign, // strictly the campaign completion status
+              calculation_metadata: result.metadata,
+            });
+          });
+        }
+
+        // ALSO persist adset metrics if it's mixed destination/objective/attribution
         if (persistAtAdsetLevel) {
           for (const insight of adsetInsights) {
             const adset = campaignAdsets.find((candidate) => candidate.id === insight.adset_id);
@@ -379,35 +420,12 @@ export async function handleRequest(req: Request) {
                 date_stop: insight.date_stop || null,
                 timezone: timezone === 'UNKNOWN' ? null : timezone,
                 attribution_setting: adset.attribution_setting || null,
-                source_level: analytics.completeness.sourceLevel,
-                completeness_status: analytics.completeness.status,
+                source_level: 'adset', // explicitly adset
+                completeness_status: collectionStatusByPeriod[period].adset, // strictly the adset completion status
                 calculation_metadata: result.metadata,
               });
             });
           }
-        } else if (campaignInsight) {
-          const normalized = normalizeMetaMetrics(
-            [campaignInsight],
-            classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
-            campaign.id
-          );
-          Object.entries(normalized).forEach(([metricId, result]) => {
-            p_normalized_metrics.push({
-              campaign_id: campaign.id,
-              adset_id: null,
-              metric_id: metricId,
-              metric_value: result.value,
-              action_type: result.metadata.action_types?.join(',') || null,
-              source_field: result.metadata.source_field || null,
-              date_start: campaignInsight.date_start || null,
-              date_stop: campaignInsight.date_stop || null,
-              timezone: timezone === 'UNKNOWN' ? null : timezone,
-              attribution_setting: campaignAdsets[0]?.attribution_setting || null,
-              source_level: analytics.completeness.sourceLevel,
-              completeness_status: analytics.completeness.status,
-              calculation_metadata: result.metadata,
-            });
-          });
         }
 
         trendSignatures.push({
@@ -465,10 +483,10 @@ export async function handleRequest(req: Request) {
         p_user_id: userId,
         p_integration_id: integration.id,
         p_ad_account_id: adAccountId,
-        p_status: syncStatus,
+        p_final_status: syncStatus,
         p_raw_snapshots: p_raw_snapshots,
-        p_historical_campaigns: p_historical_campaigns,
-        p_historical_adsets: p_historical_adsets,
+        p_campaign_entities: p_historical_campaigns,
+        p_adset_entities: p_historical_adsets,
         p_normalized_metrics: p_normalized_metrics,
         p_metadata: p_metadata,
         p_pages_fetched: totalPagesFetched,

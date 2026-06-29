@@ -24,28 +24,19 @@ serve(async (req) => {
       throw new HttpError('Code or State missing in URL parameters', 400);
     }
 
-    // 1. Verify state hash in database
+    // 1. Hash the incoming state
+    const msgUint8 = new TextEncoder().encode(state);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+    const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // 2. Consume via Atomic RPC
     const { data: stateData, error: stateError } = await supabaseClient
-      .from('meta_oauth_states')
-      .select('*')
-      .eq('state_hash', state)
-      .is('used_at', null)
+      .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
       .single();
 
     if (stateError || !stateData) {
-      throw new HttpError('Invalid or expired state parameter', 400);
+      throw new HttpError('Invalid, expired, or already used state parameter', 400);
     }
-
-    // Verify expiration
-    if (new Date() > new Date(stateData.expires_at)) {
-      throw new HttpError('Invalid or expired state parameter', 400);
-    }
-
-    // Mark as used
-    await supabaseClient
-      .from('meta_oauth_states')
-      .update({ used_at: new Date().toISOString() })
-      .eq('id', stateData.id);
 
     // 2. Exchange code for user access token
     const appId = Deno.env.get('META_APP_ID');

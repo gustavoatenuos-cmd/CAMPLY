@@ -41,15 +41,33 @@ export async function requireAuthenticatedUser(req: Request) {
   }
 }
 
-export function errorResponse(error: unknown, headers: Record<string, string>) {
+export function errorResponse(error: unknown, headers: Record<string, string>, runId: string | null = null, code: string = 'META_PERSISTENCE_FAILED') {
   const status = error instanceof HttpError ? error.status : 500
-  const message = error instanceof HttpError ? error.message : 'Unexpected server error'
-
-  if (!(error instanceof HttpError)) {
-    console.error('Unhandled Edge Function error', error)
+  let message = 'An unexpected error occurred';
+  
+  if (error instanceof HttpError) {
+    // Only pass through 400s or non-500s directly if they are explicitly safe.
+    // For 500s, mask them to avoid leaking DB or Meta details.
+    if (status >= 500) {
+      console.error(`[${runId || 'NO_RUN_ID'}] Masked 500 Error:`, error.message);
+      message = 'Não foi possível concluir a sincronização.';
+    } else {
+      message = error.message;
+    }
+  } else {
+    console.error(`[${runId || 'NO_RUN_ID'}] Unhandled Edge Function error:`, error);
+    message = 'Não foi possível concluir a sincronização.';
   }
 
-  return new Response(JSON.stringify({ error: message, isError: true }), {
+  return new Response(JSON.stringify({
+    success: false,
+    status: 'failed',
+    runId: runId,
+    error: {
+      code,
+      message,
+    }
+  }), {
     status,
     headers: { ...headers, 'Content-Type': 'application/json' },
   })
