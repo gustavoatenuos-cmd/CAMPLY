@@ -58,6 +58,8 @@ mv supabase/migrations/20260627000007_* /tmp/camply_migrations/ 2>/dev/null || t
 mv supabase/migrations/20260627000008_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000009_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000010_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000011_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000012_* /tmp/camply_migrations/ 2>/dev/null || true
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."
@@ -110,12 +112,22 @@ META_BASE_URL="http://mock-graph:9999" npx supabase functions serve meta-sync-ad
 FUNCTION_PID=$!
 sleep 5
 
-echo "Rodando script E2E NodeJS 3 vezes para validar ausência de 502 / side-effects..."
-for i in {1..3}; do
-  echo ">>> EXECUÇÃO E2E #$i <<<"
-  curl -s http://localhost:9999/reset > /dev/null
-  node scripts/test-edge-e2e.cjs
-done
+# RLS / OAuth
+node scripts/test-rls-api.cjs
+if [ $? -ne 0 ]; then
+  echo "RLS API test failed"
+  cleanup
+  exit 1
+fi
+node scripts/test-oauth-concurrent.cjs
+if [ $? -ne 0 ]; then
+  echo "OAuth Concurrent test failed"
+  cleanup
+  exit 1
+fi
+
+echo "9. Rodando script E2E NodeJS..."
+node scripts/test-edge-e2e.cjs
 
 # 9. Executar lint, testes e build
 echo "9. Executando Lint..."

@@ -51,28 +51,17 @@ function getExponentialBackoffWithJitter(attempt: number, baseMs = 1000, maxMs =
   return backoff + jitter;
 }
 
-export async function fetchMetaGraph(options: MetaApiOptions & { rawUrl?: string }) {
-  const { endpoint, method = 'GET', accessToken, appSecret, params = {}, body, timeoutMs = 15000, rawUrl } = options;
+export async function fetchMetaGraph(options: MetaApiOptions) {
+  const { endpoint, method = 'GET', accessToken, appSecret, params = {}, body, timeoutMs = 15000 } = options;
   
-  let urlStr = rawUrl;
-  if (!urlStr) {
-    const appsecret_proof = await generateAppSecretProof(accessToken, appSecret);
-    const url = new URL(`${META_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`);
-    url.searchParams.append('appsecret_proof', appsecret_proof);
-    
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.append(key, value);
-    }
-    urlStr = url.toString();
-  } else {
-    // rawUrl already has paging parameters, but we must assure appsecret_proof is present if not
-    const url = new URL(urlStr);
-    if (!url.searchParams.has('appsecret_proof')) {
-       const appsecret_proof = await generateAppSecretProof(accessToken, appSecret);
-       url.searchParams.append('appsecret_proof', appsecret_proof);
-    }
-    urlStr = url.toString();
+  const appsecret_proof = await generateAppSecretProof(accessToken, appSecret);
+  const url = new URL(`${META_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`);
+  url.searchParams.append('appsecret_proof', appsecret_proof);
+  
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.append(key, value);
   }
+  const urlStr = url.toString();
 
   const fetchOptions: RequestInit = {
     method,

@@ -28,6 +28,9 @@ serve(async (req) => {
     const msgUint8 = new TextEncoder().encode(state);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
     const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    console.log('Incoming state:', state);
+    console.log('Generated hash:', stateHash);
 
     // 2. Consume via Atomic RPC
     const { data: stateData, error: stateError } = await supabaseClient
@@ -35,6 +38,7 @@ serve(async (req) => {
       .single();
 
     if (stateError || !stateData) {
+      console.log('RPC Error:', stateError);
       throw new HttpError('Invalid, expired, or already used state parameter', 400);
     }
 
@@ -136,6 +140,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    return errorResponse(error, corsHeaders)
+    return errorResponse(error, corsHeaders, null, 'META_OAUTH_FAILED');
   }
 })

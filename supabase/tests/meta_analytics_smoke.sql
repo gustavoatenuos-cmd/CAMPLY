@@ -96,3 +96,50 @@ SELECT
   'meta_analytics_schema_ok' AS check_name,
   current_database() AS database_name,
   now() AS checked_at;
+
+-- Functional Immutability & Constraint Checks
+DO $$
+DECLARE
+  v_user_id UUID := gen_random_uuid();
+  v_integration_id UUID := gen_random_uuid();
+  v_run_id UUID := gen_random_uuid();
+  v_ad_account_id TEXT := 'act_smoke_123';
+  v_campaign_snapshot_id UUID := gen_random_uuid();
+BEGIN
+  -- 1. Setup mock context
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES (v_user_id, 'smoke@camply.test', '{}');
+  INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES (v_integration_id, v_user_id, 'token', 'active');
+  INSERT INTO meta_sync_runs (id, user_id, integration_id, ad_account_id, graph_api_version, requested_period, run_scope)
+  VALUES (v_run_id, v_user_id, v_integration_id, v_ad_account_id, 'v20.0', 'last_7d', 'full_account');
+
+  -- 2. Insert campaign snapshot
+  INSERT INTO public.meta_campaign_snapshots (id, sync_run_id, user_id, integration_id, ad_account_id, campaign_id, campaign_name, meta_status, effective_status)
+  VALUES (v_campaign_snapshot_id, v_run_id, v_user_id, v_integration_id, v_ad_account_id, 'camp_smoke', 'Smoke', 'ACTIVE', 'ACTIVE');
+
+  -- 3. Block Update test
+  BEGIN
+    UPDATE public.meta_campaign_snapshots SET campaign_name = 'tampered' WHERE id = v_campaign_snapshot_id;
+    RAISE EXCEPTION 'Snapshot UPDATE was not blocked!';
+  EXCEPTION WHEN OTHERS THEN
+    -- Expected Exception
+  END;
+
+  -- 4. Block Direct Delete test
+  BEGIN
+    DELETE FROM public.meta_campaign_snapshots WHERE id = v_campaign_snapshot_id;
+    RAISE EXCEPTION 'Snapshot direct DELETE was not blocked!';
+  EXCEPTION WHEN OTHERS THEN
+    -- Expected Exception
+  END;
+
+  -- 5. Cascade Delete test (should work)
+  DELETE FROM public.meta_sync_runs WHERE id = v_run_id;
+  IF EXISTS (SELECT 1 FROM public.meta_campaign_snapshots WHERE id = v_campaign_snapshot_id) THEN
+    RAISE EXCEPTION 'Snapshot CASCADE delete failed!';
+  END IF;
+
+  -- Cleanup
+  DELETE FROM meta_integrations WHERE id = v_integration_id;
+  DELETE FROM auth.users WHERE id = v_user_id;
+
+END $$;

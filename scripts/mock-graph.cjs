@@ -35,9 +35,8 @@ const server = http.createServer((req, res) => {
 
   if (!requestCounts[accountId]) requestCounts[accountId] = 0;
   
-  if (path.includes('/insights')) {
-     requestCounts[accountId]++;
-  }
+  // Increment for all paths so rate limit recovers after 3 tries
+  requestCounts[accountId]++;
 
   let date_start = '2026-06-27';
   let date_stop = '2026-06-27';
@@ -79,7 +78,7 @@ const server = http.createServer((req, res) => {
     setTimeout(() => {
       res.statusCode = 504;
       res.end(JSON.stringify({ error: { message: "Gateway Timeout" } }));
-    }, 15000); // 15s timeout
+    }, 100); // 100ms timeout
     return;
   }
 

@@ -146,6 +146,7 @@ export async function handleRequest(req: Request) {
       timezone: timezone === 'UNKNOWN' ? null : timezone,
       currency: currency === 'UNKNOWN' ? null : currency,
       status: 'running',
+      run_scope: (selectedCampaigns && selectedCampaigns.length > 0) ? 'selected_campaigns' : 'full_account',
     });
     if (runError) throw new HttpError(`Failed to create sync run: ${runError.message}`, 500);
 
@@ -295,9 +296,15 @@ export async function handleRequest(req: Request) {
         }
       }
 
-      campaignInsightsByPeriod[period] = campaignInsightsResult.data;
+      let filteredCampaignInsights = campaignInsightsResult.data;
+      if (selectedCampaigns && selectedCampaigns.length > 0) {
+        filteredCampaignInsights = filteredCampaignInsights.filter((row) => selectedCampaigns.includes(row.campaign_id));
+      }
+      campaignInsightsByPeriod[period] = filteredCampaignInsights;
+      
       adsetInsightsByPeriod[period] = adsetInsightsResult.data.filter((row) =>
-        row.campaign_id && requiresAdsetInsights.has(row.campaign_id)
+        row.campaign_id && requiresAdsetInsights.has(row.campaign_id) && 
+        (!selectedCampaigns || selectedCampaigns.length === 0 || selectedCampaigns.includes(row.campaign_id))
       );
       collectionStatusByPeriod[period] = {
         campaign: mergeCompletenessStatuses([
