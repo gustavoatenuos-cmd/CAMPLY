@@ -1,0 +1,48 @@
+name: Meta Analytics E2E
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'supabase/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e-meta.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: meta-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-supabase-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Make validation scripts executable
+        run: chmod +x scripts/validate-meta-local.sh scripts/validate-meta-e2e-once.sh
+
+      - name: Run isolated Meta E2E validation three times
+        run: ./scripts/validate-meta-local.sh
+
+      - name: Cleanup local Supabase
+        if: always()
+        run: |
+          npx supabase stop --no-backup || true
+          docker rm -f camply-mock-graph || true
