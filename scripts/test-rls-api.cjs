@@ -111,8 +111,8 @@ async function run() {
     assert(Array.isArray(foreign.body) && foreign.body.length === 0, `User B should see zero rows in ${resource}`);
 
     const anonymous = await request(`${resource}?select=id`, null);
-    assertEqual(anonymous.response.status, 200, `Anonymous query should be RLS-filtered for ${resource}`);
-    assert(Array.isArray(anonymous.body) && anonymous.body.length === 0, `Anonymous should see zero rows in ${resource}`);
+    assert([401, 403].includes(anonymous.response.status), `Anonymous should be denied for ${resource}`);
+    assertEqual(anonymous.body?.code, '42501', `Anonymous denial code for ${resource}`);
   }
 
   const foreignAssetResponse = await fetch(`${apiUrl}/functions/v1/meta-sync-ads`, {
@@ -138,12 +138,14 @@ async function run() {
     }),
   });
   assert([401, 403].includes(insertAttempt.response.status), 'Authenticated users must not insert sync runs directly');
+  assertEqual(insertAttempt.body?.code, '42501', 'Insert denial code');
 
   const updateAttempt = await request(`meta_sync_runs?id=eq.${runA}`, userB.token, {
     method: 'PATCH',
     body: JSON.stringify({ status: 'failed' }),
   });
   assert([401, 403].includes(updateAttempt.response.status), 'Authenticated users must not update sync runs directly');
+  assertEqual(updateAttempt.body?.code, '42501', 'Update denial code');
 
   const privilegeOutput = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -t -A -F ',' -c "
     SELECT
