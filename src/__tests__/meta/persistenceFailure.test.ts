@@ -104,6 +104,21 @@ describe('Persistence Failure Handling through Orchestrator', () => {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
         single: vi.fn().mockImplementation(() => {
+          if (table === 'meta_assets') {
+            return Promise.resolve({
+              data: {
+                id: 'act_123',
+                asset_id: 'act_mock_account',
+                meta_integrations: {
+                  id: 'int_123',
+                  user_id: 'user_123',
+                  status: 'active',
+                  access_token_encrypted: 'abc'
+                }
+              },
+              error: null
+            });
+          }
           if (table === 'meta_integrations') {
             return Promise.resolve({ data: { access_token_encrypted: 'abc' }, error: null });
           }
@@ -142,7 +157,7 @@ describe('Persistence Failure Handling through Orchestrator', () => {
       adminClient: supabaseClient
     });
 
-    const req = createMockRequest({ adAccountId: 'act_123', periods: ['today'] });
+    const req = createMockRequest({ metaAssetId: 'act_123', periods: ['today'] });
     const response = await handleRequest(req);
     return { response, json: await response.json(), supabaseClient };
   };
