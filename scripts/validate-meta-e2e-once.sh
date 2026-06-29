@@ -3,162 +3,111 @@ set -euo pipefail
 
 echo "=== VALIDAÇÃO LOCAL DO META ANALYTICS ENGINE ==="
 
-FUNCTION_PID=""
 MOCK_CONTAINER_NAME="camply-mock-graph"
+MIGRATION_TMP_DIR="$(mktemp -d /tmp/camply_migrations.XXXXXX)"
 
 cleanup() {
   echo "--- Executando cleanup ---"
-  
-  if ls /tmp/camply_migrations/*.sql 1> /dev/null 2>&1; then
-    echo "Restaurando migrations temporárias..."
-    mv /tmp/camply_migrations/*.sql supabase/migrations/ || true
+
+  if compgen -G "$MIGRATION_TMP_DIR/*.sql" > /dev/null; then
+    mv "$MIGRATION_TMP_DIR"/*.sql supabase/migrations/ || true
   fi
-  
-  echo "Encerrando Mock API Container ($MOCK_CONTAINER_NAME)..."
-  docker stop "$MOCK_CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$MOCK_CONTAINER_NAME" 2>/dev/null || true
-  
-  if [[ -n "$FUNCTION_PID" ]]; then
-    echo "Encerrando Edge Function (PID $FUNCTION_PID)..."
-    kill "$FUNCTION_PID" 2>/dev/null || true
-  fi
+  rm -rf "$MIGRATION_TMP_DIR"
+
+  docker stop "$MOCK_CONTAINER_NAME" >/dev/null 2>&1 || true
+  docker rm "$MOCK_CONTAINER_NAME" >/dev/null 2>&1 || true
+  npx supabase stop --no-backup >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT INT TERM
 
-# 1. Confirmar que não existe projeto remoto linkado
 if [[ -s supabase/.temp/project-ref ]]; then
   echo "Erro: existe um projeto Supabase remoto linkado."
   exit 1
 fi
 
-echo "1. Nenhum projeto remoto linkado."
-
-# 1.5. Prepare environment variables for local testing
 cat << 'EOF' > supabase/functions/.env
 META_TEST_MODE=true
 META_API_ENV=local
 TEST_TIMEOUT_MS=100
 TEST_MAX_RETRIES=2
 TEST_BACKOFF_MS=50
-META_APP_ID=123
-META_APP_SECRET=abc
+META_APP_ID=local-test-app
+META_APP_SECRET=local-test-value
 APP_BASE_URL=http://localhost:3000
 META_BASE_URL=http://mock-graph:9999
-META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
+META_TOKEN_ENCRYPTION_KEY=local-test-encryption-value
 EOF
 
-# 2. Iniciar o Supabase local
-echo "2. Iniciando Supabase local..."
+npx supabase stop --no-backup >/dev/null 2>&1 || true
 npx supabase start
 
-# Descobrir a rede do Supabase
-SUPABASE_NETWORK=$(docker network ls --filter name=supabase -q | head -n 1)
-if [[ -z "$SUPABASE_NETWORK" ]]; then
-  echo "Erro: Rede do Supabase não encontrada."
-  exit 1
+SUPABASE_NETWORK_NAME="$(docker inspect supabase_edge_runtime_camply --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' 2>/dev/null || true)"
+if [[ -z "$SUPABASE_NETWORK_NAME" ]]; then
+  SUPABASE_NETWORK_ID="$(docker network ls --filter name=supabase -q | head -n 1)"
+  SUPABASE_NETWORK_NAME="$(docker network inspect "$SUPABASE_NETWORK_ID" -f '{{.Name}}')"
 fi
-SUPABASE_NETWORK_NAME=$(docker network inspect $SUPABASE_NETWORK -f '{{.Name}}')
-echo "Rede Supabase detectada: $SUPABASE_NETWORK_NAME"
 
-# 3. Mover migrations temporariamente
-echo "3. Preparando teste de migration incremental..."
-mkdir -p /tmp/camply_migrations
-mv supabase/migrations/20260627000003_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000004_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000005_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000006_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000007_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000008_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000009_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000010_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000011_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000012_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000013_* /tmp/camply_migrations/ 2>/dev/null || true
+for version in 03 04 05 06 07 08 09 10 11 12 13 14; do
+  mv supabase/migrations/202606270000${version}_* "$MIGRATION_TMP_DIR"/ 2>/dev/null || true
+done
 
-# 4. db reset
-echo "4. Executando db reset (até migration 2)..."
 npx supabase db reset
+PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/fixtures_legacy.sql
 
-# 5. Aplicar fixtures legadas
-echo "5. Aplicando fixtures legadas (antes da migration 3)..."
-PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres < supabase/tests/fixtures_legacy.sql
-
-# 6. Devolver migrations e aplicar
-echo "6. Aplicando migrations >= 3..."
-mv /tmp/camply_migrations/*.sql supabase/migrations/ 2>/dev/null || true
+if compgen -G "$MIGRATION_TMP_DIR/*.sql" > /dev/null; then
+  mv "$MIGRATION_TMP_DIR"/*.sql supabase/migrations/
+fi
 npx supabase migration up --include-all
 
-# 7. Executar smoke test (RLS, constraints, etc sem usar GRANT ALL na psql)
-echo "7. Executando Smoke Test SQL..."
 PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/meta_analytics_smoke.sql
 
-# 8. E2E: Iniciar Mock Container
-echo "8. E2E HTTP Edge Function..."
-echo "Limpando container mock órfão se existir..."
-docker stop "$MOCK_CONTAINER_NAME" 2>/dev/null || true
-docker rm "$MOCK_CONTAINER_NAME" 2>/dev/null || true
-
-echo "Iniciando Mock Graph API via Docker..."
+docker rm -f "$MOCK_CONTAINER_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$MOCK_CONTAINER_NAME" \
   --network "$SUPABASE_NETWORK_NAME" \
   --network-alias mock-graph \
-  -v "$(pwd)/scripts:/scripts" \
+  -v "$(pwd)/scripts:/scripts:ro" \
   -p 9999:9999 \
   -e MOCK_PORT=9999 \
   -e MOCK_HOST="mock-graph:9999" \
-  node:18 node /scripts/mock-graph.cjs
+  node:18 node /scripts/mock-graph.cjs >/dev/null
 
-echo "Aguardando Mock API ficar saudável..."
-TIMEOUT=30
-until curl -s http://localhost:9999/health > /dev/null; do
-  sleep 1
-  ((TIMEOUT--))
-  if [[ $TIMEOUT -le 0 ]]; then
-    echo "Erro: Mock API não respondeu após 30 segundos."
-    docker logs "$MOCK_CONTAINER_NAME"
-    exit 1
-  fi
-done
-echo "Mock API está saudável."
+wait_for_http() {
+  local description="$1"
+  local endpoint="$2"
+  local method="${3:-GET}"
+  local remaining=30
 
-echo "Aguardando Edge Functions (mock) ficarem saudáveis..."
-TIMEOUT=30
-until curl -s -f http://localhost:54321/functions/v1/meta-sync-ads -X OPTIONS > /dev/null && curl -s -f http://localhost:54321/functions/v1/meta-oauth-callback -X OPTIONS > /dev/null; do
-  sleep 1
-  ((TIMEOUT--))
-  if [[ $TIMEOUT -le 0 ]]; then
-    echo "Erro: Edge Functions não responderam após 30 segundos."
-    exit 1
-  fi
-done
-echo "Edge Functions estão saudáveis."
+  until curl -sS -f -X "$method" "$endpoint" >/dev/null 2>&1; do
+    sleep 1
+    remaining=$((remaining - 1))
+    if [[ "$remaining" -le 0 ]]; then
+      echo "Erro: $description não respondeu após 30 segundos."
+      docker logs "$MOCK_CONTAINER_NAME" 2>/dev/null || true
+      exit 1
+    fi
+  done
+}
 
-# RLS / OAuth
+wait_for_http "Mock API" "http://127.0.0.1:9999/health"
+wait_for_http "meta-sync-ads" "http://127.0.0.1:54321/functions/v1/meta-sync-ads" "OPTIONS"
+wait_for_http "meta-oauth-callback" "http://127.0.0.1:54321/functions/v1/meta-oauth-callback" "OPTIONS"
+
+rm -f /tmp/camply-oauth-result.json /tmp/camply-rls-result.json
 node scripts/test-rls-api.cjs
-if [ $? -ne 0 ]; then
-  echo "RLS API test failed"
-  cleanup
-  exit 1
-fi
 node scripts/test-oauth-concurrent.cjs
-if [ $? -ne 0 ]; then
-  echo "OAuth Concurrent test failed"
-  cleanup
-  exit 1
-fi
-
-echo "9. Rodando script E2E NodeJS..."
 node scripts/test-edge-e2e.cjs
 
-# 9. Executar lint, testes e build
-echo "9. Executando Lint..."
 npm run lint
-
-echo "10. Executando Testes Unitários..."
 npm test
-
-echo "11. Executando Build..."
 npm run build
+
+cleanup
+trap - EXIT INT TERM
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$MOCK_CONTAINER_NAME"; then
+  echo "Erro: container mock órfão após cleanup."
+  exit 1
+fi
 
 echo "=== VALIDAÇÃO LOCAL CONCLUÍDA COM SUCESSO! ==="
