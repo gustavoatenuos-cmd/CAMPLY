@@ -1,41 +1,54 @@
 const fs = require('fs');
 const crypto = require('crypto');
 
+function readEncryptionKey() {
+  if (process.env.META_TOKEN_ENCRYPTION_KEY) {
+    return process.env.META_TOKEN_ENCRYPTION_KEY;
+  }
+
+  for (const file of ['supabase/functions/.env', 'supabase/.env.local']) {
+    try {
+      const contents = fs.readFileSync(file, 'utf8');
+      const match = contents.match(/^META_TOKEN_ENCRYPTION_KEY=(.+)$/m);
+      if (match?.[1]) return match[1].trim();
+    } catch {
+      // Continue to the next local environment source.
+    }
+  }
+
+  throw new Error('META_TOKEN_ENCRYPTION_KEY was not found in the local test environment.');
+}
+
 async function run() {
-  let env = '';
-  try {
-    env = fs.readFileSync('supabase/.env.local', 'utf8');
-  } catch(e) {}
-  
-  const match = env.match(/META_TOKEN_ENCRYPTION_KEY=([^\n]+)/);
-  const keyString = match ? match[1].trim() : 'super-secret-meta-encryption-key-that-is-at-least-32-chars-long';
+  const algorithm = 'AES-GCM';
+  const token = process.argv[2];
+  if (!token) throw new Error('A token value is required.');
 
-  const ALGORITHM = 'AES-GCM';
-  const token = process.argv[2] || 'mock_token';
-
-  const keyMaterial = new TextEncoder().encode(keyString);
+  const keyMaterial = new TextEncoder().encode(readEncryptionKey());
   const hash = await crypto.subtle.digest('SHA-256', keyMaterial);
-
   const key = await crypto.subtle.importKey(
     'raw',
     hash,
-    { name: ALGORITHM },
+    { name: algorithm },
     false,
-    ['encrypt', 'decrypt']
+    ['encrypt'],
   );
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encodedText = new TextEncoder().encode(token);
-
-  const encryptedBuf = await crypto.subtle.encrypt(
-    { name: ALGORITHM, iv: iv.buffer },
+  const encrypted = await crypto.subtle.encrypt(
+    { name: algorithm, iv: iv.buffer },
     key,
-    encodedText
+    new TextEncoder().encode(token),
   );
 
-  const bytesToHex = (bytes) => Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-  
-  console.log(bytesToHex(iv) + ':' + bytesToHex(new Uint8Array(encryptedBuf)));
+  const toHex = (bytes) => Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+  console.log(`${toHex(iv)}:${toHex(new Uint8Array(encrypted))}`);
 }
 
-run();
+run().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});

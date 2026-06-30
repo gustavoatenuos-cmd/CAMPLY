@@ -150,14 +150,14 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     };
   };
 
-  const runScenario = async (failConfig?: { target: string }) => {
+  const runScenario = async (failConfig?: { target: string }, body = { metaAssetId: 'act_123', periods: ['today'] }) => {
     const supabaseClient = createMockSupabase(failConfig);
     requireAuthenticatedUser.mockResolvedValue({
       user: { id: 'user_123' },
       adminClient: supabaseClient
     });
 
-    const req = createMockRequest({ metaAssetId: 'act_123', periods: ['today'] });
+    const req = createMockRequest(body);
     const response = await handleRequest(req);
     return { response, json: await response.json(), supabaseClient };
   };
@@ -174,5 +174,15 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     expect(json.error).toContain('Database persistence failed: DB Failure on RPC persist');
     // Ensure that it tries to mark the run as failed in the catch block!
     expect(supabaseClient.from).toHaveBeenCalledWith('meta_sync_runs');
+  });
+
+  it('supports legacy adAccountId only through the owned meta asset lookup', async () => {
+    const { response, supabaseClient } = await runScenario(undefined, { adAccountId: 'act_mock_account', periods: ['today'] });
+
+    expect(response.status).toBe(206);
+    expect(supabaseClient.rpc).toHaveBeenCalledWith('persist_meta_sync_run', expect.objectContaining({
+      p_ad_account_id: 'act_mock_account',
+      p_user_id: 'user_123',
+    }));
   });
 });

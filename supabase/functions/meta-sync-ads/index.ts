@@ -24,6 +24,7 @@ import {
 
 interface SyncRequestBody {
   metaAssetId?: string;
+  adAccountId?: string;
   periods?: string[];
   selectedCampaigns?: string[];
 }
@@ -70,6 +71,7 @@ export async function handleRequest(req: Request) {
 
     const body = await req.json() as SyncRequestBody & { syncRunId?: string };
     const metaAssetId = body.metaAssetId?.trim();
+    const legacyAdAccountId = body.adAccountId?.trim();
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
@@ -88,14 +90,21 @@ export async function handleRequest(req: Request) {
     }
     usedRunId = generatedRunId;
 
-    if (!metaAssetId) throw new HttpError('metaAssetId is required', 400);
+    if (!metaAssetId && !legacyAdAccountId) throw new HttpError('metaAssetId is required', 400);
 
-    const { data: asset, error: assetError } = await supabaseClient
+    let assetQuery = supabaseClient
       .from('meta_assets')
       .select('*, meta_integrations!inner(*)')
-      .eq('id', metaAssetId)
       .eq('asset_type', 'adaccount')
-      .single();
+      .eq('meta_integrations.user_id', userId);
+
+    if (metaAssetId) {
+      assetQuery = assetQuery.eq('id', metaAssetId);
+    } else if (legacyAdAccountId) {
+      assetQuery = assetQuery.eq('asset_id', legacyAdAccountId);
+    }
+
+    const { data: asset, error: assetError } = await assetQuery.single();
 
     if (assetError || !asset) {
       console.error('Failed to fetch asset:', assetError);
@@ -306,7 +315,9 @@ export async function handleRequest(req: Request) {
 
       let filteredCampaignInsights = campaignInsightsResult.data;
       if (selectedCampaigns && selectedCampaigns.length > 0) {
-        filteredCampaignInsights = filteredCampaignInsights.filter((row) => selectedCampaigns.includes(row.campaign_id));
+        filteredCampaignInsights = filteredCampaignInsights.filter((row) =>
+          Boolean(row.campaign_id) && selectedCampaigns.includes(row.campaign_id as string)
+        );
       }
       campaignInsightsByPeriod[period] = filteredCampaignInsights;
       
