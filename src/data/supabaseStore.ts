@@ -40,7 +40,7 @@ export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
   const userId = await getUserId();
   if (!userId) return false;
 
-  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace', {
+  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace_with_client_registry', {
     p_data: data,
     p_expected_version: remoteVersion,
   });

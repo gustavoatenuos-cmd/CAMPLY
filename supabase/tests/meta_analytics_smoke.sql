@@ -92,6 +92,254 @@ BEGIN
 
 END $$;
 
+-- Multiclient performance foundation checks
+DO $$
+DECLARE
+  v_user_a UUID := '10000000-0000-0000-0000-000000000001';
+  v_user_b UUID := '10000000-0000-0000-0000-000000000002';
+  v_integration_a UUID := '10000000-0000-0000-0000-000000000101';
+  v_integration_b UUID := '10000000-0000-0000-0000-000000000102';
+  v_asset_a UUID := '10000000-0000-0000-0000-000000000201';
+  v_asset_b UUID := '10000000-0000-0000-0000-000000000202';
+  v_link_id UUID;
+  v_target_id UUID;
+  v_next_version BIGINT;
+  v_dashboard JSONB;
+  v_error_seen BOOLEAN;
+  v_original_target NUMERIC;
+BEGIN
+  DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
+
+  INSERT INTO auth.users (id, instance_id, role, aud, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, confirmation_token, email_change, email_change_token_new, recovery_token)
+  VALUES
+    (v_user_a, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'phase1-a@camply.test', '', now(), '{}', '{}', now(), now(), '', '', '', ''),
+    (v_user_b, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'phase1-b@camply.test', '', now(), '{}', '{}', now(), now(), '', '', '', '');
+
+  PERFORM set_config('request.jwt.claim.sub', v_user_a::text, true);
+  PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_user_a::text, 'role', 'authenticated')::text, true);
+
+  v_next_version := public.save_camply_workspace_with_client_registry(
+    jsonb_build_object(
+      'clients',
+      jsonb_build_array(
+        jsonb_build_object('id', 'client_alpha', 'company', 'Alpha Ltda', 'name', 'Alpha'),
+        jsonb_build_object('id', 'client_beta', 'company', 'Beta Ltda', 'name', 'Beta')
+      ),
+      'campaigns',
+      '[]'::jsonb
+    ),
+    NULL
+  );
+
+  IF v_next_version <> 1 THEN
+    RAISE EXCEPTION 'Expected initial workspace version 1, got %', v_next_version;
+  END IF;
+
+  IF (SELECT count(*) FROM public.client_identity WHERE user_id = v_user_a AND archived_at IS NULL) <> 2 THEN
+    RAISE EXCEPTION 'Expected two active client identities after transactional workspace save';
+  END IF;
+
+  v_error_seen := false;
+  BEGIN
+    PERFORM public.save_camply_workspace_with_client_registry(
+      jsonb_build_object(
+        'clients',
+        jsonb_build_array(jsonb_build_object('id', 'client_gamma', 'company', 'Gamma'))
+      ),
+      99
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Expected stale workspace version to fail';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_gamma') THEN
+    RAISE EXCEPTION 'Stale workspace save changed client registry despite conflict';
+  END IF;
+
+  v_next_version := public.save_camply_workspace_with_client_registry(
+    jsonb_build_object(
+      'clients',
+      jsonb_build_array(jsonb_build_object('id', 'client_beta', 'company', 'Beta Ltda'))
+    ),
+    1
+  );
+
+  IF v_next_version <> 2 THEN
+    RAISE EXCEPTION 'Expected second workspace version 2, got %', v_next_version;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_alpha' AND archived_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'Removed client was not archived';
+  END IF;
+
+  v_next_version := public.save_camply_workspace_with_client_registry(
+    jsonb_build_object(
+      'clients',
+      jsonb_build_array(
+        jsonb_build_object('id', 'client_alpha', 'company', 'Alpha Reativado'),
+        jsonb_build_object('id', 'client_beta', 'company', 'Beta Ltda')
+      )
+    ),
+    2
+  );
+
+  IF NOT EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_alpha' AND archived_at IS NULL AND display_name = 'Alpha Reativado') THEN
+    RAISE EXCEPTION 'Reactivated client did not clear archived_at/update display_name';
+  END IF;
+
+  INSERT INTO public.meta_integrations (id, user_id, access_token_encrypted, status)
+  VALUES
+    (v_integration_a, v_user_a, 'token-a', 'active'),
+    (v_integration_b, v_user_b, 'token-b', 'active');
+
+  INSERT INTO public.meta_assets (id, integration_id, asset_type, asset_id, asset_name, currency, timezone_name)
+  VALUES
+    (v_asset_a, v_integration_a, 'adaccount', 'act_phase1_a', 'Conta Alpha', 'BRL', 'America/Sao_Paulo'),
+    (v_asset_b, v_integration_b, 'adaccount', 'act_phase1_b', 'Conta B', 'USD', 'UTC');
+
+  v_link_id := public.link_client_meta_asset('client_alpha', v_asset_a);
+
+  IF v_link_id IS NULL THEN
+    RAISE EXCEPTION 'Expected link_client_meta_asset to return a link id';
+  END IF;
+
+  v_error_seen := false;
+  BEGIN
+    PERFORM public.link_client_meta_asset('client_beta', v_asset_a);
+  EXCEPTION WHEN OTHERS THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Expected active Meta asset double link to fail';
+  END IF;
+
+  v_error_seen := false;
+  BEGIN
+    PERFORM public.link_client_meta_asset('client_beta', v_asset_b);
+  EXCEPTION WHEN OTHERS THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Expected linking another user asset to fail';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.client_performance_targets', 'INSERT') THEN
+    RAISE EXCEPTION 'authenticated must not have INSERT on client_performance_targets';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.client_performance_targets', 'UPDATE') THEN
+    RAISE EXCEPTION 'authenticated must not have UPDATE on client_performance_targets';
+  END IF;
+
+  v_target_id := public.set_client_performance_target(
+    v_link_id,
+    'messaging_conversations_started_total',
+    'cost_per_result',
+    20,
+    NULL,
+    '2026-06-01T00:00:00Z'::timestamptz
+  );
+
+  v_original_target := (SELECT target_value FROM public.client_performance_targets WHERE id = v_target_id);
+
+  v_error_seen := false;
+  BEGIN
+    PERFORM public.set_client_performance_target(
+      v_link_id,
+      'not_a_metric',
+      'cost_per_result',
+      20,
+      NULL,
+      '2026-06-02T00:00:00Z'::timestamptz
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Expected invalid metric target to fail';
+  END IF;
+
+  v_error_seen := false;
+  BEGIN
+    PERFORM public.set_client_performance_target(
+      v_link_id,
+      'messaging_conversations_started_total',
+      'cost_per_result',
+      25,
+      NULL,
+      '2026-06-01T00:00:00Z'::timestamptz
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Expected overlapping target to fail';
+  END IF;
+
+  PERFORM public.set_client_performance_target(
+    v_link_id,
+    'messaging_conversations_started_total',
+    'cost_per_result',
+    18,
+    NULL,
+    '2026-06-10T00:00:00Z'::timestamptz
+  );
+
+  IF (SELECT target_value FROM public.client_performance_targets WHERE id = v_target_id) <> v_original_target THEN
+    RAISE EXCEPTION 'Historical target_value was mutated';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.client_performance_targets
+    WHERE id = v_target_id
+      AND effective_to = '2026-06-10T00:00:00Z'::timestamptz
+  ) THEN
+    RAISE EXCEPTION 'Previous target version was not closed before replacement';
+  END IF;
+
+  v_dashboard := public.get_global_performance_dashboard('last_7d', NULL, NULL);
+
+  IF jsonb_typeof(v_dashboard) <> 'array' THEN
+    RAISE EXCEPTION 'Dashboard RPC must return an array';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_dashboard) AS item
+    WHERE item->>'clientId' = 'client_beta'
+      AND item->>'clientStatus' = 'not_connected'
+  ) THEN
+    RAISE EXCEPTION 'Dashboard must include active client without Meta account as not_connected';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_dashboard) AS item
+    WHERE item->>'clientId' = 'client_alpha'
+      AND item->>'clientStatus' = 'never_synced'
+      AND jsonb_array_length(item->'resolvedTargets') = 1
+  ) THEN
+    RAISE EXCEPTION 'Dashboard must include linked client without sync and active target';
+  END IF;
+
+  PERFORM public.unlink_client_meta_asset(v_link_id);
+
+  IF NOT EXISTS (SELECT 1 FROM public.client_meta_assets WHERE id = v_link_id AND unlinked_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'unlink_client_meta_asset did not close the link';
+  END IF;
+
+  DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
+END $$;
+
 SELECT
   'meta_analytics_schema_ok' AS check_name,
   current_database() AS database_name,
