@@ -74,7 +74,7 @@ function metricLabel(metricId: string): string {
     purchases: 'compras',
     landing_page_views: 'visitas à página',
   };
-  return labels[metricId] || metricId.replaceAll('_', ' ');
+  return labels[metricId] || metricId.split('_').join(' ');
 }
 
 function evaluationDescription(client: GlobalClientPerformance, evaluation: PerformanceEvaluation): string {
