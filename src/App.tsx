@@ -20,7 +20,7 @@ const AgentChatView = React.lazy(() => import('./components/AgentChatView').then
 const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegrationView').then(m => ({ default: m.MetaIntegrationView })));
 const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
-const TodayView = React.lazy(() => import('./components/TodayView').then(m => ({ default: m.TodayView })));
+const OverviewView = React.lazy(() => import('./components/OverviewView').then(m => ({ default: m.OverviewView })));
 const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 
 export default function App() {
@@ -88,7 +88,6 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [authenticated, data, remoteLoaded]);
 
-  // Executar o Agente Operacional ao carregar os dados
   useEffect(() => {
     if (!authenticated || !remoteLoaded) return;
     setData((current) => {
@@ -104,7 +103,6 @@ export default function App() {
     });
   }, [authenticated, remoteLoaded]);
 
-  // Fase 3: Gerar resumo com Claude AI após carregar dados e agente
   useEffect(() => {
     if (!authenticated || !remoteLoaded) return;
     setClaudeLoading(true);
@@ -160,7 +158,7 @@ export default function App() {
         )}
         <div className="min-h-0 flex-1">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
-          {activeView === 'today' && <TodayView data={data} insights={insights} updateData={updateData} setActiveView={setActiveView} />}
+          {activeView === 'today' && <OverviewView data={data} setActiveView={setActiveView} />}
           {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
           {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
           {activeView === 'mediaFinance' && <FinanceView data={data} />}
