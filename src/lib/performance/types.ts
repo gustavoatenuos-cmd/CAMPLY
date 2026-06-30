@@ -26,6 +26,8 @@ export interface PerformanceTarget {
 }
 
 export interface PerformanceEvaluation {
+  clientMetaAssetId?: string;
+  campaignId?: string | null;
   metricId: string;
   targetKind: TargetKind;
   actualValue: number | null;
@@ -49,6 +51,7 @@ export interface BudgetPacingInput {
 }
 
 export interface BudgetPacingResult {
+  clientMetaAssetId?: string;
   actualSpend: number;
   targetDailyBudget: number;
   expectedSpendUntilNow: number;
