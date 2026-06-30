@@ -41,6 +41,21 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_campaign_entities' AND column_name='last_sync_run_id') THEN
     RAISE EXCEPTION 'Missing last_sync_run_id in meta_campaign_entities';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='requested_level') THEN
+    RAISE EXCEPTION 'Missing requested_level in meta_sync_runs';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='selected_entity_ids') THEN
+    RAISE EXCEPTION 'Missing selected_entity_ids in meta_sync_runs';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='request_fingerprint') THEN
+    RAISE EXCEPTION 'Missing request_fingerprint in meta_sync_runs';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='collection_contract_version') THEN
+    RAISE EXCEPTION 'Missing collection_contract_version in meta_sync_runs';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='termination_reason') THEN
+    RAISE EXCEPTION 'Missing termination_reason in meta_sync_runs';
+  END IF;
   
   -- Check composite UNIQUE on meta_sync_runs
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meta_sync_runs_cross_fk_unique') THEN
@@ -86,10 +101,93 @@ BEGIN
     RAISE EXCEPTION 'persist_meta_sync_run must have search_path=""';
   END IF;
   
-  IF has_function_privilege('anon', 'public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSONB, INTEGER, INTEGER)', 'EXECUTE') THEN
+  IF has_function_privilege('anon', 'public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSONB, TEXT, INTEGER, INTEGER)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon role has EXECUTE privilege on persist_meta_sync_run';
   END IF;
 
+END $$;
+
+-- Meta sync collection contract checks
+DO $$
+DECLARE
+  v_user_id UUID := '10000000-0000-0000-0000-000000000016';
+  v_integration_id UUID := '10000000-0000-0000-0000-000000000116';
+  v_run_id UUID := '10000000-0000-0000-0000-000000000216';
+  v_error_seen BOOLEAN := false;
+BEGIN
+  DELETE FROM auth.users WHERE id = v_user_id;
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (v_user_id, 'collection-contract@camply.test', '{}');
+
+  INSERT INTO public.meta_integrations (id, user_id, access_token_encrypted, status)
+  VALUES (v_integration_id, v_user_id, 'token', 'active');
+
+  INSERT INTO public.meta_sync_runs (
+    id,
+    user_id,
+    integration_id,
+    ad_account_id,
+    graph_api_version,
+    requested_period,
+    run_scope,
+    requested_level,
+    selected_entity_ids,
+    request_fingerprint,
+    collection_contract_version
+  )
+  VALUES (
+    v_run_id,
+    v_user_id,
+    v_integration_id,
+    'act_contract',
+    'v25.0',
+    'last_7d',
+    'selected_campaigns',
+    'adset',
+    jsonb_build_object('campaign_ids', jsonb_build_array('camp_123'), 'adset_ids', '[]'::jsonb),
+    'fingerprint-smoke',
+    '2026-06-30.1'
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.meta_sync_runs
+    WHERE id = v_run_id
+      AND requested_level = 'adset'
+      AND selected_entity_ids->'campaign_ids' = jsonb_build_array('camp_123')
+      AND request_fingerprint = 'fingerprint-smoke'
+      AND collection_contract_version = '2026-06-30.1'
+  ) THEN
+    RAISE EXCEPTION 'Meta sync collection contract fields were not persisted correctly';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.meta_sync_runs (
+      user_id,
+      integration_id,
+      ad_account_id,
+      graph_api_version,
+      requested_period,
+      requested_level
+    )
+    VALUES (
+      v_user_id,
+      v_integration_id,
+      'act_contract_invalid',
+      'v25.0',
+      'last_7d',
+      'invalid_level'
+    );
+  EXCEPTION WHEN check_violation THEN
+    v_error_seen := true;
+  END;
+
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Invalid requested_level was not rejected';
+  END IF;
+
+  DELETE FROM auth.users WHERE id = v_user_id;
 END $$;
 
 -- Multiclient performance foundation checks

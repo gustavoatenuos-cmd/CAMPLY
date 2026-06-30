@@ -27,6 +27,16 @@ interface SyncRequestBody {
   adAccountId?: string;
   periods?: string[];
   selectedCampaigns?: string[];
+  selectedAdSets?: string[];
+  selectedEntityIds?: {
+    campaign_ids?: string[];
+    campaignIds?: string[];
+    adset_ids?: string[];
+    adSetIds?: string[];
+    adsetIds?: string[];
+  };
+  requestedLevel?: string;
+  requested_level?: string;
 }
 
 interface MetaCampaign {
@@ -47,12 +57,100 @@ interface MetaAdSet extends MetaAdSetDefinition {
 }
 
 const METRIC_DEFINITION_VERSION = '2026-06-27.1';
+const COLLECTION_CONTRACT_VERSION = '2026-06-30.1';
+const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
+
+type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
+
+interface EntitySelection {
+  campaign_ids: string[];
+  adset_ids: string[];
+}
 
 const collectionStatus = <T>(result: PaginatedResult<T>): PeriodCompletenessStatus =>
   result.completionStatus;
 
 const isIncomplete = (status: PeriodCompletenessStatus) =>
   status !== 'complete' && status !== 'zero_delivery';
+
+const normalizeIdArray = (...values: unknown[]): string[] => {
+  const ids = values.flatMap((value) => Array.isArray(value) ? value : [])
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return Array.from(new Set(ids)).sort();
+};
+
+const parseRequestedLevel = (value: unknown, selection: EntitySelection): RequestedLevel => {
+  const level = typeof value === 'string' && value.trim()
+    ? value.trim().toLowerCase()
+    : 'campaign';
+
+  if (!VALID_REQUESTED_LEVELS.includes(level as RequestedLevel)) {
+    throw new HttpError(`Invalid requestedLevel: ${String(value)}`, 400);
+  }
+
+  if (selection.adset_ids.length > 0 && level === 'campaign') {
+    return 'adset';
+  }
+
+  return level as RequestedLevel;
+};
+
+const resolveRunScope = (selection: EntitySelection): string => {
+  const hasCampaigns = selection.campaign_ids.length > 0;
+  const hasAdSets = selection.adset_ids.length > 0;
+  if (hasCampaigns && hasAdSets) return 'selected_entities';
+  if (hasAdSets) return 'selected_adsets';
+  if (hasCampaigns) return 'selected_campaigns';
+  return 'full_account';
+};
+
+const stableJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableJson(record[key])}`
+    ).join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const sha256Hex = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+const buildRequestFingerprint = async (contract: Record<string, unknown>): Promise<string> =>
+  sha256Hex(stableJson(contract));
+
+const normalizeSelection = (body: SyncRequestBody): EntitySelection => ({
+  campaign_ids: normalizeIdArray(
+    body.selectedCampaigns,
+    body.selectedEntityIds?.campaign_ids,
+    body.selectedEntityIds?.campaignIds
+  ),
+  adset_ids: normalizeIdArray(
+    body.selectedAdSets,
+    body.selectedEntityIds?.adset_ids,
+    body.selectedEntityIds?.adsetIds,
+    body.selectedEntityIds?.adSetIds
+  ),
+});
+
+const terminationReasonForError = (error: unknown): string => {
+  if (error instanceof HttpError) {
+    if (error.status === 400 || error.status === 403) return 'validation_error';
+    if (error.status === 502) return 'meta_api_error';
+    if (error.status === 500 && error.message.includes('Database persistence failed')) {
+      return 'persistence_error';
+    }
+  }
+  return 'unexpected_error';
+};
 
 export async function handleRequest(req: Request) {
   if (req.method === 'OPTIONS') {
@@ -83,7 +181,14 @@ export async function handleRequest(req: Request) {
       }
     }
 
-    const selectedCampaigns = Array.isArray(body.selectedCampaigns) ? body.selectedCampaigns : null;
+    const selectedEntityIds = normalizeSelection(body);
+    const requestedLevel = parseRequestedLevel(
+      body.requestedLevel ?? body.requested_level,
+      selectedEntityIds
+    );
+    const selectedCampaignSet = new Set(selectedEntityIds.campaign_ids);
+    const selectedAdSetSet = new Set(selectedEntityIds.adset_ids);
+    const runScope = resolveRunScope(selectedEntityIds);
       
     if (body.syncRunId) {
       throw new HttpError('O parâmetro syncRunId não é permitido. O sistema o gera exclusivamente.', 400);
@@ -126,6 +231,25 @@ export async function handleRequest(req: Request) {
     const appSecret = Deno.env.get('META_APP_SECRET');
     if (!appSecret) throw new Error('META_APP_SECRET is not configured');
 
+    const collectionContract = {
+      collectionContractVersion: COLLECTION_CONTRACT_VERSION,
+      metricDefinitionVersion: METRIC_DEFINITION_VERSION,
+      graphApiVersion: META_GRAPH_VERSION,
+      endpoint: 'meta-sync-ads',
+      adAccountId,
+      requestedLevel,
+      periods,
+      runScope,
+      selectedEntityIds,
+      fields: {
+        campaigns: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
+        adsets: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting',
+        campaignInsights: 'campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
+        adsetInsights: 'adset_id,campaign_id,date_start,date_stop,impressions,inline_link_clicks,spend,actions,action_values',
+      },
+    };
+    const requestFingerprint = await buildRequestFingerprint(collectionContract);
+
     let timezone = 'UNKNOWN';
     let currency = 'UNKNOWN';
     const collectionMessages: string[] = [];
@@ -163,7 +287,18 @@ export async function handleRequest(req: Request) {
       timezone: timezone === 'UNKNOWN' ? null : timezone,
       currency: currency === 'UNKNOWN' ? null : currency,
       status: 'running',
-      run_scope: (selectedCampaigns && selectedCampaigns.length > 0) ? 'selected_campaigns' : 'full_account',
+      run_scope: runScope,
+      requested_level: requestedLevel,
+      selected_entity_ids: selectedEntityIds,
+      request_fingerprint: requestFingerprint,
+      collection_contract_version: COLLECTION_CONTRACT_VERSION,
+      metadata: {
+        collection_contract: collectionContract,
+        collection_contract_version: COLLECTION_CONTRACT_VERSION,
+        request_fingerprint: requestFingerprint,
+        requested_level: requestedLevel,
+        selected_entity_ids: selectedEntityIds,
+      },
     });
     if (runError) throw new HttpError(`Failed to create sync run: ${runError.message}`, 500);
 
@@ -194,23 +329,30 @@ export async function handleRequest(req: Request) {
       throw new HttpError('Meta campaign collection failed', 502);
     }
 
-    let activeCampaigns = campaignsResult.data;
-    if (selectedCampaigns && selectedCampaigns.length > 0) {
-      activeCampaigns = activeCampaigns.filter(c => selectedCampaigns.includes(c.id));
-    }
-
+    const allCampaigns = campaignsResult.data;
+    let activeCampaigns = allCampaigns;
     let activeAdSets = adsetsResult.data.map((adset) => ({
       ...adset,
       classified_objective: classifyAdSetObjective({
-        campaignObjective: activeCampaigns.find((campaign) => campaign.id === adset.campaign_id)?.objective || '',
+        campaignObjective: allCampaigns.find((campaign) => campaign.id === adset.campaign_id)?.objective || '',
         adsetOptimizationGoal: adset.optimization_goal || undefined,
         adsetDestinationType: adset.destination_type || undefined,
         adsetPromotedObject: adset.promoted_object,
       }),
     }));
-    if (selectedCampaigns && selectedCampaigns.length > 0) {
-      activeAdSets = activeAdSets.filter(a => selectedCampaigns.includes(a.campaign_id));
+
+    if (selectedCampaignSet.size > 0) {
+      activeCampaigns = activeCampaigns.filter((campaign) => selectedCampaignSet.has(campaign.id));
+      activeAdSets = activeAdSets.filter((adset) => selectedCampaignSet.has(adset.campaign_id));
     }
+
+    if (selectedAdSetSet.size > 0) {
+      activeAdSets = activeAdSets.filter((adset) => selectedAdSetSet.has(adset.id));
+      const campaignIdsFromSelectedAdSets = new Set(activeAdSets.map((adset) => adset.campaign_id));
+      activeCampaigns = activeCampaigns.filter((campaign) => campaignIdsFromSelectedAdSets.has(campaign.id));
+    }
+
+    const activeCampaignIds = new Set(activeCampaigns.map((campaign) => campaign.id));
 
     const classifiedObjectives = new Map<string, ReturnType<typeof classifyCampaignObjective>>();
     const requiresAdsetInsights = new Set<string>();
@@ -245,7 +387,12 @@ export async function handleRequest(req: Request) {
       })));
       classifiedObjectives.set(campaign.id, classifiedObjective);
       const mix = analyzeCampaignMix(campaignAdsets, campaign.objective);
-      if (mix.structuralMixedAttribution || mix.mixedObjective || mix.mixedDestination) {
+      if (
+        requestedLevel === 'adset'
+        || mix.structuralMixedAttribution
+        || mix.mixedObjective
+        || mix.mixedDestination
+      ) {
         requiresAdsetInsights.add(campaign.id);
       }
 
@@ -313,17 +460,16 @@ export async function handleRequest(req: Request) {
         }
       }
 
-      let filteredCampaignInsights = campaignInsightsResult.data;
-      if (selectedCampaigns && selectedCampaigns.length > 0) {
-        filteredCampaignInsights = filteredCampaignInsights.filter((row) =>
-          Boolean(row.campaign_id) && selectedCampaigns.includes(row.campaign_id as string)
-        );
-      }
+      const filteredCampaignInsights = campaignInsightsResult.data.filter((row) =>
+        Boolean(row.campaign_id) && activeCampaignIds.has(row.campaign_id as string)
+      );
       campaignInsightsByPeriod[period] = filteredCampaignInsights;
       
       adsetInsightsByPeriod[period] = adsetInsightsResult.data.filter((row) =>
-        row.campaign_id && requiresAdsetInsights.has(row.campaign_id) && 
-        (!selectedCampaigns || selectedCampaigns.length === 0 || selectedCampaigns.includes(row.campaign_id))
+        row.campaign_id
+        && activeCampaignIds.has(row.campaign_id)
+        && requiresAdsetInsights.has(row.campaign_id)
+        && (!selectedAdSetSet.size || (typeof row.adset_id === 'string' && selectedAdSetSet.has(row.adset_id)))
       );
       collectionStatusByPeriod[period] = {
         campaign: mergeCompletenessStatuses([
@@ -340,9 +486,9 @@ export async function handleRequest(req: Request) {
         entity_level: 'campaign',
         entity_id: period,
         endpoint: `/${adAccountId}/insights?level=campaign&date_preset=${period}`,
-        payload: campaignInsightsResult.data,
-        date_start: campaignInsightsResult.data[0]?.date_start || null,
-        date_stop: campaignInsightsResult.data[0]?.date_stop || null,
+        payload: filteredCampaignInsights,
+        date_start: filteredCampaignInsights[0]?.date_start || null,
+        date_stop: filteredCampaignInsights[0]?.date_stop || null,
         page_number: 1,
       });
 
@@ -510,7 +656,13 @@ export async function handleRequest(req: Request) {
     const p_metadata = {
       error_message: errorMessage || null,
       completeness_by_period: overallCompletenessByPeriod,
+      collection_contract: collectionContract,
+      collection_contract_version: COLLECTION_CONTRACT_VERSION,
+      request_fingerprint: requestFingerprint,
+      requested_level: requestedLevel,
+      selected_entity_ids: selectedEntityIds,
     };
+    const terminationReason = syncStatus === 'success' ? 'completed' : 'partial_collection';
 
     // CALL THE ATOMIC RPC!
     const { error: rpcError } = await supabaseClient.rpc('persist_meta_sync_run', {
@@ -524,6 +676,7 @@ export async function handleRequest(req: Request) {
         p_adset_entities: p_historical_adsets,
         p_normalized_metrics: p_normalized_metrics,
         p_metadata: p_metadata,
+        p_termination_reason: terminationReason,
         p_pages_fetched: totalPagesFetched,
         p_records_fetched: totalRecordsFetched
     });
@@ -541,6 +694,10 @@ export async function handleRequest(req: Request) {
       message: errorMessage || undefined,
       completenessByPeriod: overallCompletenessByPeriod,
       failedAdsetIds: [],
+      requestedLevel,
+      selectedEntityIds,
+      requestFingerprint,
+      collectionContractVersion: COLLECTION_CONTRACT_VERSION,
       timezone,
       currency,
     }), {
@@ -549,11 +706,17 @@ export async function handleRequest(req: Request) {
     });
   } catch (error) {
     console.error('Meta Sync Error:', error);
+    const terminationReason = terminationReasonForError(error);
     if (supabaseClient && userId) {
       try {
         await supabaseClient.from('meta_sync_runs').update({
            status: 'failed',
            error_message: error instanceof Error ? error.message : 'Unexpected Meta sync error',
+           termination_reason: terminationReason,
+           metadata: {
+             error_message: error instanceof Error ? error.message : 'Unexpected Meta sync error',
+             termination_reason: terminationReason,
+           },
            finished_at: new Date().toISOString()
         }).match({ id: usedRunId, user_id: userId });
       } catch (persistenceError) {

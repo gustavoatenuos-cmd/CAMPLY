@@ -89,6 +89,9 @@ mv supabase/migrations/20260627000010_* /tmp/camply_migrations/ 2>/dev/null || t
 mv supabase/migrations/20260627000011_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000012_* /tmp/camply_migrations/ 2>/dev/null || true
 mv supabase/migrations/20260627000013_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000014_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000015_* /tmp/camply_migrations/ 2>/dev/null || true
+mv supabase/migrations/20260627000016_* /tmp/camply_migrations/ 2>/dev/null || true
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."

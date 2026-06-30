@@ -2,6 +2,7 @@ import type { MetaObjective } from "./objectives.ts";
 import type { MetricValueMap } from './metricRegistry.ts';
 
 export type MetaSyncStatus = 'success' | 'partial' | 'failed';
+export type MetaRequestedLevel = 'campaign' | 'adset' | 'ad' | 'creative';
 export type PeriodCompletenessStatus =
   | 'zero_delivery'
   | 'missing_insight_row'
@@ -95,6 +96,13 @@ export interface MetaSyncResponse {
   message?: string;
   completenessByPeriod: Record<string, PeriodCompletenessStatus>;
   failedAdsetIds: string[];
+  requestedLevel?: MetaRequestedLevel;
+  selectedEntityIds?: {
+    campaign_ids: string[];
+    adset_ids: string[];
+  };
+  requestFingerprint?: string;
+  collectionContractVersion?: string;
   timezone: string;
   currency: string;
 }

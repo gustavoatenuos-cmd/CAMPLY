@@ -354,11 +354,38 @@ async function run() {
     assertEqual(res.status, 200, 'HTTP Status');
     const scope = q(`SELECT run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(scope, 'selected_campaigns', 'Run scope should be selected_campaigns');
+    const requestedLevel = q(`SELECT requested_level FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(requestedLevel, 'campaign', 'Default selected campaign import stays campaign-level');
+    const selectedCampaignRecorded = q(`SELECT selected_entity_ids->'campaign_ids' ? 'camp_123' FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(selectedCampaignRecorded, 't', 'Selected campaign id recorded in contract');
+    const fingerprint = q(`SELECT request_fingerprint IS NOT NULL AND length(request_fingerprint) = 64 FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(fingerprint, 't', 'Run has deterministic request fingerprint');
     const campsCount = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}'`);
     assertEqual(campsCount, '1', 'Only 1 campaign imported out of 3 mock returns');
+    const adsetMetrics = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='adset'`);
+    assertEqual(adsetMetrics, '0', 'Campaign-level selected import should not force Ad Set metrics');
   }, { selectedCampaigns: ['camp_123'] });
 
-  // 17. ssrf_blocked
+  // 17. selected_campaign_adset_drilldown
+  await runScenario('selected_campaign_adset_drilldown', assets.simple, accessToken, (res, json, q) => {
+    assertEqual(res.status, 200, 'HTTP Status');
+    const scope = q(`SELECT run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(scope, 'selected_campaigns', 'Run scope still reflects selected campaign import');
+    const requestedLevel = q(`SELECT requested_level FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(requestedLevel, 'adset', 'Requested level should force Ad Set drill-down');
+    const campsCount = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}'`);
+    assertEqual(campsCount, '1', 'Only selected campaign imported');
+    const adsetsCount = q(`SELECT count(*) FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}'`);
+    assertEqual(adsetsCount, '1', 'Only selected campaign Ad Set snapshotted');
+    const adsetMetrics = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='adset'`);
+    assertEqual(Number(adsetMetrics) > 0, true, 'Ad Set drill-down should persist Ad Set metrics');
+    const rawAdsetSnapshot = q(`SELECT count(*) FROM meta_raw_snapshots WHERE sync_run_id='${json.runId}' AND entity_level='adset'`);
+    assertEqual(rawAdsetSnapshot, '1', 'Ad Set raw insight snapshot persisted');
+    assertEqual(json.requestedLevel, 'adset', 'Response carries requestedLevel');
+    assertEqual(json.selectedEntityIds.campaign_ids[0], 'camp_123', 'Response carries selected campaign');
+  }, { selectedCampaigns: ['camp_123'], requestedLevel: 'adset' });
+
+  // 18. ssrf_blocked
   await runScenario('ssrf_blocked', assets.ssrf, accessToken, (res, json, q) => {
     assertEqual(res.status, 206, 'HTTP 206 when SSRF breaks paging');
     assertEqual(json.success, true, 'success: true for SSRF partial');
@@ -366,18 +393,18 @@ async function run() {
     assertEqual(status, 'partial', 'Run should be marked partial for SSRF blocked url');
   });
 
-  // 18. oauth_concurrent
+  // 19. oauth_concurrent
   // Assuming test-oauth-concurrent.cjs is executed separately in the shell pipeline and exit codes checked
   executedCount++;
   passedCount++;
   console.log(`✅ Scenario oauth_concurrent passed (via separate script).`);
 
-  // 19. user_a_vs_user_b
+  // 20. user_a_vs_user_b
   executedCount++;
   passedCount++;
   console.log(`✅ Scenario user_a_vs_user_b passed (via separate script test-rls-api.cjs).`);
 
-  // 20. sync_run_id_rejected
+  // 21. sync_run_id_rejected
   executedCount++;
   console.log(`\n--- Running Scenario: sync_run_id_rejected ---`);
   const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
@@ -389,12 +416,12 @@ async function run() {
   passedCount++;
   console.log(`✅ Scenario sync_run_id_rejected passed.`);
 
-  // 21. asset_inexistente
+  // 22. asset_inexistente
   await runScenario('asset_inexistente', cryptoLib.randomUUID(), accessToken, (res, json, q) => {
     assertEqual(res.status, 403, 'HTTP 403');
   });
 
-  // 22. integração_revogada
+  // 23. integração_revogada
   const revokedIntId = cryptoLib.randomUUID();
   execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${revokedIntId}', '${userId}', '${encryptOut}', 'revoked');
@@ -404,7 +431,7 @@ async function run() {
     assertEqual(res.status, 403, 'HTTP 403');
   });
 
-  // 23. duas_integrações_ativas
+  // 24. duas_integrações_ativas
   // Create second integration and asset
   await fetch('http://127.0.0.1:9999/reset');
   const intId2 = cryptoLib.randomUUID();
@@ -437,8 +464,8 @@ async function run() {
     process.exit(1);
   }
   
-  if (executedCount !== 25 || passedCount !== 25) {
-    console.error(`❌ [FAIL] Missing scenarios! Expected 25 executed and 25 passed.`);
+  if (executedCount !== 26 || passedCount !== 26) {
+    console.error(`❌ [FAIL] Missing scenarios! Expected 26 executed and 26 passed.`);
     process.exit(1);
   }
 }
