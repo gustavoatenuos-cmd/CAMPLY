@@ -28,6 +28,9 @@ export interface PerformanceTarget {
 export interface PerformanceEvaluation {
   clientMetaAssetId?: string;
   campaignId?: string | null;
+  classifiedObjective?: string | null;
+  destinationType?: string | null;
+  attributionSetting?: string | null;
   metricId: string;
   targetKind: TargetKind;
   actualValue: number | null;
