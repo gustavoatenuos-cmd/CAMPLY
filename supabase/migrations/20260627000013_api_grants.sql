@@ -6,6 +6,9 @@ BEGIN;
 GRANT SELECT ON public.meta_sync_runs TO authenticated;
 GRANT SELECT ON public.meta_campaign_snapshots TO authenticated;
 GRANT SELECT ON public.meta_adset_snapshots TO authenticated;
+GRANT SELECT ON public.meta_raw_snapshots TO authenticated;
 GRANT SELECT ON public.meta_normalized_metrics TO authenticated;
+GRANT SELECT ON public.meta_assets TO authenticated;
+GRANT SELECT ON public.meta_integrations TO authenticated;
 
 COMMIT;

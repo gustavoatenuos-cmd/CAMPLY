@@ -18,9 +18,23 @@ cleanup() {
   docker stop "$MOCK_CONTAINER_NAME" 2>/dev/null || true
   docker rm "$MOCK_CONTAINER_NAME" 2>/dev/null || true
   
-  if [[ -n "$FUNCTION_PID" ]]; then
-    echo "Encerrando Edge Function (PID $FUNCTION_PID)..."
-    kill "$FUNCTION_PID" 2>/dev/null || true
+  echo "Encerrando Supabase (stop --no-backup)..."
+  npx supabase stop --no-backup || true
+  
+  echo "Removendo supabase/functions/.env..."
+  rm -f supabase/functions/.env
+  
+  echo "Verificando containers órfãos..."
+  ORPHANS=$(docker ps -a --filter name=supabase --format '{{.Names}}')
+  if [[ -n "$ORPHANS" ]]; then
+    echo "Containers órfãos detectados: $ORPHANS"
+    # exit 1 (disabled strictly in trap, but we can print error)
+  fi
+
+  echo "Verificando working tree limpa..."
+  if ! git diff --quiet; then
+    echo "Aviso: A working tree não está limpa!"
+    # exit 1
   fi
 }
 

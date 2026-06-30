@@ -54,12 +54,11 @@ serve(async (req) => {
     tokenUrl.searchParams.append('code', code);
 
     const tokenRes = await fetch(tokenUrl.toString());
-    const tokenText = await tokenRes.text();
     let tokenData;
-    try { tokenData = JSON.parse(tokenText); } catch (e) { tokenData = tokenText; }
+    try { tokenData = await tokenRes.json(); } catch (e) { tokenData = {}; }
 
     if (!tokenRes.ok) {
-      console.error('Token fetch failed! Status:', tokenRes.status, 'Body:', tokenData);
+      console.error('Token fetch failed! Status:', tokenRes.status);
       throw new HttpError('Meta token exchange failed', 502);
     }
 
@@ -73,13 +72,18 @@ serve(async (req) => {
     longTokenUrl.searchParams.append('fb_exchange_token', accessToken);
 
     const longTokenRes = await fetch(longTokenUrl.toString());
-    const longTokenText = await longTokenRes.text();
     let longTokenData;
-    try { longTokenData = JSON.parse(longTokenText); } catch (e) { longTokenData = longTokenText; }
+    try { longTokenData = await longTokenRes.json(); } catch (e) { longTokenData = {}; }
 
-    if (longTokenRes.ok && longTokenData.access_token) {
+    if (!longTokenRes.ok) {
+      console.error('Long token fetch failed! Status:', longTokenRes.status);
+      throw new HttpError('Meta long token exchange failed', 502);
+    }
+    
+    if (longTokenData.access_token) {
       accessToken = longTokenData.access_token;
     }
+    
     const expiresIn = longTokenData.expires_in || tokenData.expires_in;
     const tokenExpiresAt = expiresIn
       ? new Date(Date.now() + Number(expiresIn) * 1000).toISOString()
@@ -90,12 +94,11 @@ serve(async (req) => {
     meUrl.searchParams.append('access_token', accessToken);
     
     const meRes = await fetch(meUrl.toString());
-    const meText = await meRes.text();
     let meData;
-    try { meData = JSON.parse(meText); } catch (e) { meData = meText; }
+    try { meData = await meRes.json(); } catch (e) { meData = {}; }
 
     if (!meRes.ok) {
-      console.error('User profile fetch failed! Status:', meRes.status, 'Body:', meData);
+      console.error('User profile fetch failed! Status:', meRes.status);
       throw new HttpError('Failed to fetch Meta user profile', 502);
     }
 
@@ -109,9 +112,14 @@ serve(async (req) => {
       .eq('user_id', stateData.user_id)
       .eq('meta_user_id', meData.id)
       .maybeSingle();
+      
+    if (searchError) {
+      console.error('Database search error for integration');
+      throw new HttpError('Database operation failed', 500);
+    }
 
     if (existingInt) {
-      await supabaseClient
+      const { error: updateError } = await supabaseClient
         .from('meta_integrations')
         .update({
           access_token_encrypted: encryptedToken,
@@ -122,8 +130,13 @@ serve(async (req) => {
           last_validated_at: new Date().toISOString(),
         })
         .eq('id', existingInt.id);
+        
+      if (updateError) {
+        console.error('Database update error for integration');
+        throw new HttpError('Database operation failed', 500);
+      }
     } else {
-      await supabaseClient
+      const { error: insertError } = await supabaseClient
         .from('meta_integrations')
         .insert({
           user_id: stateData.user_id,
@@ -135,6 +148,11 @@ serve(async (req) => {
           status: 'active',
           last_validated_at: new Date().toISOString(),
         });
+        
+      if (insertError) {
+        console.error('Database insert error for integration');
+        throw new HttpError('Database operation failed', 500);
+      }
     }
 
     // 7. Redirect back to frontend

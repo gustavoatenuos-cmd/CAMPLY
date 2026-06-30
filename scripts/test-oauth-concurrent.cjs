@@ -34,6 +34,10 @@ async function run() {
   
   const headers = { 'Content-Type': 'application/json' };
 
+  // Reset mock
+  console.log('Resetting mock graph...');
+  await fetch('http://127.0.0.1:9999/reset');
+
   console.log('Firing 5 concurrent token exchange requests...');
   
   const promises = [];
@@ -59,6 +63,13 @@ async function run() {
   console.log(`Results: ${successCount} Success, ${failCount} Failures`);
   assertEqual(successCount, 1, 'Exactly 1 token exchange should succeed');
   assertEqual(failCount, 4, 'Exactly 4 token exchanges should fail due to race conditions lock');
+
+  // Verify mock stats
+  const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
+  const stats = await statsRes.json();
+  assertEqual(stats.oauth_token_exchange_count, 1, 'Exactly 1 token exchange call made to mock');
+  assertEqual(stats.oauth_long_token_exchange_count <= 1, true, 'At most 1 long token exchange call made to mock');
+  assertEqual(stats.oauth_me_count, 1, 'Exactly 1 /me call made to mock');
 
   // Verify DB Integration
   const integrationsCount = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -q -U postgres -d postgres -c "SELECT count(*) FROM meta_integrations WHERE user_id = '${userId}';" -t`).toString().trim();

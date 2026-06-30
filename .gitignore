@@ -8,3 +8,5 @@ dist
 supabase/.temp/
 supabase/secrets.local
 supabase/.branches/
+serve.log
+*.log

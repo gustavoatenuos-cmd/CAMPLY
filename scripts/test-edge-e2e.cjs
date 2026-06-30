@@ -39,7 +39,7 @@ async function runScenario(scenarioName, assetId, accessToken, assertFn, extraPa
   };
 
   try {
-    assertFn(res, json, queryDB, text);
+    await assertFn(res, json, queryDB, text);
     console.log(`✅ Scenario ${scenarioName} passed.`);
     passedCount++;
     return json?.runId;
@@ -104,8 +104,7 @@ async function run() {
     mixedObj: setupAccount('act_mixed_obj'),
     mixedAttr: setupAccount('act_mixed_attr'),
     mixedDest: setupAccount('act_mixed_dest'),
-    partialSuccess: setupAccount('act_partial_success'),
-    partialFail: setupAccount('act_partial_fail_page_2'),
+    partialTest: setupAccount('act_partial_test'),
     timeout: setupAccount('act_timeout'),
     error: setupAccount('act_error'),
     rateLimitRec: setupAccount('act_rate_limit_recovered'),
@@ -185,22 +184,39 @@ async function run() {
   });
 
   // 6. partial_page
-  const runIdA = await runScenario('partial_page_A', assets.partialSuccess, accessToken, (res, json, q) => {
+  await fetch('http://127.0.0.1:9999/set_partial_mode?mode=complete');
+  const runIdA = await runScenario('partial_page_A', assets.partialTest, accessToken, (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status');
     assertEqual(json.success, true, 'JSON Success');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'success', 'Run A is success');
   });
-  await runScenario('partial_page_B', assets.partialFail, accessToken, (res, json, q) => {
+
+  await fetch('http://127.0.0.1:9999/set_partial_mode?mode=partial');
+  await runScenario('partial_page_B', assets.partialTest, accessToken, (res, json, q) => {
     assertEqual(res.status, 206, 'HTTP Status 206 for partial');
     assertEqual(json.success, true, 'JSON Success is true for partial'); // partial is a success structurally, but run is marked partial
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'partial', 'Run B is partial');
     
     // Ensure Run A remains the last complete run conceptually
+    const lastCompleteRun = q(`SELECT id FROM meta_sync_runs WHERE ad_account_id='act_partial_test' AND status='success' ORDER BY created_at DESC LIMIT 1`);
+    assertEqual(lastCompleteRun, runIdA, 'Dashboard selector should pick Run A');
+    
+    // Check that totals were inserted for A
     const metricsA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}'`);
+    assertEqual(metricsA, '8', 'Run A inserted 8 rows of metrics');
+
+    // Partial inserted something?
     const metricsB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
-    assertNotEqual(metricsB, '0', 'Partial sync still inserts what it got');
+    assertEqual(metricsB, '8', 'Run B partial still inserted what it got');
+    
+    // A's metrics are untouched and correct
+    const totalImpressionsA = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND metric_id='impressions'`);
+    assertEqual(totalImpressionsA, '1000', 'Run A has 1000 impressions');
+    
+    const totalImpressionsB = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND metric_id='impressions'`);
+    assertEqual(totalImpressionsB, '1000', 'Run B only has 1000 impressions because page 2 failed');
   });
 
   // 7. timeout
@@ -253,34 +269,51 @@ async function run() {
   });
 
   // 12. rate_limit_recovered
-  await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, (res, json, q) => {
+  await fetch('http://127.0.0.1:9999/reset');
+  await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
     assertEqual(json.success, true, 'JSON Success');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'success', 'Run success');
+    const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
+    const stats = await statsRes.json();
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests due to retries');
   });
 
   // 13. rate_limit_exhausted
-  await runScenario('rate_limit_exhausted', assets.rateLimitExh, accessToken, (res, json, q, text) => {
+  await fetch('http://127.0.0.1:9999/reset');
+  await runScenario('rate_limit_exhausted', assets.rateLimitExh, accessToken, async (res, json, q, text) => {
     assertEqual(res.status, 502, 'HTTP 502 when exhausted');
     assertEqual(json.success, false, 'JSON Failed');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'failed', 'Run failed');
     assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
+    const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
+    const stats = await statsRes.json();
+    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
   });
 
   // 14. persistence_failure
-  // We will alter the table to inject a test constraint locally, run the test, and remove it.
-  execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "ALTER TABLE meta_campaign_snapshots ADD CONSTRAINT test_fail_constraint CHECK (campaign_id != 'camp_123') NOT VALID;"`);
-  await runScenario('persistence_failure', assets.simple, accessToken, (res, json, q, text) => {
-    assertEqual(res.status, 500, 'HTTP 500 for persistence failure');
-    assertEqual(json.success, false, 'Failed');
-    assertEqual(json.error.code, 'META_PERSISTENCE_FAILED', 'Correct error code');
-    const metrics = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
-    assertEqual(metrics, '0', 'Zero normalized metrics');
-  });
-  execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "ALTER TABLE meta_campaign_snapshots DROP CONSTRAINT test_fail_constraint;"`);
-
+  try {
+    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "ALTER TABLE meta_campaign_snapshots ADD CONSTRAINT test_fail_constraint CHECK (campaign_id != 'camp_123') NOT VALID;"`);
+    await runScenario('persistence_failure', assets.simple, accessToken, (res, json, q, text) => {
+      assertEqual(res.status, 500, 'HTTP 500 for persistence failure');
+      assertEqual(json.success, false, 'Failed');
+      assertEqual(json.error.code, 'META_PERSISTENCE_FAILED', 'Correct error code');
+      
+      if (json.runId) {
+        const metrics = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
+        assertEqual(metrics, '0', 'Zero normalized metrics');
+        const campaigns = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}'`);
+        assertEqual(campaigns, '0', 'Zero campaign snapshots');
+        const adsets = q(`SELECT count(*) FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}'`);
+        assertEqual(adsets, '0', 'Zero adset snapshots');
+      }
+    });
+  } finally {
+    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "ALTER TABLE meta_campaign_snapshots DROP CONSTRAINT IF EXISTS test_fail_constraint;"`);
+  }
+  // 15. historical_reconciliation
   // 15. historical_reconciliation
   await resetMock();
   await setMockReconciliationState('A');
@@ -288,6 +321,8 @@ async function run() {
     assertEqual(res.status, 200, 'HTTP 200');
     const dest = q(`SELECT destination_type FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}' LIMIT 1`);
     assertEqual(dest, 'FACEBOOK', 'Dest A');
+    const campA = q(`SELECT campaign_name FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' LIMIT 1`);
+    assertEqual(campA, 'Recon Campaign A', 'Campaign A');
   }, {}, true);
   
   await resetMock();
@@ -296,8 +331,22 @@ async function run() {
     assertEqual(res.status, 200, 'HTTP 200');
     const destA = q(`SELECT destination_type FROM meta_adset_snapshots WHERE sync_run_id='${runARecon}' LIMIT 1`);
     assertEqual(destA, 'FACEBOOK', 'Dest A remains unchanged');
+    const campA = q(`SELECT campaign_name FROM meta_campaign_snapshots WHERE sync_run_id='${runARecon}' LIMIT 1`);
+    assertEqual(campA, 'Recon Campaign A', 'Campaign A remains unchanged');
+    
     const destB = q(`SELECT destination_type FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}' LIMIT 1`);
     assertEqual(destB, 'WEBSITE', 'Dest B applies correctly');
+    const campB = q(`SELECT campaign_name FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' LIMIT 1`);
+    assertEqual(campB, 'Recon Campaign B', 'Campaign B applies correctly');
+    
+    const countA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runARecon}'`);
+    assertEqual(countA, '6', 'Run A metrics kept (6 normalized metrics for traffic)');
+    
+    const countB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
+    assertEqual(countB, '6', 'Run B metrics kept (6 normalized metrics for traffic)');
+    
+    const distinctAdsets = q(`SELECT count(DISTINCT adset_id) FROM meta_adset_snapshots WHERE ad_account_id='act_reconciliation'`);
+    assertEqual(distinctAdsets, '1', 'It is the same adset, just snapshotted differently');
   }, {}, true);
 
   // 16. selected_campaign_import
@@ -311,11 +360,10 @@ async function run() {
 
   // 17. ssrf_blocked
   await runScenario('ssrf_blocked', assets.ssrf, accessToken, (res, json, q) => {
-    assertEqual(res.status === 206 || res.status === 500, true, 'HTTP 206 or 500 when SSRF breaks paging');
-    if (json.runId) {
-       const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-       assertEqual(status === 'partial' || status === 'failed', true, 'Run should be marked partial or failed');
-    }
+    assertEqual(res.status, 206, 'HTTP 206 when SSRF breaks paging');
+    assertEqual(json.success, true, 'success: true for SSRF partial');
+    const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(status, 'partial', 'Run should be marked partial for SSRF blocked url');
   });
 
   // 18. oauth_concurrent
@@ -358,17 +406,25 @@ async function run() {
 
   // 23. duas_integrações_ativas
   // Create second integration and asset
+  await fetch('http://127.0.0.1:9999/reset');
   const intId2 = cryptoLib.randomUUID();
   const encryptOut2 = execSync(`node scripts/encrypt-token.cjs "mock_token_B"`).toString().trim();
   execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${intId2}', '${userId}', '${encryptOut2}', 'active');
   "`);
-  const assetB = setupAccount('act_simple', intId2); // Same mock account, different integration
+  const assetB = setupAccount('act_duas_integrações', intId2);
   
-  await runScenario('duas_integrações_ativas', assetB, accessToken, (res, json, q) => {
+  await runScenario('duas_integrações_ativas', assetB, accessToken, async (res, json, q) => {
+    console.log("duas_integrações_ativas json:", JSON.stringify(json));
     assertEqual(res.status, 200, 'HTTP 200');
     const usedIntId = q(`SELECT integration_id FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(usedIntId, intId2, 'Correct integration used');
+    
+    const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
+    const stats = await statsRes.json();
+    const tokens = stats.used_tokens['act_duas_integrações'] || [];
+    assertEqual(tokens.length, 1, 'Only one token should be used');
+    assertEqual(tokens[0], 'mock***en_B', 'The masked token must match token B');
   });
 
   console.log('\n\n=== E2E TEST SUMMARY ===');
@@ -378,6 +434,11 @@ async function run() {
   console.log(`ignorados = ${ignoredCount}`);
   
   if (failedCount > 0) {
+    process.exit(1);
+  }
+  
+  if (executedCount !== 25 || passedCount !== 25) {
+    console.error(`❌ [FAIL] Missing scenarios! Expected 25 executed and 25 passed.`);
     process.exit(1);
   }
 }

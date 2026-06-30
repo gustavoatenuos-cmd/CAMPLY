@@ -73,6 +73,14 @@ export async function handleRequest(req: Request) {
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
+      
+    const validPeriods = ['today', 'yesterday', 'this_month', 'last_month', 'this_quarter', 'maximum', 'last_3d', 'last_7d', 'last_14d', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year'];
+    for (const p of periods) {
+      if (!validPeriods.includes(p)) {
+        throw new HttpError(`Invalid period: ${p}`, 400);
+      }
+    }
+
     const selectedCampaigns = Array.isArray(body.selectedCampaigns) ? body.selectedCampaigns : null;
       
     if (body.syncRunId) {

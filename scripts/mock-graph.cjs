@@ -13,15 +13,53 @@ const MOCK_PORT = process.env.MOCK_PORT || 9999;
 const MOCK_HOST = process.env.MOCK_HOST || `mock-graph:${MOCK_PORT}`;
 
 const server = http.createServer((req, res) => {
-  console.log(`[MOCK] Received request: ${req.method} ${req.url}`);
+  const parsedUrl = url.parse(req.url, true);
+  const path = decodeURIComponent(parsedUrl.pathname);
+  
+  // Extract accountId early for logging
+  const match = path.match(/(act_[^/&?]+)/);
+  const accountId = match ? decodeURIComponent(match[1]) : 'act_unknown';
+  
+  if (!requestCounts[accountId]) requestCounts[accountId] = 0;
+  requestCounts[accountId]++;
+
+  // Sanitize logging (no secrets, no full query string)
+  const reqId = Math.random().toString(36).substring(7);
+  console.log(`[MOCK] req_id=${reqId} method=${req.method} path=${path} scenario=${accountId} count=${requestCounts[accountId]}`);
+
+  // Masked token capture (for two active integrations)
+  const authHeader = req.headers['authorization'] || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    if (token) {
+      if (!global.usedTokens) global.usedTokens = {};
+      const masked = token.substring(0, 4) + '***' + token.substring(token.length - 4);
+      global.usedTokens[accountId] = global.usedTokens[accountId] || new Set();
+      global.usedTokens[accountId].add(masked);
+    }
+  }
+
   res.setHeader('Content-Type', 'application/json');
   
-  const parsedUrl = url.parse(req.url, true);
-  const path = parsedUrl.pathname;
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
   
   if (path === '/health') {
     res.statusCode = 200;
     return res.end(JSON.stringify({ status: 'ok' }));
+  }
+
+  if (path === '/test-stats') {
+    res.statusCode = 200;
+    return res.end(JSON.stringify({
+      oauth_token_exchange_count: global.oauthTokenExchangeCount || 0,
+      oauth_long_token_exchange_count: global.oauthLongTokenExchangeCount || 0,
+      oauth_me_count: global.oauthMeCount || 0,
+      request_counts: requestCounts,
+      used_tokens: Object.fromEntries(Object.entries(global.usedTokens || {}).map(([k, v]) => [k, Array.from(v)]))
+    }));
   }
 
   if (path === '/reset') {
@@ -29,8 +67,10 @@ const server = http.createServer((req, res) => {
     forcedTimeout = false;
     forcedRateLimit = false;
     reconciliationState = 'A';
-    oauthTokenExchangeCount = 0;
-    oauthMeCount = 0;
+    global.oauthTokenExchangeCount = 0;
+    global.oauthLongTokenExchangeCount = 0;
+    global.oauthMeCount = 0;
+    global.usedTokens = {};
     res.statusCode = 200;
     return res.end(JSON.stringify({ status: 'reset' }));
   }
@@ -41,21 +81,25 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ status: 'ok', state: reconciliationState }));
   }
 
+  if (path === '/set_partial_mode') {
+    global.partialMode = parsedUrl.query.mode || 'complete';
+    res.statusCode = 200;
+    return res.end(JSON.stringify({ status: 'ok', mode: global.partialMode }));
+  }
+
   // OAuth endpoints
   if (path.includes('/oauth/access_token')) {
-    oauthTokenExchangeCount++;
+    if (parsedUrl.query.grant_type === 'fb_exchange_token') {
+      global.oauthLongTokenExchangeCount = (global.oauthLongTokenExchangeCount || 0) + 1;
+    } else {
+      global.oauthTokenExchangeCount = (global.oauthTokenExchangeCount || 0) + 1;
+    }
     return res.end(JSON.stringify({ access_token: 'mock_long_lived_token', token_type: 'bearer', expires_in: 3600 }));
   }
   if (path.includes('/me')) {
-    oauthMeCount++;
+    global.oauthMeCount = (global.oauthMeCount || 0) + 1;
     return res.end(JSON.stringify({ id: '123456789', name: 'Mock User' }));
   }
-
-  const match = path.match(/(act_[a-z0-9_]+)/);
-  const accountId = match ? match[1] : 'act_unknown';
-
-  if (!requestCounts[accountId]) requestCounts[accountId] = 0;
-  requestCounts[accountId]++;
 
   let date_start = '2026-06-27';
   let date_stop = '2026-06-27';
@@ -65,6 +109,18 @@ const server = http.createServer((req, res) => {
        if (tr.since) date_start = tr.since;
        if (tr.until) date_stop = tr.until;
      } catch(e){}
+  }
+
+  if (path.endsWith(`/${accountId}`) || path.endsWith(`/${accountId}/`)) {
+    if (accountId === 'act_api_error') {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: { message: 'Invalid parameter' } }));
+    }
+    return res.end(JSON.stringify({
+      id: accountId,
+      timezone_name: 'America/Sao_Paulo',
+      currency: 'BRL'
+    }));
   }
 
   if (accountId === 'act_error') {
@@ -134,14 +190,14 @@ const server = http.createServer((req, res) => {
       campaigns = [{ id: 'camp_mix_attr', name: 'Mixed Attribution', objective: 'OUTCOME_SALES', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_mixed_dest') {
       campaigns = [{ id: 'camp_mix_dest', name: 'Mixed Destination', objective: 'OUTCOME_ENGAGEMENT', effective_status: 'ACTIVE' }];
-    } else if (accountId === 'act_partial_success') {
-      campaigns = [{ id: 'camp_partial_success', name: 'Partial Campaign Success', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
-    } else if (accountId === 'act_partial_fail_page_2') {
-      campaigns = [{ id: 'camp_partial_fail', name: 'Partial Campaign Fail', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
+    } else if (accountId === 'act_partial_test') {
+      campaigns = [{ id: 'camp_partial', name: 'Partial Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_ssrf') {
       campaigns = [{ id: 'camp_ssrf', name: 'SSRF Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_reconciliation') {
       campaigns = [{ id: 'camp_recon', name: reconciliationState === 'A' ? 'Recon Campaign A' : 'Recon Campaign B', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
+    } else if (accountId === 'act_duas_integrações') {
+      campaigns = [{ id: 'camp_duas', name: 'Duas Int', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     }
     return res.end(JSON.stringify({ data: campaigns }));
   }
@@ -171,12 +227,14 @@ const server = http.createServer((req, res) => {
         { id: 'adset_dest1', campaign_id: 'camp_mix_dest', name: 'Adset Dest 1', optimization_goal: 'PAGE_LIKES', effective_status: 'ACTIVE', destination_type: 'FACEBOOK' },
         { id: 'adset_dest2', campaign_id: 'camp_mix_dest', name: 'Adset Dest 2', optimization_goal: 'MESSAGING_CONVERSATIONS', effective_status: 'ACTIVE', destination_type: 'MESSENGER' }
       ];
-    } else if (accountId === 'act_partial_success' || accountId === 'act_partial_fail_page_2') {
-      adsets = [{ id: 'adset_partial', campaign_id: 'camp_partial_' + (accountId === 'act_partial_success' ? 'success' : 'fail'), name: 'Adset Partial', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
+    } else if (accountId === 'act_partial_test') {
+      adsets = [{ id: 'adset_partial', campaign_id: 'camp_partial', name: 'Adset Partial', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     } else if (accountId === 'act_ssrf') {
       adsets = [{ id: 'adset_ssrf', campaign_id: 'camp_ssrf', name: 'Adset SSRF', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     } else if (accountId === 'act_reconciliation') {
       adsets = [{ id: 'adset_recon', campaign_id: 'camp_recon', name: 'Adset Recon', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', destination_type: reconciliationState === 'A' ? 'FACEBOOK' : 'WEBSITE' }];
+    } else if (accountId === 'act_duas_integrações') {
+      adsets = [{ id: 'adset_duas', campaign_id: 'camp_duas', name: 'Adset Duas', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     }
     return res.end(JSON.stringify({ data: adsets, paging: { cursors: { after: 'cursor' } } }));
   }
@@ -185,24 +243,24 @@ const server = http.createServer((req, res) => {
     const isAdsetLevel = parsedUrl.search.includes('level=adset');
     let insights = [];
     
-    if (accountId === 'act_partial_fail_page_2') {
+    if (accountId === 'act_partial_test') {
       const page = parsedUrl.query.after || '1';
       if (page === '1') {
         return res.end(JSON.stringify({
-          data: [{ campaign_id: 'camp_partial_fail', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', date_start, date_stop }],
+          data: [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }],
           paging: { cursors: { after: 'page2' }, next: `http://${MOCK_HOST}/v25.0/${accountId}/insights?after=page2&level=${isAdsetLevel?'adset':'campaign'}` }
         }));
       } else {
-        res.statusCode = 500;
-        return res.end(JSON.stringify({ error: { message: 'Pagination failed on page 2' } }));
+        if (global.partialMode === 'partial') {
+          res.statusCode = 500;
+          return res.end(JSON.stringify({ error: { message: 'Pagination failed on page 2' } }));
+        } else {
+          return res.end(JSON.stringify({
+            data: [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '500', spend: '5.00', reach: '200', date_start, date_stop }],
+            paging: { cursors: { after: 'cursor' } }
+          }));
+        }
       }
-    }
-    
-    if (accountId === 'act_partial_success') {
-      return res.end(JSON.stringify({
-        data: [{ campaign_id: 'camp_partial_success', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }],
-        paging: { cursors: { after: 'cursor' } }
-      }));
     }
 
     if (accountId === 'act_ssrf') {
@@ -255,6 +313,10 @@ const server = http.createServer((req, res) => {
       insights = isAdsetLevel
         ? [{ campaign_id: 'camp_recon', adset_id: 'adset_recon', impressions: '100', spend: '10', date_start, date_stop, attribution_setting: attr }]
         : [{ campaign_id: 'camp_recon', impressions: '100', spend: '10', date_start, date_stop }];
+    } else if (accountId === 'act_duas_integrações') {
+      insights = isAdsetLevel
+        ? [{ campaign_id: 'camp_duas', adset_id: 'adset_duas', impressions: '100', spend: '10', date_start, date_stop }]
+        : [{ campaign_id: 'camp_duas', impressions: '100', spend: '10', date_start, date_stop }];
     }
     
     return res.end(JSON.stringify({ data: insights, paging: { cursors: { after: 'cursor' } } }));
