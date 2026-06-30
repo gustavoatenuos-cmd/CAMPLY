@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPacing';
 import { evaluatePerformanceTarget } from './evaluatePerformance';
+import {
+  enrichGlobalPerformanceDashboard,
+  type GlobalClientPerformance,
+} from './globalPerformanceDashboard';
 import { resolveTarget } from './resolveTarget';
 import type { PerformanceTarget } from './types';
 
 describe('evaluatePerformanceTarget', () => {
-  it('treats lower cost than target as on track', () => {
+  it('calculates cost per result from spend and result volume', () => {
     expect(evaluatePerformanceTarget(
-      { metricId: 'cost_per_messaging_conversation', targetKind: 'cost_per_result', targetValue: 20 },
-      { value: 18, available: true, completenessStatus: 'complete' }
+      { metricId: 'leads', targetKind: 'cost_per_result', targetValue: 20 },
+      { value: 10, available: true, completenessStatus: 'complete' },
+      { spend: 180 }
     )).toMatchObject({
       status: 'on_track',
+      actualValue: 18,
       differenceValue: -2,
       differencePercent: -10,
     });
@@ -18,16 +24,27 @@ describe('evaluatePerformanceTarget', () => {
 
   it('marks costs up to 10 percent above target as attention', () => {
     expect(evaluatePerformanceTarget(
-      { metricId: 'cost_per_messaging_conversation', targetKind: 'cost_per_result', targetValue: 20 },
-      { value: 22, available: true, completenessStatus: 'complete' }
+      { metricId: 'leads', targetKind: 'cost_per_result', targetValue: 20 },
+      { value: 10, available: true, completenessStatus: 'complete' },
+      { spend: 220 }
     ).status).toBe('attention');
   });
 
   it('marks costs more than 10 percent above target as critical', () => {
     expect(evaluatePerformanceTarget(
-      { metricId: 'cost_per_messaging_conversation', targetKind: 'cost_per_result', targetValue: 20 },
-      { value: 23, available: true, completenessStatus: 'complete' }
+      { metricId: 'leads', targetKind: 'cost_per_result', targetValue: 20 },
+      { value: 10, available: true, completenessStatus: 'complete' },
+      { spend: 230 }
     ).status).toBe('critical');
+  });
+
+  it('uses spend evidence before judging zero results', () => {
+    const target = { metricId: 'purchases', targetKind: 'cost_per_result' as const, targetValue: 100 };
+    const metric = { value: 0, available: true, completenessStatus: 'zero_delivery' };
+
+    expect(evaluatePerformanceTarget(target, metric, { spend: 20 }).status).toBe('insufficient_data');
+    expect(evaluatePerformanceTarget(target, metric, { spend: 80 }).status).toBe('attention');
+    expect(evaluatePerformanceTarget(target, metric, { spend: 120 }).status).toBe('critical');
   });
 
   it('does not turn unavailable metrics into zero', () => {
@@ -52,7 +69,7 @@ describe('resolveTarget', () => {
   const targets: PerformanceTarget[] = [
     {
       id: 'account-target',
-      metricId: 'cost_per_messaging_conversation',
+      metricId: 'messaging_conversations_started_total',
       targetKind: 'cost_per_result',
       targetValue: 25,
       effectiveFrom: '2026-06-01T00:00:00Z',
@@ -60,7 +77,7 @@ describe('resolveTarget', () => {
     {
       id: 'campaign-target',
       campaignId: 'campaign_1',
-      metricId: 'cost_per_messaging_conversation',
+      metricId: 'messaging_conversations_started_total',
       targetKind: 'cost_per_result',
       targetValue: 18,
       effectiveFrom: '2026-06-10T00:00:00Z',
@@ -69,7 +86,7 @@ describe('resolveTarget', () => {
 
   it('uses campaign override before account-level target', () => {
     expect(resolveTarget(targets, {
-      metricId: 'cost_per_messaging_conversation',
+      metricId: 'messaging_conversations_started_total',
       targetKind: 'cost_per_result',
       campaignId: 'campaign_1',
       at: '2026-06-15T00:00:00Z',
@@ -78,7 +95,7 @@ describe('resolveTarget', () => {
 
   it('falls back to account-level target when no campaign override exists', () => {
     expect(resolveTarget(targets, {
-      metricId: 'cost_per_messaging_conversation',
+      metricId: 'messaging_conversations_started_total',
       targetKind: 'cost_per_result',
       campaignId: 'campaign_2',
       at: '2026-06-15T00:00:00Z',
@@ -117,5 +134,99 @@ describe('calculateBudgetPacing', () => {
     const usd = { ...brl, currency: 'USD' };
 
     expect(combineBudgetPacingByCurrency([brl, usd])).toBeNull();
+  });
+});
+
+describe('enrichGlobalPerformanceDashboard', () => {
+  it('connects account targets to scoped metrics and budget pacing', () => {
+    const raw: GlobalClientPerformance = {
+      clientId: 'client_1',
+      clientName: 'Cliente 1',
+      clientStatus: 'available',
+      accounts: [
+        {
+          clientMetaAssetId: 'link_1',
+          metaAssetId: 'asset_1',
+          integrationId: 'integration_1',
+          adAccountId: 'act_1',
+          accountName: 'Conta 1',
+          currency: 'BRL',
+          timezone: 'America/Sao_Paulo',
+          dateStart: '2026-06-01',
+          dateStop: '2026-06-07',
+          metrics: {
+            spend: { value: 180, available: true, completenessStatus: 'complete' },
+            leads: { value: 10, available: true, completenessStatus: 'complete' },
+          },
+          budgetPacing: null,
+          dataQuality: { status: 'complete', reason: null },
+          lastSuccessfulRun: null,
+          lastAttempt: null,
+        },
+      ],
+      metrics: {
+        spend: { value: 180, available: true, completenessStatus: 'complete' },
+        leads: { value: 10, available: true, completenessStatus: 'complete' },
+      },
+      metricGroups: [
+        {
+          clientMetaAssetId: 'link_1',
+          metaAssetId: 'asset_1',
+          currency: 'BRL',
+          campaignId: 'campaign_1',
+          campaignName: 'Campanha 1',
+          classifiedObjective: 'LEADS',
+          destinationType: null,
+          attributionSetting: '7d_click',
+          spend: 180,
+          completenessStatus: 'complete',
+          metrics: {
+            spend: { value: 180, available: true, completenessStatus: 'complete' },
+            leads: { value: 10, available: true, completenessStatus: 'complete' },
+          },
+        },
+      ],
+      resolvedTargets: [
+        {
+          clientMetaAssetId: 'link_1',
+          metricId: 'leads',
+          targetKind: 'cost_per_result',
+          targetValue: 20,
+        },
+        {
+          clientMetaAssetId: 'link_1',
+          metricId: 'spend',
+          targetKind: 'daily_budget',
+          targetValue: 30,
+        },
+      ],
+      evaluations: [],
+      budgetPacing: null,
+      dataQuality: { status: 'complete', reason: null },
+      lastSuccessfulRun: null,
+      lastAttempt: null,
+      hasNewerPartial: false,
+      hasNewerFailure: false,
+    };
+
+    const [result] = enrichGlobalPerformanceDashboard(
+      [raw],
+      'last_7d',
+      new Date('2026-06-07T15:00:00Z')
+    );
+
+    expect(result.evaluations).toHaveLength(1);
+    expect(result.evaluations[0]).toMatchObject({
+      metricId: 'leads',
+      actualValue: 18,
+      status: 'on_track',
+      attributionSetting: '7d_click',
+    });
+    expect(result.accounts[0].budgetPacing).toMatchObject({
+      targetDailyBudget: 30,
+      actualSpend: 180,
+      currency: 'BRL',
+    });
+    expect(result.budgetPacing?.actualSpend).toBe(180);
   });
 });
