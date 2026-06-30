@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { syncClientMeta } from '../lib/meta/metaSyncService';
 import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
+import { buildClientMetaAnalytics, buildSnapshot } from '../lib/meta/clientAnalytics';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -230,9 +231,20 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const toggleExpand = (card: string) => setExpandedCard(expandedCard === card ? null : card);
 
-  const totalSpent = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.spend || c.spent || 0), 0);
-  const totalBudget = data.campaigns.reduce((s, c) => s + c.budget, 0);
-  const totalImpressions = data.campaigns.reduce((s, c) => s + (c.normalizedMetricsByPeriod?.['last_7d']?.impressions || 0), 0);
+  const metaClientAnalytics = data.clients.map((client) => buildClientMetaAnalytics(client, data.campaigns, dashboardPeriod));
+  const activeMetaClientAnalytics = metaClientAnalytics.filter((analytics) => analytics.campaigns.length > 0);
+  const trafficTotals = buildSnapshot(activeMetaClientAnalytics.reduce((acc, analytics) => {
+    acc.spend = (acc.spend || 0) + analytics.totals.spend;
+    acc.impressions = (acc.impressions || 0) + analytics.totals.impressions;
+    acc.link_clicks = (acc.link_clicks || 0) + analytics.totals.linkClicks;
+    acc.messaging_conversations_started_total = (acc.messaging_conversations_started_total || 0) + analytics.totals.conversations;
+    acc.leads = (acc.leads || 0) + analytics.totals.leads;
+    acc.purchases = (acc.purchases || 0) + analytics.totals.purchases;
+    acc.purchase_value = (acc.purchase_value || 0) + analytics.totals.purchaseValue;
+    return acc;
+  }, {} as Record<string, number>));
+  const totalSpent = trafficTotals.spend;
+  const totalImpressions = trafficTotals.impressions;
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -509,18 +521,30 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
           );
         })()}
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
             <p className="text-[10px] text-brand-muted uppercase font-semibold">Campanhas Ativas</p>
             <p className="text-xl font-black text-white mt-1">{activeCampaigns.length}</p>
           </div>
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">Total Gasto (7d)</p>
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Total Gasto</p>
             <p className="text-xl font-black text-white mt-1">{money(totalSpent)}</p>
           </div>
           <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
-            <p className="text-[10px] text-brand-muted uppercase font-semibold">Impressões (7d)</p>
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Impressões</p>
             <p className="text-xl font-black text-white mt-1">{totalImpressions.toLocaleString('pt-BR')}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Conversas</p>
+            <p className="text-xl font-black text-brand-green mt-1">{formatNumber(trafficTotals.conversations)}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">Custo/conversa</p>
+            <p className="text-xl font-black text-white mt-1">{formatMoneyOrDash(trafficTotals.costPerConversation)}</p>
+          </div>
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-3">
+            <p className="text-[10px] text-brand-muted uppercase font-semibold">CPM / CTR</p>
+            <p className="text-lg font-black text-white mt-1">{formatMoneyOrDash(trafficTotals.cpm)} <span className="text-xs text-brand-muted">/ {formatPercentOrDash(trafficTotals.ctr)}</span></p>
           </div>
         </div>
 
@@ -579,11 +603,10 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.clients.filter(client => 
-            data.campaigns.some(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status))
-          ).map(client => {
-            const activeCampaigns = data.campaigns.filter(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status) && !c.subCampaignIds?.length);
-            const hasNormalizedData = activeCampaigns.some(c => c.normalizedMetricsByPeriod && Object.keys(c.normalizedMetricsByPeriod).length > 0);
+          {activeMetaClientAnalytics.map((analytics) => {
+            const client = analytics.client;
+            const activeCampaigns = analytics.campaigns.map((summary) => summary.campaign);
+            const hasNormalizedData = analytics.campaigns.some((summary) => Object.keys(summary.metrics).length > 0);
 
             if (!hasNormalizedData) {
               // Fallback legado
@@ -652,8 +675,34 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                 </div>
                 
                 <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] pr-2">
-                  {activeCampaigns.map(c => {
-                    const metrics = c.normalizedMetricsByPeriod?.[dashboardPeriod] || {};
+                  <div className="rounded-lg border border-brand-line/50 bg-brand-ink/60 p-3">
+                    <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                      <MetaMini label="Investido" value={money(analytics.totals.spend)} />
+                      <MetaMini label="Conversas" value={formatNumber(analytics.totals.conversations)} />
+                      <MetaMini label="Custo/conv." value={formatMoneyOrDash(analytics.totals.costPerConversation)} />
+                      <MetaMini label="CPM" value={formatMoneyOrDash(analytics.totals.cpm)} />
+                    </div>
+                    {(analytics.bestCampaign || analytics.bestAdSet) && (
+                      <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                        {analytics.bestCampaign && (
+                          <div className="rounded bg-brand-surface p-2">
+                            <p className="text-[10px] uppercase text-brand-muted">Melhor campanha</p>
+                            <p className="truncate font-bold text-white" title={analytics.bestCampaign.campaign.name}>{analytics.bestCampaign.campaign.name}</p>
+                            <p className="text-brand-soft">{analytics.bestCampaign.primary.label}: {formatNumber(analytics.bestCampaign.primary.value)} • {analytics.bestCampaign.primary.costLabel}: {formatMoneyOrDash(analytics.bestCampaign.primary.cost)}</p>
+                          </div>
+                        )}
+                        {analytics.bestAdSet && (
+                          <div className="rounded bg-brand-surface p-2">
+                            <p className="text-[10px] uppercase text-brand-muted">Melhor grupo</p>
+                            <p className="truncate font-bold text-white" title={analytics.bestAdSet.title}>{analytics.bestAdSet.title}</p>
+                            <p className="text-brand-soft">{analytics.bestAdSet.primary.label}: {formatNumber(analytics.bestAdSet.primary.value)} • {analytics.bestAdSet.primary.costLabel}: {formatMoneyOrDash(analytics.bestAdSet.primary.cost)}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {analytics.campaigns.map(({ campaign: c }) => {
                     return (
                       <div key={c.id} className="border border-brand-line/50 rounded-lg p-3 bg-brand-ink/50">
                         <div className="flex items-center justify-between mb-2">
@@ -669,7 +718,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             );
           })}
           
-          {data.clients.filter(client => data.campaigns.some(c => c.clientId === client.id && ['live', 'optimize'].includes(c.status))).length === 0 && (
+          {activeMetaClientAnalytics.length === 0 && (
             <div className="col-span-full rounded-lg border border-dashed border-brand-line p-8 text-center text-brand-muted">
               Nenhum cliente com campanhas ativas no momento.
             </div>
@@ -858,6 +907,29 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         </div>
       </div>
     </section>
+  );
+}
+
+function formatNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+    : '—';
+}
+
+function formatMoneyOrDash(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? money(value) : '—';
+}
+
+function formatPercentOrDash(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}%` : '—';
+}
+
+function MetaMini({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-brand-muted">{label}</p>
+      <p className="font-mono font-bold text-white">{value}</p>
+    </div>
   );
 }
 

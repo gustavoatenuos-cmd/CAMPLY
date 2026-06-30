@@ -616,18 +616,27 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             </div>
           ) : creativesData.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {creativesData.map((ad, idx) => (
-                <div key={idx} className="rounded-xl border border-brand-line bg-brand-surface overflow-hidden flex flex-col">
+              {[...creativesData].sort((left, right) => creativePerformanceScore(right) - creativePerformanceScore(left)).map((ad, idx) => (
+                <div key={ad.id || ad.creative?.id || `${ad.name}-${ad.status}`} className="rounded-xl border border-brand-line bg-brand-surface overflow-hidden flex flex-col">
                   {ad.creative?.thumbnail_url ? (
-                    <img src={ad.creative.thumbnail_url} alt="Creative" className="w-full h-40 object-cover border-b border-brand-line" />
+                    <img src={ad.creative.thumbnail_url} alt={`Criativo ${ad.name || 'do anúncio'}`} className="w-full h-40 object-cover border-b border-brand-line" />
                   ) : (
                     <div className="w-full h-40 bg-brand-surface2 flex items-center justify-center border-b border-brand-line">
                       <ImageIcon size={32} className="text-brand-muted" />
                     </div>
                   )}
                   <div className="p-3 flex-1 flex flex-col">
-                    <p className="text-xs font-bold text-white mb-1 line-clamp-1" title={ad.name}>{ad.name}</p>
-                    <p className="text-[10px] text-brand-muted mb-2"><span className={ad.status === 'ACTIVE' ? 'text-brand-green font-bold' : ''}>{ad.status}</span></p>
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white mb-1 line-clamp-1" title={ad.name}>{ad.name}</p>
+                        <p className="text-[10px] text-brand-muted"><span className={ad.status === 'ACTIVE' ? 'text-brand-green font-bold' : ''}>{ad.status}</span></p>
+                      </div>
+                      {idx === 0 && (
+                        <span className="shrink-0 rounded-full bg-brand-green/15 px-2 py-0.5 text-[9px] font-black uppercase text-brand-green">
+                          Melhor
+                        </span>
+                      )}
+                    </div>
                     
                     {ad.creative?.title && <p className="text-xs font-semibold text-white mb-1 line-clamp-1">{ad.creative.title}</p>}
                     {ad.creative?.body && <p className="text-[10px] text-brand-soft line-clamp-3 mb-3 flex-1">{ad.creative.body}</p>}
@@ -642,8 +651,22 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
                         <p className="text-xs font-bold text-white">{ad.metrics?.clicks || 0}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-[9px] text-brand-muted uppercase">Leads</p>
-                        <p className="text-xs font-bold text-sky-400">{ad.metrics?.leads || 0}</p>
+                        <p className="text-[9px] text-brand-muted uppercase">Conversas</p>
+                        <p className="text-xs font-bold text-brand-green">{ad.metrics?.conversations || 0}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-1 rounded bg-brand-ink/60 p-2">
+                      <div className="text-center">
+                        <p className="text-[9px] uppercase text-brand-muted">Custo/conv.</p>
+                        <p className="text-[11px] font-bold text-white">{formatMoneyOrDash(ad.metrics?.cost_per_conversation)}</p>
+                      </div>
+                      <div className="border-x border-brand-line text-center">
+                        <p className="text-[9px] uppercase text-brand-muted">CPM</p>
+                        <p className="text-[11px] font-bold text-white">{formatMoneyOrDash(ad.metrics?.cpm)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] uppercase text-brand-muted">CTR</p>
+                        <p className="text-[11px] font-bold text-white">{formatPercentOrDash(ad.metrics?.ctr)}</p>
                       </div>
                     </div>
                   </div>
@@ -667,6 +690,29 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
       )}
     </section>
   );
+}
+
+function creativePerformanceScore(ad: any) {
+  const metrics = ad?.metrics || {};
+  const spend = Number(metrics.spend || 0);
+  const conversations = Number(metrics.conversations || 0);
+  const leads = Number(metrics.leads || 0);
+  const purchases = Number(metrics.purchases || 0);
+  const roas = Number(metrics.purchase_roas || 0);
+  const ctr = Number(metrics.ctr || 0);
+  if (roas > 0) return roas * 100;
+  if (conversations > 0) return conversations / Math.max(spend, 1);
+  if (leads > 0) return leads / Math.max(spend, 1);
+  if (purchases > 0) return purchases / Math.max(spend, 1);
+  return ctr / 100;
+}
+
+function formatMoneyOrDash(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? money(value) : '—';
+}
+
+function formatPercentOrDash(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? `${value.toFixed(2)}%` : '—';
 }
 
 function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {

@@ -28,14 +28,30 @@ export interface AggregateMetricOptions {
   deduplicatedReach?: number;
 }
 
-function getConversionCount(data: MetricValueMap): number | undefined {
-  const candidates = [
-    data.purchases,
-    data.leads,
+function getMessagingConversationCount(data: MetricValueMap): number | undefined {
+  if (typeof data.messaging_conversations_started_total === 'number' && Number.isFinite(data.messaging_conversations_started_total)) {
+    return data.messaging_conversations_started_total;
+  }
+
+  const conversationValues = [
     data.whatsapp_conversations_started,
     data.messenger_conversations_started,
     data.instagram_direct_conversations_started,
     data.messaging_conversations_started_generic,
+  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+  if (conversationValues.length === 0) {
+    return undefined;
+  }
+
+  return conversationValues.reduce((sum, value) => sum + value, 0);
+}
+
+function getConversionCount(data: MetricValueMap): number | undefined {
+  const candidates = [
+    getMessagingConversationCount(data),
+    data.purchases,
+    data.leads,
   ];
   return candidates.find((value) => value !== undefined);
 }
@@ -213,6 +229,44 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     missingDataRule: 'zero',
     deduplicationRule: 'priority_alias',
     supportedLevels: ['campaign', 'adset', 'ad']
+  },
+  messaging_conversations_started_total: {
+    id: 'messaging_conversations_started_total',
+    label: 'Conversas iniciadas',
+    description: 'Total consolidado de conversas iniciadas em WhatsApp, Messenger, Instagram Direct ou destino de mensagem não classificado.',
+    source: 'calculated',
+    compatibleObjectives: ['WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'MESSAGING_OTHER'],
+    aggregationRule: 'recalculate',
+    formatter: 'integer',
+    missingDataRule: 'zero',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad'],
+    calculate: (data) => {
+      const total = [
+        data.whatsapp_conversations_started,
+        data.messenger_conversations_started,
+        data.instagram_direct_conversations_started,
+        data.messaging_conversations_started_generic,
+      ].reduce<number>((sum, value) => sum + (typeof value === 'number' && Number.isFinite(value) ? value : 0), 0);
+      return total;
+    }
+  },
+  cost_per_messaging_conversation: {
+    id: 'cost_per_messaging_conversation',
+    label: 'Custo por conversa',
+    description: 'Investimento dividido pelo total consolidado de conversas iniciadas.',
+    source: 'calculated',
+    compatibleObjectives: ['WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'MESSAGING_OTHER'],
+    aggregationRule: 'recalculate',
+    denominator: 'messaging_conversations_started_total',
+    formatter: 'currency',
+    missingDataRule: 'unavailable',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad'],
+    calculate: (data) => {
+      const conversations = getMessagingConversationCount(data);
+      return conversations && conversations > 0 ? ((data.spend || 0) / conversations) : null;
+    }
   },
   purchases: {
     id: 'purchases',

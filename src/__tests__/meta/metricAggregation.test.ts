@@ -36,4 +36,15 @@ describe('aggregateCompatibleMetrics', () => {
     expect(result.reach).toBe(800);
     expect(result.frequency).toBe(1.25);
   });
+
+  it('consolidates messaging conversations and recalculates cost per conversation', () => {
+    const result = aggregateCompatibleMetrics([
+      { spend: 40, whatsapp_conversations_started: 2, messenger_conversations_started: 1 },
+      { spend: 60, instagram_direct_conversations_started: 3, messaging_conversations_started_generic: 4 },
+    ], { sourceLevel: 'adset' });
+
+    expect(result.messaging_conversations_started_total).toBe(10);
+    expect(result.cost_per_messaging_conversation).toBe(10);
+    expect(result.cpa).toBe(10);
+  });
 });

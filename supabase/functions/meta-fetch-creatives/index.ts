@@ -80,7 +80,7 @@ export async function handleRequest(req: Request) {
     const limit = 20;
     
     // Fetch Ads with Creative and Insights
-    const fields = 'id,name,status,creative{name,title,body,object_story_spec,thumbnail_url,image_url},insights.date_preset(last_90d){impressions,clicks,spend,cpc,cost_per_action_type,actions,ctr,outbound_clicks}';
+    const fields = 'id,name,status,creative{name,title,body,object_story_spec,thumbnail_url,image_url},insights.date_preset(last_90d){impressions,clicks,inline_link_clicks,spend,cpc,cpm,cost_per_action_type,actions,action_values,ctr,outbound_clicks}';
     
     const endpoint = `/${graphTargetId}/ads`;
 
@@ -99,6 +99,23 @@ export async function handleRequest(req: Request) {
     const normalizedAds = (adsData.data || []).map((ad: any) => {
       const creative = ad.creative?.data?.[0] || {};
       const insight = ad.insights?.data?.[0] || {};
+      const actions = Array.isArray(insight.actions) ? insight.actions : [];
+      const actionValues = Array.isArray(insight.action_values) ? insight.action_values : [];
+      const spend = parseFloat(insight.spend || '0');
+      const impressions = parseInt(insight.impressions || '0');
+      const clicks = parseInt(insight.inline_link_clicks || insight.clicks || '0');
+      const conversations = actions
+        .filter((action: any) => typeof action.action_type === 'string' && action.action_type.includes('messaging_conversation_started'))
+        .reduce((sum: number, action: any) => sum + Number(action.value || 0), 0);
+      const purchases = actions
+        .filter((action: any) => ['purchase', 'omni_purchase'].includes(action.action_type))
+        .reduce((sum: number, action: any) => sum + Number(action.value || 0), 0);
+      const purchaseValue = actionValues
+        .filter((action: any) => ['purchase', 'omni_purchase'].includes(action.action_type))
+        .reduce((sum: number, action: any) => sum + Number(action.value || 0), 0);
+      const leads = actions
+        .filter((action: any) => ['lead', 'omni_lead'].includes(action.action_type))
+        .reduce((sum: number, action: any) => sum + Number(action.value || 0), 0);
 
       return {
         id: ad.id,
@@ -110,13 +127,19 @@ export async function handleRequest(req: Request) {
           thumbnail_url: creative.thumbnail_url || creative.image_url || null,
         },
         metrics: {
-          spend: parseFloat(insight.spend || '0'),
-          impressions: parseInt(insight.impressions || '0'),
-          clicks: parseInt(insight.clicks || '0'),
-          ctr: parseFloat(insight.ctr || '0'),
-          cpc: parseFloat(insight.cpc || '0'),
-          purchases: insight.actions?.find((a: any) => a.action_type === 'purchase')?.value || '0',
-          leads: insight.actions?.find((a: any) => a.action_type === 'lead')?.value || '0',
+          spend,
+          impressions,
+          clicks,
+          ctr: parseFloat(insight.ctr || '0') || (impressions > 0 ? (clicks / impressions) * 100 : 0),
+          cpc: parseFloat(insight.cpc || '0') || (clicks > 0 ? spend / clicks : 0),
+          cpm: parseFloat(insight.cpm || '0') || (impressions > 0 ? (spend / impressions) * 1000 : 0),
+          conversations,
+          cost_per_conversation: conversations > 0 ? spend / conversations : 0,
+          purchases,
+          purchase_value: purchaseValue,
+          purchase_roas: spend > 0 && purchaseValue > 0 ? purchaseValue / spend : 0,
+          leads,
+          cost_per_lead: leads > 0 ? spend / leads : 0,
         }
       };
     });

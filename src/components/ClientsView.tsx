@@ -7,6 +7,7 @@ import { Modal } from './ui/Modal';
 import { BillingType, CamplyData, ClientStatus, InvestmentPeriod } from '../types';
 import { syncClientMeta } from '../lib/meta/metaSyncService';
 import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
+import { buildClientMetaAnalytics } from '../lib/meta/clientAnalytics';
 
 function MetaAccountSelector({ accounts, defaultValue }: { accounts: {id: string, name: string}[], defaultValue: string }) {
   const [query, setQuery] = useState('');
@@ -347,6 +348,7 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
       <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
         {data.clients.map((client) => {
           const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id);
+          const metaAnalytics = buildClientMetaAnalytics(client, data.campaigns, 'last_7d');
           const pending = data.receivables.filter((item) => item.clientId === client.id && item.status !== 'paid');
           const totalAds =
             client.adInvestmentMeta + client.adInvestmentGoogle + client.adInvestmentYoutube + client.adInvestmentTikTok;
@@ -399,6 +401,46 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
                 <p className="text-xs text-brand-muted">A receber</p>
                 <p className="mt-1 text-lg font-black text-brand-green">{money(pending.reduce((sum, item) => sum + item.amount, 0))}</p>
               </div>
+              {metaAnalytics.campaigns.length > 0 && (
+                <div className="mt-4 rounded-lg border border-[#0064e0]/20 bg-[#0064e0]/5 p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#7ab0ff]">Meta Ads · últimos 7 dias</p>
+                    <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-[10px] font-bold text-[#7ab0ff]">
+                      {metaAnalytics.campaigns.length} ativas
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Mini label="Investido" value={money(metaAnalytics.totals.spend)} />
+                    <Mini label="Conversas" value={formatNumber(metaAnalytics.totals.conversations)} />
+                    <Mini label="Custo/conv." value={formatMoneyOrDash(metaAnalytics.totals.costPerConversation)} />
+                    <Mini label="CPM" value={formatMoneyOrDash(metaAnalytics.totals.cpm)} />
+                  </div>
+                  {metaAnalytics.bestCampaign && (
+                    <div className="mt-3 rounded-lg bg-brand-ink/70 p-3">
+                      <p className="text-[10px] uppercase text-brand-muted">Melhor campanha</p>
+                      <p className="truncate text-sm font-bold text-white" title={metaAnalytics.bestCampaign.campaign.name}>
+                        {metaAnalytics.bestCampaign.campaign.name}
+                      </p>
+                      <p className="mt-1 text-xs text-brand-soft">
+                        {metaAnalytics.bestCampaign.primary.label}: {formatNumber(metaAnalytics.bestCampaign.primary.value)}
+                        {' '}• {metaAnalytics.bestCampaign.primary.costLabel}: {formatMoneyOrDash(metaAnalytics.bestCampaign.primary.cost)}
+                      </p>
+                    </div>
+                  )}
+                  {metaAnalytics.bestAdSet && (
+                    <div className="mt-2 rounded-lg bg-brand-ink/70 p-3">
+                      <p className="text-[10px] uppercase text-brand-muted">Melhor grupo</p>
+                      <p className="truncate text-sm font-bold text-white" title={metaAnalytics.bestAdSet.title}>
+                        {metaAnalytics.bestAdSet.title}
+                      </p>
+                      <p className="mt-1 text-xs text-brand-soft">
+                        {metaAnalytics.bestAdSet.primary.label}: {formatNumber(metaAnalytics.bestAdSet.primary.value)}
+                        {' '}• {metaAnalytics.bestAdSet.primary.costLabel}: {formatMoneyOrDash(metaAnalytics.bestAdSet.primary.cost)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="mt-4 text-sm leading-relaxed text-brand-muted">{client.notes}</p>
             </article>
           );
@@ -476,4 +518,14 @@ function Mini({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-sm font-bold text-white">{value}</p>
     </div>
   );
+}
+
+function formatNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+    : '—';
+}
+
+function formatMoneyOrDash(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? money(value) : '—';
 }
