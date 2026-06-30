@@ -385,7 +385,26 @@ async function run() {
     assertEqual(json.selectedEntityIds.campaign_ids[0], 'camp_123', 'Response carries selected campaign');
   }, { selectedCampaigns: ['camp_123'], requestedLevel: 'adset' });
 
-  // 18. ssrf_blocked
+  // 18. selected_campaign_creative_drilldown
+  await runScenario('selected_campaign_creative_drilldown', assets.simple, accessToken, (res, json, q) => {
+    assertEqual(res.status, 200, 'HTTP Status');
+    const requestedLevel = q(`SELECT requested_level FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(requestedLevel, 'creative', 'Requested level should be creative');
+    const adSnaps = q(`SELECT count(*) FROM meta_ad_snapshots WHERE sync_run_id='${json.runId}'`);
+    assertEqual(adSnaps, '2', 'Only selected campaign ads snapshotted');
+    const creativeSnaps = q(`SELECT count(*) FROM meta_creative_snapshots WHERE sync_run_id='${json.runId}'`);
+    assertEqual(creativeSnaps, '2', 'Only selected campaign creatives snapshotted');
+    const adMetrics = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='ad' AND ad_id IS NOT NULL AND creative_id IS NOT NULL`);
+    assertEqual(Number(adMetrics) > 0, true, 'Ad-level metrics with creative ids should be persisted');
+    const creativeMetric = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='ad' AND ad_id='ad_123' AND metric_id='leads'`);
+    assertEqual(creativeMetric, '5', 'Winning creative lead metric persisted');
+    assertEqual(json.requestedLevel, 'creative', 'Response carries requestedLevel creative');
+    const ads = json.campaigns?.[0]?.classifiedAdsets?.[0]?.ads || [];
+    assertEqual(ads.length, 2, 'Response carries selected campaign ads');
+    assertEqual(ads[0].metricsByPeriod.last_7d.leads, 5, 'Response carries ad metrics by period');
+  }, { selectedCampaigns: ['camp_123'], requestedLevel: 'creative' });
+
+  // 19. ssrf_blocked
   await runScenario('ssrf_blocked', assets.ssrf, accessToken, (res, json, q) => {
     assertEqual(res.status, 206, 'HTTP 206 when SSRF breaks paging');
     assertEqual(json.success, true, 'success: true for SSRF partial');
@@ -393,18 +412,18 @@ async function run() {
     assertEqual(status, 'partial', 'Run should be marked partial for SSRF blocked url');
   });
 
-  // 19. oauth_concurrent
+  // 20. oauth_concurrent
   // Assuming test-oauth-concurrent.cjs is executed separately in the shell pipeline and exit codes checked
   executedCount++;
   passedCount++;
   console.log(`✅ Scenario oauth_concurrent passed (via separate script).`);
 
-  // 20. user_a_vs_user_b
+  // 21. user_a_vs_user_b
   executedCount++;
   passedCount++;
   console.log(`✅ Scenario user_a_vs_user_b passed (via separate script test-rls-api.cjs).`);
 
-  // 21. sync_run_id_rejected
+  // 22. sync_run_id_rejected
   executedCount++;
   console.log(`\n--- Running Scenario: sync_run_id_rejected ---`);
   const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
@@ -416,12 +435,12 @@ async function run() {
   passedCount++;
   console.log(`✅ Scenario sync_run_id_rejected passed.`);
 
-  // 22. asset_inexistente
+  // 23. asset_inexistente
   await runScenario('asset_inexistente', cryptoLib.randomUUID(), accessToken, (res, json, q) => {
     assertEqual(res.status, 403, 'HTTP 403');
   });
 
-  // 23. integração_revogada
+  // 24. integração_revogada
   const revokedIntId = cryptoLib.randomUUID();
   execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${revokedIntId}', '${userId}', '${encryptOut}', 'revoked');
@@ -431,7 +450,7 @@ async function run() {
     assertEqual(res.status, 403, 'HTTP 403');
   });
 
-  // 24. duas_integrações_ativas
+  // 25. duas_integrações_ativas
   // Create second integration and asset
   await fetch('http://127.0.0.1:9999/reset');
   const intId2 = cryptoLib.randomUUID();
@@ -464,8 +483,8 @@ async function run() {
     process.exit(1);
   }
   
-  if (executedCount !== 26 || passedCount !== 26) {
-    console.error(`❌ [FAIL] Missing scenarios! Expected 26 executed and 26 passed.`);
+  if (executedCount !== 27 || passedCount !== 27) {
+    console.error(`❌ [FAIL] Missing scenarios! Expected 27 executed and 27 passed.`);
     process.exit(1);
   }
 }

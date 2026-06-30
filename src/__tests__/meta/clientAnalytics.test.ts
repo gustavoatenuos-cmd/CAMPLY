@@ -118,4 +118,53 @@ describe('client meta analytics', () => {
     expect(analytics.bestAdSet?.title).toBe('Grupo campeão');
     expect(analytics.bestAdSet?.primary.cost).toBe(5);
   });
+
+  it('ranks best ad and creative from ad-level metrics', () => {
+    const analytics = buildClientMetaAnalytics(client, [campaign({
+      activeAdSets: [
+        {
+          id: 'adset_1',
+          name: 'Grupo campeão',
+          status: 'ACTIVE',
+          ads: [
+            {
+              id: 'ad_1',
+              name: 'Anúncio vencedor',
+              status: 'ACTIVE',
+              creative_id: 'creative_1',
+              creative: { id: 'creative_1', name: 'Criativo vencedor' },
+              metricsByPeriod: {
+                last_7d: {
+                  spend: 50,
+                  impressions: 5000,
+                  messaging_conversations_started_total: 10,
+                  cost_per_messaging_conversation: 5,
+                },
+              },
+            },
+            {
+              id: 'ad_2',
+              name: 'Anúncio caro',
+              status: 'ACTIVE',
+              creative_id: 'creative_2',
+              creative: { id: 'creative_2', name: 'Criativo caro' },
+              metricsByPeriod: {
+                last_7d: {
+                  spend: 80,
+                  impressions: 4000,
+                  messaging_conversations_started_total: 2,
+                  cost_per_messaging_conversation: 40,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    })], 'last_7d');
+
+    expect(analytics.bestAd?.ad.name).toBe('Anúncio vencedor');
+    expect(analytics.bestAd?.primary.cost).toBe(5);
+    expect(analytics.bestCreative?.name).toBe('Criativo vencedor');
+    expect(analytics.bestCreative?.snapshot.conversations).toBe(10);
+  });
 });

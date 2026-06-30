@@ -29,6 +29,18 @@ BEGIN
   IF to_regclass('public.meta_adset_snapshots') IS NULL THEN
     missing_tables := array_append(missing_tables, 'meta_adset_snapshots');
   END IF;
+  IF to_regclass('public.meta_ad_snapshots') IS NULL THEN
+    missing_tables := array_append(missing_tables, 'meta_ad_snapshots');
+  END IF;
+  IF to_regclass('public.meta_creative_snapshots') IS NULL THEN
+    missing_tables := array_append(missing_tables, 'meta_creative_snapshots');
+  END IF;
+  IF to_regclass('public.meta_ad_entities') IS NULL THEN
+    missing_tables := array_append(missing_tables, 'meta_ad_entities');
+  END IF;
+  IF to_regclass('public.meta_creative_entities') IS NULL THEN
+    missing_tables := array_append(missing_tables, 'meta_creative_entities');
+  END IF;
 
   IF cardinality(missing_tables) > 0 THEN
     RAISE EXCEPTION 'Missing Meta analytics tables: %', array_to_string(missing_tables, ', ');
@@ -56,6 +68,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_sync_runs' AND column_name='termination_reason') THEN
     RAISE EXCEPTION 'Missing termination_reason in meta_sync_runs';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_normalized_metrics' AND column_name='ad_id') THEN
+    RAISE EXCEPTION 'Missing ad_id in meta_normalized_metrics';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_normalized_metrics' AND column_name='creative_id') THEN
+    RAISE EXCEPTION 'Missing creative_id in meta_normalized_metrics';
+  END IF;
   
   -- Check composite UNIQUE on meta_sync_runs
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meta_sync_runs_cross_fk_unique') THEN
@@ -75,6 +93,12 @@ BEGIN
   -- RLS Checks
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = 'meta_campaign_snapshots') THEN
     RAISE EXCEPTION 'RLS not enabled on meta_campaign_snapshots';
+  END IF;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = 'meta_ad_snapshots') THEN
+    RAISE EXCEPTION 'RLS not enabled on meta_ad_snapshots';
+  END IF;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = 'meta_creative_snapshots') THEN
+    RAISE EXCEPTION 'RLS not enabled on meta_creative_snapshots';
   END IF;
 
   -- Check RPC single signature
@@ -101,7 +125,7 @@ BEGIN
     RAISE EXCEPTION 'persist_meta_sync_run must have search_path=""';
   END IF;
   
-  IF has_function_privilege('anon', 'public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSONB, TEXT, INTEGER, INTEGER)', 'EXECUTE') THEN
+  IF has_function_privilege('anon', 'public.persist_meta_sync_run(UUID, UUID, UUID, TEXT, TEXT, JSON[], JSON[], JSON[], JSON[], JSON[], JSON[], JSONB, TEXT, INTEGER, INTEGER)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon role has EXECUTE privilege on persist_meta_sync_run';
   END IF;
 

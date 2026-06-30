@@ -28,12 +28,18 @@ interface SyncRequestBody {
   periods?: string[];
   selectedCampaigns?: string[];
   selectedAdSets?: string[];
+  selectedAds?: string[];
+  selectedCreatives?: string[];
   selectedEntityIds?: {
     campaign_ids?: string[];
     campaignIds?: string[];
     adset_ids?: string[];
     adSetIds?: string[];
     adsetIds?: string[];
+    ad_ids?: string[];
+    adIds?: string[];
+    creative_ids?: string[];
+    creativeIds?: string[];
   };
   requestedLevel?: string;
   requested_level?: string;
@@ -56,8 +62,28 @@ interface MetaAdSet extends MetaAdSetDefinition {
   effective_status?: string;
 }
 
+interface MetaAdCreative {
+  id?: string;
+  name?: string;
+  title?: string;
+  body?: string;
+  thumbnail_url?: string;
+  image_url?: string;
+  object_story_spec?: Record<string, unknown> | null;
+}
+
+interface MetaAd {
+  id: string;
+  name: string;
+  campaign_id: string;
+  adset_id?: string;
+  status?: string;
+  effective_status?: string;
+  creative?: MetaAdCreative;
+}
+
 const METRIC_DEFINITION_VERSION = '2026-06-27.1';
-const COLLECTION_CONTRACT_VERSION = '2026-06-30.1';
+const COLLECTION_CONTRACT_VERSION = '2026-06-30.2';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
 type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
@@ -65,6 +91,8 @@ type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
 interface EntitySelection {
   campaign_ids: string[];
   adset_ids: string[];
+  ad_ids: string[];
+  creative_ids: string[];
 }
 
 const collectionStatus = <T>(result: PaginatedResult<T>): PeriodCompletenessStatus =>
@@ -90,6 +118,10 @@ const parseRequestedLevel = (value: unknown, selection: EntitySelection): Reques
     throw new HttpError(`Invalid requestedLevel: ${String(value)}`, 400);
   }
 
+  if ((selection.ad_ids.length > 0 || selection.creative_ids.length > 0) && (level === 'campaign' || level === 'adset')) {
+    return 'ad';
+  }
+
   if (selection.adset_ids.length > 0 && level === 'campaign') {
     return 'adset';
   }
@@ -100,7 +132,12 @@ const parseRequestedLevel = (value: unknown, selection: EntitySelection): Reques
 const resolveRunScope = (selection: EntitySelection): string => {
   const hasCampaigns = selection.campaign_ids.length > 0;
   const hasAdSets = selection.adset_ids.length > 0;
-  if (hasCampaigns && hasAdSets) return 'selected_entities';
+  const hasAds = selection.ad_ids.length > 0;
+  const hasCreatives = selection.creative_ids.length > 0;
+  const selectedScopes = [hasCampaigns, hasAdSets, hasAds, hasCreatives].filter(Boolean).length;
+  if (selectedScopes > 1) return 'selected_entities';
+  if (hasCreatives) return 'selected_creatives';
+  if (hasAds) return 'selected_ads';
   if (hasAdSets) return 'selected_adsets';
   if (hasCampaigns) return 'selected_campaigns';
   return 'full_account';
@@ -138,6 +175,16 @@ const normalizeSelection = (body: SyncRequestBody): EntitySelection => ({
     body.selectedEntityIds?.adset_ids,
     body.selectedEntityIds?.adsetIds,
     body.selectedEntityIds?.adSetIds
+  ),
+  ad_ids: normalizeIdArray(
+    body.selectedAds,
+    body.selectedEntityIds?.ad_ids,
+    body.selectedEntityIds?.adIds
+  ),
+  creative_ids: normalizeIdArray(
+    body.selectedCreatives,
+    body.selectedEntityIds?.creative_ids,
+    body.selectedEntityIds?.creativeIds
   ),
 });
 
@@ -188,6 +235,9 @@ export async function handleRequest(req: Request) {
     );
     const selectedCampaignSet = new Set(selectedEntityIds.campaign_ids);
     const selectedAdSetSet = new Set(selectedEntityIds.adset_ids);
+    const selectedAdIdsSet = new Set(selectedEntityIds.ad_ids);
+    const selectedCreativeSet = new Set(selectedEntityIds.creative_ids);
+    const shouldCollectAds = requestedLevel === 'ad' || requestedLevel === 'creative';
     const runScope = resolveRunScope(selectedEntityIds);
       
     if (body.syncRunId) {
@@ -244,8 +294,10 @@ export async function handleRequest(req: Request) {
       fields: {
         campaigns: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
         adsets: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting',
+        ads: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
         campaignInsights: 'campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
         adsetInsights: 'adset_id,campaign_id,date_start,date_stop,impressions,inline_link_clicks,spend,actions,action_values',
+        adInsights: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
       },
     };
     const requestFingerprint = await buildRequestFingerprint(collectionContract);
@@ -322,9 +374,29 @@ export async function handleRequest(req: Request) {
         limit: '100',
       },
     });
+    let adsResult: PaginatedResult<MetaAd> = {
+      data: [],
+      pagesFetched: 0,
+      recordsFetched: 0,
+      isPartial: false,
+      completionStatus: 'complete',
+    };
+    if (shouldCollectAds) {
+      adsResult = await fetchMetaGraphPaginated<MetaAd>({
+        endpoint: `/${adAccountId}/ads`,
+        accessToken,
+        appSecret,
+        params: {
+          fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
+          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
+          limit: '100',
+        },
+      });
+    }
 
     if (campaignsResult.errorMessage) collectionMessages.push(`Campaign collection: ${campaignsResult.errorMessage}`);
     if (adsetsResult.errorMessage) collectionMessages.push(`Ad Set collection: ${adsetsResult.errorMessage}`);
+    if (adsResult.errorMessage) collectionMessages.push(`Ad collection: ${adsResult.errorMessage}`);
     if (campaignsResult.data.length === 0 && campaignsResult.completionStatus !== 'complete') {
       throw new HttpError('Meta campaign collection failed', 502);
     }
@@ -352,7 +424,42 @@ export async function handleRequest(req: Request) {
       activeCampaigns = activeCampaigns.filter((campaign) => campaignIdsFromSelectedAdSets.has(campaign.id));
     }
 
+    let activeAds = adsResult.data.filter((ad) => Boolean(ad.id) && Boolean(ad.campaign_id));
+    if (shouldCollectAds) {
+      if (selectedCampaignSet.size > 0) {
+        activeAds = activeAds.filter((ad) => selectedCampaignSet.has(ad.campaign_id));
+      }
+      if (selectedAdSetSet.size > 0) {
+        activeAds = activeAds.filter((ad) => typeof ad.adset_id === 'string' && selectedAdSetSet.has(ad.adset_id));
+      }
+      if (selectedAdIdsSet.size > 0) {
+        activeAds = activeAds.filter((ad) => selectedAdIdsSet.has(ad.id));
+      }
+      if (selectedCreativeSet.size > 0) {
+        activeAds = activeAds.filter((ad) => typeof ad.creative?.id === 'string' && selectedCreativeSet.has(ad.creative.id));
+      }
+
+      if (selectedAdIdsSet.size > 0 || selectedCreativeSet.size > 0) {
+        const campaignIdsFromSelectedAds = new Set(activeAds.map((ad) => ad.campaign_id));
+        const adsetIdsFromSelectedAds = new Set(activeAds
+          .map((ad) => ad.adset_id)
+          .filter((adsetId): adsetId is string => typeof adsetId === 'string' && adsetId.length > 0)
+        );
+        activeCampaigns = activeCampaigns.filter((campaign) => campaignIdsFromSelectedAds.has(campaign.id));
+        activeAdSets = activeAdSets.filter((adset) => adsetIdsFromSelectedAds.has(adset.id));
+      }
+    } else {
+      activeAds = [];
+    }
+
     const activeCampaignIds = new Set(activeCampaigns.map((campaign) => campaign.id));
+    const activeAdSetIds = new Set(activeAdSets.map((adset) => adset.id));
+    if (shouldCollectAds) {
+      activeAds = activeAds.filter((ad) =>
+        activeCampaignIds.has(ad.campaign_id)
+        && (!ad.adset_id || activeAdSetIds.has(ad.adset_id))
+      );
+    }
 
     const classifiedObjectives = new Map<string, ReturnType<typeof classifyCampaignObjective>>();
     const requiresAdsetInsights = new Set<string>();
@@ -360,6 +467,8 @@ export async function handleRequest(req: Request) {
     // Arrays for bulk RPC insert
     const p_historical_campaigns: any[] = [];
     const p_historical_adsets: any[] = [];
+    const p_historical_ads: any[] = [];
+    const p_historical_creatives: any[] = [];
     const p_raw_snapshots: any[] = [];
     const p_normalized_metrics: any[] = [];
 
@@ -375,6 +484,34 @@ export async function handleRequest(req: Request) {
         meta_status: adset.status || null,
         effective_status: adset.effective_status || null,
       });
+    }
+
+    const creativeIdsSeen = new Set<string>();
+    for (const ad of activeAds) {
+      const creativeId = ad.creative?.id || null;
+      p_historical_ads.push({
+        campaign_id: ad.campaign_id,
+        adset_id: ad.adset_id || null,
+        ad_id: ad.id,
+        ad_name: ad.name,
+        creative_id: creativeId,
+        meta_status: ad.status || null,
+        effective_status: ad.effective_status || null,
+      });
+
+      if (creativeId && !creativeIdsSeen.has(creativeId)) {
+        creativeIdsSeen.add(creativeId);
+        p_historical_creatives.push({
+          creative_id: creativeId,
+          creative_name: ad.creative?.name || null,
+          title: ad.creative?.title || null,
+          body: ad.creative?.body || null,
+          thumbnail_url: ad.creative?.thumbnail_url || null,
+          image_url: ad.creative?.image_url || null,
+          object_story_spec: ad.creative?.object_story_spec || null,
+          asset_payload: ad.creative || null,
+        });
+      }
     }
 
     for (const campaign of activeCampaigns) {
@@ -408,13 +545,15 @@ export async function handleRequest(req: Request) {
 
     const campaignInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
     const adsetInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
+    const adInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
     const collectionStatusByPeriod: Record<string, {
       campaign: PeriodCompletenessStatus;
       adset: PeriodCompletenessStatus;
+      ad: PeriodCompletenessStatus;
     }> = {};
     
-    let totalPagesFetched = campaignsResult.pagesFetched + adsetsResult.pagesFetched;
-    let totalRecordsFetched = campaignsResult.recordsFetched + adsetsResult.recordsFetched;
+    let totalPagesFetched = campaignsResult.pagesFetched + adsetsResult.pagesFetched + adsResult.pagesFetched;
+    let totalRecordsFetched = campaignsResult.recordsFetched + adsetsResult.recordsFetched + adsResult.recordsFetched;
 
     for (const period of periods) {
       const campaignInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
@@ -460,6 +599,32 @@ export async function handleRequest(req: Request) {
         }
       }
 
+      let adInsightsResult: PaginatedResult<MetaInsightRow> = {
+        data: [],
+        pagesFetched: 0,
+        recordsFetched: 0,
+        isPartial: false,
+        completionStatus: 'complete',
+      };
+      if (shouldCollectAds && activeAds.length > 0) {
+        adInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
+          endpoint: `/${adAccountId}/insights`,
+          accessToken,
+          appSecret,
+          params: {
+            level: 'ad',
+            fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
+            date_preset: period,
+            limit: '100',
+          },
+        });
+        totalPagesFetched += adInsightsResult.pagesFetched;
+        totalRecordsFetched += adInsightsResult.recordsFetched;
+        if (adInsightsResult.errorMessage) {
+          collectionMessages.push(`Ad insights ${period}: ${adInsightsResult.errorMessage}`);
+        }
+      }
+
       const filteredCampaignInsights = campaignInsightsResult.data.filter((row) =>
         Boolean(row.campaign_id) && activeCampaignIds.has(row.campaign_id as string)
       );
@@ -471,6 +636,13 @@ export async function handleRequest(req: Request) {
         && requiresAdsetInsights.has(row.campaign_id)
         && (!selectedAdSetSet.size || (typeof row.adset_id === 'string' && selectedAdSetSet.has(row.adset_id)))
       );
+      const activeAdIds = new Set(activeAds.map((ad) => ad.id));
+      adInsightsByPeriod[period] = adInsightsResult.data.filter((row) =>
+        typeof row.ad_id === 'string'
+        && activeAdIds.has(row.ad_id)
+        && (!row.campaign_id || activeCampaignIds.has(row.campaign_id))
+        && (!row.adset_id || activeAdSetIds.has(row.adset_id))
+      );
       collectionStatusByPeriod[period] = {
         campaign: mergeCompletenessStatuses([
           collectionStatus(campaignInsightsResult),
@@ -478,6 +650,10 @@ export async function handleRequest(req: Request) {
         ]),
         adset: mergeCompletenessStatuses([
           collectionStatus(adsetInsightsResult),
+          accountContextStatus,
+        ]),
+        ad: mergeCompletenessStatuses([
+          collectionStatus(adInsightsResult),
           accountContextStatus,
         ]),
       };
@@ -503,6 +679,18 @@ export async function handleRequest(req: Request) {
           page_number: 1,
         });
       }
+
+      if (shouldCollectAds && activeAds.length > 0) {
+        p_raw_snapshots.push({
+          entity_level: 'ad',
+          entity_id: period,
+          endpoint: `/${adAccountId}/insights?level=ad&date_preset=${period}`,
+          payload: adInsightsByPeriod[period],
+          date_start: adInsightsByPeriod[period][0]?.date_start || null,
+          date_stop: adInsightsByPeriod[period][0]?.date_stop || null,
+          page_number: 1,
+        });
+      }
     }
 
     const campaignsWithInsights = [];
@@ -510,6 +698,7 @@ export async function handleRequest(req: Request) {
 
     for (const campaign of activeCampaigns) {
       const campaignAdsets = activeAdSets.filter((adset) => adset.campaign_id === campaign.id);
+      const campaignAds = activeAds.filter((ad) => ad.campaign_id === campaign.id);
       const globalMetricsByPeriod: Record<string, unknown> = {};
       const attributionGroupsByPeriod: Record<string, unknown[]> = {};
       const completenessByPeriod: Record<string, PeriodCompleteness> = {};
@@ -521,6 +710,8 @@ export async function handleRequest(req: Request) {
         const campaignInsight = campaignInsightsByPeriod[period]
           .find((row) => row.campaign_id === campaign.id);
         const adsetInsights = adsetInsightsByPeriod[period]
+          .filter((row) => row.campaign_id === campaign.id);
+        const adInsights = adInsightsByPeriod[period]
           .filter((row) => row.campaign_id === campaign.id);
         
         // Pass adset insights properly to analytics aggregation
@@ -609,6 +800,42 @@ export async function handleRequest(req: Request) {
           }
         }
 
+        if (shouldCollectAds) {
+          for (const insight of adInsights) {
+            const adId = typeof insight.ad_id === 'string' ? insight.ad_id : null;
+            if (!adId) continue;
+            const ad = campaignAds.find((candidate) => candidate.id === adId);
+            if (!ad) continue;
+
+            const adset = campaignAdsets.find((candidate) => candidate.id === ad.adset_id);
+            const normalized = normalizeMetaMetrics(
+              [insight],
+              adset?.classified_objective || classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
+              campaign.id,
+              ad.adset_id
+            );
+            Object.entries(normalized).forEach(([metricId, result]) => {
+              p_normalized_metrics.push({
+                campaign_id: campaign.id,
+                adset_id: ad.adset_id || null,
+                ad_id: ad.id,
+                creative_id: ad.creative?.id || null,
+                metric_id: metricId,
+                metric_value: result.value,
+                action_type: result.metadata.action_types?.join(',') || null,
+                source_field: result.metadata.source_field || null,
+                date_start: insight.date_start || null,
+                date_stop: insight.date_stop || null,
+                timezone: timezone === 'UNKNOWN' ? null : timezone,
+                attribution_setting: adset?.attribution_setting || null,
+                source_level: 'ad',
+                completeness_status: collectionStatusByPeriod[period].ad,
+                calculation_metadata: result.metadata,
+              });
+            });
+          }
+        }
+
         trendSignatures.push({
           period,
           attributionSettings: analytics.mix.effectiveAttributionSettings,
@@ -626,9 +853,40 @@ export async function handleRequest(req: Request) {
 
       const trendAvailabilityByPeriod = buildTrendAvailabilityByPeriod(trendSignatures);
       const lastPeriodTrend = trendAvailabilityByPeriod[periods[periods.length - 1]];
+      const classifiedAdsetsWithAds = campaignAdsets.map((adset) => ({
+        ...adset,
+        ads: campaignAds
+          .filter((ad) => ad.adset_id === adset.id)
+          .map((ad) => ({
+            id: ad.id,
+            name: ad.name,
+            status: ad.status || ad.effective_status || 'UNKNOWN',
+            effective_status: ad.effective_status,
+            creative_id: ad.creative?.id || null,
+            creative: ad.creative || null,
+            metricsByPeriod: Object.fromEntries(periods.map((period) => {
+              const insight = adInsightsByPeriod[period]?.find((row) => row.ad_id === ad.id);
+              if (!insight) return [period, {}];
+              const normalized = normalizeMetaMetrics(
+                [insight],
+                adset.classified_objective || classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
+                campaign.id,
+                ad.adset_id
+              );
+              return [period, {
+                ...Object.fromEntries(Object.entries(normalized).map(([metricId, result]) => [metricId, result.value])),
+                sourceLevel: 'ad',
+                dateStart: insight.date_start || null,
+                dateStop: insight.date_stop || null,
+                timezone,
+                currency,
+              }];
+            })),
+          })),
+      }));
       campaignsWithInsights.push({
         ...campaign,
-        classifiedAdsets: campaignAdsets,
+        classifiedAdsets: classifiedAdsetsWithAds,
         classifiedObjective: classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
         structuralMixedAttribution: structuralMix.structuralMixedAttribution,
         mixedAttribution: Object.values(mixedAttributionByPeriod).some(Boolean),
@@ -644,9 +902,15 @@ export async function handleRequest(req: Request) {
       });
     }
 
+    const adCollectionIncomplete = shouldCollectAds
+      && (
+        adsResult.completionStatus !== 'complete'
+        || Object.values(collectionStatusByPeriod).some((status) => isIncomplete(status.ad))
+      );
     const collectionIncomplete = Object.values(overallCompletenessByPeriod).some(isIncomplete)
       || campaignsResult.completionStatus !== 'complete'
       || adsetsResult.completionStatus !== 'complete'
+      || adCollectionIncomplete
       || accountContextStatus !== 'complete';
     
     // Using partial if collection is incomplete.
@@ -675,6 +939,8 @@ export async function handleRequest(req: Request) {
         p_campaign_entities: p_historical_campaigns,
         p_adset_entities: p_historical_adsets,
         p_normalized_metrics: p_normalized_metrics,
+        p_ad_entities: p_historical_ads,
+        p_creative_entities: p_historical_creatives,
         p_metadata: p_metadata,
         p_termination_reason: terminationReason,
         p_pages_fetched: totalPagesFetched,

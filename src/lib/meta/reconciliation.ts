@@ -10,6 +10,8 @@ export interface NormalizedMetricRecord {
   id: string;
   campaign_id: string | null;
   adset_id: string | null;
+  ad_id?: string | null;
+  creative_id?: string | null;
   metric_id: string;
   metric_value: number | string;
   action_type: string | null;
@@ -41,6 +43,7 @@ export interface ReconciliationResult {
 type InsightRow = Record<string, unknown> & {
   campaign_id?: string;
   adset_id?: string;
+  ad_id?: string;
   date_start?: string;
   date_stop?: string;
   actions?: Array<{ action_type?: string; value?: string | number }>;
@@ -70,9 +73,11 @@ function matchingRows(
   }
 
   return rowsFromSnapshots(snapshots, metric.source_level || 'campaign').filter((row) => {
-    const entityMatches = metric.source_level === 'adset'
-      ? row.adset_id === metric.adset_id
-      : row.campaign_id === metric.campaign_id;
+    const entityMatches = metric.source_level === 'ad'
+      ? row.ad_id === metric.ad_id
+      : metric.source_level === 'adset'
+        ? row.adset_id === metric.adset_id
+        : row.campaign_id === metric.campaign_id;
     return entityMatches
       && (metric.date_start === null || row.date_start === metric.date_start)
       && (metric.date_stop === null || row.date_stop === metric.date_stop);

@@ -47,6 +47,15 @@ export function mapMetaCampaigns(payload: MetaSyncPayload, clientId: string): Ca
         destination_type: adset.destination_type,
         attribution_setting: adset.attribution_setting,
         classified_objective: adset.classified_objective,
+        ads: (adset.ads || []).map((ad) => ({
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          effective_status: ad.effective_status,
+          creative_id: ad.creative_id,
+          creative: ad.creative,
+          metricsByPeriod: ad.metricsByPeriod,
+        })),
       })),
 
       structuralMixedAttribution: campaign.structuralMixedAttribution,

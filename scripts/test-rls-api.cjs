@@ -153,6 +153,8 @@ async function run() {
     p_campaign_entities: [],
     p_adset_entities: [],
     p_normalized_metrics: [],
+    p_ad_entities: [],
+    p_creative_entities: [],
     p_metadata: {},
     p_pages_fetched: 0,
     p_records_fetched: 0

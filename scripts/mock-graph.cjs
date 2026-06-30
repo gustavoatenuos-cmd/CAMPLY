@@ -239,8 +239,74 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ data: adsets, paging: { cursors: { after: 'cursor' } } }));
   }
 
+  if (path.includes('/ads')) {
+    let ads = [];
+    if (accountId === 'act_simple') {
+      ads = [
+        {
+          id: 'ad_123',
+          campaign_id: 'camp_123',
+          adset_id: 'adset_123',
+          name: 'Creative Campeão',
+          status: 'ACTIVE',
+          effective_status: 'ACTIVE',
+          creative: {
+            id: 'creative_123',
+            name: 'Criativo Campeão',
+            title: 'Fale com um especialista',
+            body: 'Atendimento rápido pelo WhatsApp',
+            thumbnail_url: 'https://example.com/thumb-123.jpg',
+            image_url: 'https://example.com/image-123.jpg',
+            object_story_spec: { link_data: { name: 'Fale com um especialista', message: 'Atendimento rápido pelo WhatsApp' } }
+          }
+        },
+        {
+          id: 'ad_124',
+          campaign_id: 'camp_123',
+          adset_id: 'adset_123',
+          name: 'Creative Caro',
+          status: 'ACTIVE',
+          effective_status: 'ACTIVE',
+          creative: {
+            id: 'creative_124',
+            name: 'Criativo Caro',
+            title: 'Conheça a solução',
+            body: 'Mensagem genérica de teste',
+            thumbnail_url: 'https://example.com/thumb-124.jpg',
+            image_url: 'https://example.com/image-124.jpg',
+            object_story_spec: { link_data: { name: 'Conheça a solução', message: 'Mensagem genérica de teste' } }
+          }
+        },
+        {
+          id: 'ad_456',
+          campaign_id: 'camp_456',
+          adset_id: 'adset_456',
+          name: 'Creative Outra Campanha',
+          status: 'ACTIVE',
+          effective_status: 'ACTIVE',
+          creative: { id: 'creative_456', name: 'Criativo Outra Campanha' }
+        }
+      ];
+    } else if (accountId === 'act_duas_integrações') {
+      ads = [
+        {
+          id: 'ad_duas',
+          campaign_id: 'camp_duas',
+          adset_id: 'adset_duas',
+          name: 'Ad Duas',
+          status: 'ACTIVE',
+          effective_status: 'ACTIVE',
+          creative: { id: 'creative_duas', name: 'Creative Duas' }
+        }
+      ];
+    }
+    return res.end(JSON.stringify({ data: ads, paging: { cursors: { after: 'cursor' } } }));
+  }
+
   if (path.includes('/insights')) {
-    const isAdsetLevel = parsedUrl.search.includes('level=adset');
+    const insightLevel = parsedUrl.query.level;
+    const isAdsetLevel = insightLevel === 'adset';
+    const isAdLevel = insightLevel === 'ad';
     let insights = [];
     
     if (accountId === 'act_partial_test') {
@@ -274,7 +340,13 @@ const server = http.createServer((req, res) => {
     }
 
     if (accountId === 'act_simple') {
-      insights = isAdsetLevel 
+      insights = isAdLevel
+        ? [
+            { campaign_id: 'camp_123', adset_id: 'adset_123', ad_id: 'ad_123', impressions: '700', spend: '35.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop },
+            { campaign_id: 'camp_123', adset_id: 'adset_123', ad_id: 'ad_124', impressions: '300', spend: '15.00', actions: [{action_type: 'lead', value: '1'}], date_start, date_stop },
+            { campaign_id: 'camp_456', adset_id: 'adset_456', ad_id: 'ad_456', impressions: '500', spend: '25.00', actions: [{action_type: 'link_click', value: '10'}], date_start, date_stop }
+          ]
+        : isAdsetLevel
         ? [
             { campaign_id: 'camp_123', adset_id: 'adset_123', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop },
             { campaign_id: 'camp_456', adset_id: 'adset_456', impressions: '500', spend: '25.00', actions: [{action_type: 'link_click', value: '10'}], date_start, date_stop },
@@ -314,7 +386,9 @@ const server = http.createServer((req, res) => {
         ? [{ campaign_id: 'camp_recon', adset_id: 'adset_recon', impressions: '100', spend: '10', date_start, date_stop, attribution_setting: attr }]
         : [{ campaign_id: 'camp_recon', impressions: '100', spend: '10', date_start, date_stop }];
     } else if (accountId === 'act_duas_integrações') {
-      insights = isAdsetLevel
+      insights = isAdLevel
+        ? [{ campaign_id: 'camp_duas', adset_id: 'adset_duas', ad_id: 'ad_duas', impressions: '100', spend: '10', date_start, date_stop }]
+        : isAdsetLevel
         ? [{ campaign_id: 'camp_duas', adset_id: 'adset_duas', impressions: '100', spend: '10', date_start, date_stop }]
         : [{ campaign_id: 'camp_duas', impressions: '100', spend: '10', date_start, date_stop }];
     }

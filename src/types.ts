@@ -85,6 +85,18 @@ export interface Campaign {
       id: string;
       name: string;
       status: string;
+      effective_status?: string;
+      creative_id?: string | null;
+      creative?: {
+        id?: string;
+        name?: string;
+        title?: string;
+        body?: string;
+        thumbnail_url?: string;
+        image_url?: string;
+        object_story_spec?: Record<string, unknown> | null;
+      } | null;
+      metricsByPeriod?: Record<string, Record<string, number | string | null | undefined>>;
     }>;
   }>;
   targetResults?: number;
