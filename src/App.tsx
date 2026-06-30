@@ -158,7 +158,14 @@ export default function App() {
         )}
         <div className="min-h-0 flex-1">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
-          {activeView === 'today' && <OverviewView data={data} setActiveView={setActiveView} />}
+          {activeView === 'today' && (
+            <OverviewView
+              data={data}
+              insights={insights}
+              updateData={updateData}
+              setActiveView={setActiveView}
+            />
+          )}
           {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
           {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
           {activeView === 'mediaFinance' && <FinanceView data={data} />}
