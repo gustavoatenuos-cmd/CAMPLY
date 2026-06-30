@@ -10,7 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CamplyData, ViewId } from '../types';
+import type { CamplyData, Insight, ViewId } from '../types';
 import {
   loadGlobalPerformanceDashboard,
   type DashboardPeriod,
@@ -20,9 +20,12 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
+import { TodayView } from './TodayView';
 
 interface OverviewViewProps {
   data: CamplyData;
+  insights: Insight[];
+  updateData: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView: (view: ViewId) => void;
 }
 
@@ -85,7 +88,15 @@ function evaluationDescription(client: GlobalClientPerformance, evaluation: Perf
   return `${scope}: ${metricLabel(evaluation.metricId)} em ${actual}; meta ${target}.`;
 }
 
-export function OverviewView({ data, setActiveView }: OverviewViewProps) {
+function isMissingAnalyticsSchema(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('could not find the function')
+    || normalized.includes('get_global_performance_dashboard')
+    || normalized.includes('schema cache')
+    || normalized.includes('pgrst202');
+}
+
+export function OverviewView({ data, insights, updateData, setActiveView }: OverviewViewProps) {
   const [period, setPeriod] = useState<DashboardPeriod>('last_7d');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,6 +147,31 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     .filter((receivable) => receivable.status !== 'paid')
     .reduce((total, receivable) => total + receivable.amount, 0);
   const activeAlerts = data.agentAlerts.filter((alert) => alert.status === 'active').length;
+
+  if (error && clients.length === 0 && !loading) {
+    const missingSchema = isMissingAnalyticsSchema(error);
+    return (
+      <div className="h-full overflow-y-auto bg-brand-ink">
+        <div className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-6 lg:px-8">
+          <strong>{missingSchema ? 'A nova Visão geral ainda não está ativa no banco.' : 'A nova Visão geral ficou temporariamente indisponível.'}</strong>{' '}
+          Para não interromper o sistema, a visão anterior foi restaurada automaticamente. Nenhuma métrica nova será exibida como confiável até a estrutura analítica estar disponível.
+          <button
+            type="button"
+            onClick={() => void loadDashboard()}
+            className="ml-3 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-2.5 py-1 font-bold text-amber-100 transition hover:bg-amber-300/10"
+          >
+            <RefreshCw size={13} /> Tentar novamente
+          </button>
+        </div>
+        <TodayView
+          data={data}
+          insights={insights}
+          updateData={updateData}
+          setActiveView={setActiveView}
+        />
+      </div>
+    );
+  }
 
   return (
     <section className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8">
@@ -193,7 +229,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
         {error && (
           <div role="alert" className="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200">
-            <strong>Falha ao carregar dados analíticos.</strong> {error}
+            <strong>Falha ao atualizar os dados analíticos.</strong> Os últimos dados confiáveis continuam visíveis. Tente novamente antes de tomar uma decisão.
           </div>
         )}
 
