@@ -15,7 +15,10 @@ function buildEvaluation(
 ): PerformanceEvaluation {
   const differenceValue = actualValue === null ? null : actualValue - target.targetValue;
   const differencePercent = actualValue === null ? null : (differenceValue! / target.targetValue) * 100;
+
   return {
+    clientMetaAssetId: target.clientMetaAssetId,
+    campaignId: target.campaignId ?? null,
     metricId: target.metricId,
     targetKind: target.targetKind,
     actualValue,
@@ -41,24 +44,40 @@ export function evaluatePerformanceTarget(
     return buildEvaluation(target, null, 'unavailable', 'metric_unavailable', 0);
   }
 
-  const actualValue = finiteOrNull(metric.value);
-  if (actualValue === null) {
+  const metricValue = finiteOrNull(metric.value);
+  if (metricValue === null) {
     return buildEvaluation(target, null, 'unavailable', 'metric_missing', 0);
   }
 
   if (metric.completenessStatus && PARTIAL_COMPLETENESS.has(metric.completenessStatus)) {
-    return buildEvaluation(target, actualValue, 'partial_data', metric.completenessStatus, 0.55);
+    return buildEvaluation(target, metricValue, 'partial_data', metric.completenessStatus, 0.55);
   }
 
   if (target.targetKind === 'cost_per_result') {
-    if (actualValue <= target.targetValue) {
-      return buildEvaluation(target, actualValue, 'on_track', 'cost_at_or_below_target', 0.9);
+    const spend = finiteOrNull(context.spend);
+    if (spend === null) {
+      return buildEvaluation(target, null, 'unavailable', 'spend_unavailable', 0);
     }
 
-    const overspendPercent = ((actualValue - target.targetValue) / target.targetValue) * 100;
+    if (metricValue <= 0) {
+      if (spend < target.targetValue * 0.5) {
+        return buildEvaluation(target, null, 'insufficient_data', 'zero_results_before_half_target_spend', 0.35);
+      }
+      if (spend <= target.targetValue) {
+        return buildEvaluation(target, null, 'attention', 'zero_results_before_target_spend', 0.65);
+      }
+      return buildEvaluation(target, null, 'critical', 'zero_results_after_target_spend', 0.85);
+    }
+
+    const actualCost = spend / metricValue;
+    if (actualCost <= target.targetValue) {
+      return buildEvaluation(target, actualCost, 'on_track', 'cost_at_or_below_target', 0.9);
+    }
+
+    const overspendPercent = ((actualCost - target.targetValue) / target.targetValue) * 100;
     return buildEvaluation(
       target,
-      actualValue,
+      actualCost,
       overspendPercent <= 10 ? 'attention' : 'critical',
       overspendPercent <= 10 ? 'cost_up_to_10_percent_above_target' : 'cost_more_than_10_percent_above_target',
       0.85
@@ -66,25 +85,14 @@ export function evaluatePerformanceTarget(
   }
 
   if (target.targetKind === 'minimum_results') {
-    if (actualValue >= target.targetValue) {
-      return buildEvaluation(target, actualValue, 'on_track', 'minimum_results_reached', 0.9);
+    if (metricValue >= target.targetValue) {
+      return buildEvaluation(target, metricValue, 'on_track', 'minimum_results_reached', 0.9);
     }
 
-    const spend = finiteOrNull(context.spend) ?? 0;
-    if (actualValue === 0) {
-      if (spend < target.targetValue * 0.5) {
-        return buildEvaluation(target, actualValue, 'insufficient_data', 'zero_results_with_low_spend', 0.35);
-      }
-      if (spend <= target.targetValue) {
-        return buildEvaluation(target, actualValue, 'attention', 'zero_results_with_moderate_spend', 0.65);
-      }
-      return buildEvaluation(target, actualValue, 'critical', 'zero_results_above_target_cost_limit', 0.8);
-    }
-
-    const shortfallPercent = ((target.targetValue - actualValue) / target.targetValue) * 100;
+    const shortfallPercent = ((target.targetValue - metricValue) / target.targetValue) * 100;
     return buildEvaluation(
       target,
-      actualValue,
+      metricValue,
       shortfallPercent <= 10 ? 'attention' : 'critical',
       shortfallPercent <= 10 ? 'results_up_to_10_percent_below_target' : 'results_more_than_10_percent_below_target',
       0.8
@@ -92,8 +100,8 @@ export function evaluatePerformanceTarget(
   }
 
   if (target.targetKind === 'daily_budget' || target.targetKind === 'monthly_budget') {
-    return buildEvaluation(target, actualValue, 'unavailable', 'budget_targets_require_pacing_evaluation', 0);
+    return buildEvaluation(target, metricValue, 'unavailable', 'budget_targets_require_pacing_evaluation', 0);
   }
 
-  return buildEvaluation(target, actualValue, 'unavailable', 'unsupported_target_kind', 0);
+  return buildEvaluation(target, metricValue, 'unavailable', 'unsupported_target_kind', 0);
 }
