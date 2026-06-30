@@ -5,6 +5,22 @@ import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
 import { errorResponse, HttpError } from '../_shared/auth.ts'
 
+interface MetaOAuthStateData {
+  user_id: string;
+  redirect_uri: string;
+  scopes: string[] | null;
+}
+
+function isMetaOAuthStateData(value: unknown): value is MetaOAuthStateData {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Record<string, unknown>;
+  return (
+    typeof state.user_id === 'string' &&
+    typeof state.redirect_uri === 'string' &&
+    (state.scopes === null || (Array.isArray(state.scopes) && state.scopes.every((scope) => typeof scope === 'string')))
+  );
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -39,6 +55,9 @@ serve(async (req) => {
     if (stateError || !stateData) {
       console.log('RPC Error:', stateError);
       throw new HttpError('Invalid, expired, or already used state parameter', 400);
+    }
+    if (!isMetaOAuthStateData(stateData)) {
+      throw new HttpError('Invalid state payload returned by OAuth state store', 400);
     }
 
     // 2. Exchange code for user access token
