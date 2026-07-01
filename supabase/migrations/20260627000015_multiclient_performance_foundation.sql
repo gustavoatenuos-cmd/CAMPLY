@@ -5,6 +5,17 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS public.client_identity (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   client_id TEXT NOT NULL,
@@ -31,18 +42,6 @@ CREATE TRIGGER trg_client_identity_updated_at
 BEFORE UPDATE ON public.client_identity
 FOR EACH ROW EXECUTE PROCEDURE public.update_updated_at_column();
 
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM public.camply_workspace w
-    WHERE jsonb_array_length(COALESCE(w.data->'clients', '[]'::jsonb)) > 0
-      AND w.id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-  ) THEN
-    RAISE EXCEPTION 'Cannot backfill client_identity: camply_workspace.id contains non-UUID values with clients.';
-  END IF;
-END $$;
-
 INSERT INTO public.client_identity (user_id, client_id, display_name, archived_at)
 SELECT
   w.id::uuid,
@@ -60,7 +59,11 @@ CROSS JOIN LATERAL (
     ) AS display_name
   FROM jsonb_array_elements(COALESCE(w.data->'clients', '[]'::jsonb)) AS c
 ) AS client_record
-WHERE client_record.client_id IS NOT NULL
+-- Legacy MVP workspaces can use non-UUID ids (for example a shared slug).
+-- They are preserved in camply_workspace, but cannot be safely attributed to
+-- auth.users during this registry backfill.
+WHERE w.id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  AND client_record.client_id IS NOT NULL
   AND client_record.client_id <> ''
   AND client_record.display_name IS NOT NULL
   AND client_record.display_name <> ''
