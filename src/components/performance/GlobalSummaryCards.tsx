@@ -1,6 +1,5 @@
 import { Activity, CircleDollarSign, MessageCircle, ShieldCheck } from 'lucide-react';
 import type { GlobalClientPerformance, MetricContract } from '../../lib/performance/globalPerformanceDashboard';
-import type { PerformanceStatus } from '../../lib/performance/types';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -28,22 +27,6 @@ function formatCurrency(value: number, currency: string | null): string {
   }
 }
 
-const severity: Record<PerformanceStatus, number> = {
-  unavailable: 0,
-  insufficient_data: 1,
-  on_track: 2,
-  partial_data: 3,
-  attention: 4,
-  critical: 5,
-};
-
-function clientEvaluationStatus(client: GlobalClientPerformance): PerformanceStatus {
-  if (client.evaluations.length === 0) return 'unavailable';
-  return client.evaluations.reduce<PerformanceStatus>((worst, evaluation) => (
-    severity[evaluation.status] > severity[worst] ? evaluation.status : worst
-  ), 'unavailable');
-}
-
 export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerformance[] }) {
   const currencyTotals = new Map<string, number>();
   let conversations: number | null = null;
@@ -63,18 +46,14 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
     purchases = addAvailableMetric(purchases, client.metrics.purchases);
   }
 
-  const statuses = clients.reduce<Record<PerformanceStatus, number>>((acc, client) => {
-    const status = clientEvaluationStatus(client);
-    acc[status] += 1;
-    return acc;
-  }, {
-    on_track: 0,
-    attention: 0,
-    critical: 0,
-    insufficient_data: 0,
-    partial_data: 0,
-    unavailable: 0,
-  });
+  const scoredClients = clients.filter((client) => client.score.value !== null);
+  const averageScore = scoredClients.length > 0
+    ? Math.round(scoredClients.reduce((total, client) => total + (client.score.value ?? 0), 0) / scoredClients.length)
+    : null;
+  const healthy = clients.filter((client) => ['excellent', 'healthy'].includes(client.score.status)).length;
+  const attention = clients.filter((client) => client.score.status === 'attention').length;
+  const critical = clients.filter((client) => client.score.status === 'critical').length;
+  const unavailable = clients.filter((client) => client.score.status === 'unavailable').length;
 
   const synchronized = clients.filter((client) => client.clientStatus === 'available').length;
   const syncing = clients.filter((client) => client.clientStatus === 'syncing').length;
@@ -106,26 +85,23 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
       <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Situação das metas</p>
-            <p className="mt-1 text-sm text-brand-soft">Prioridade de decisão</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Score da operação</p>
+            <p className="mt-1 text-sm text-brand-soft">Metas, pacing e confiança dos dados</p>
           </div>
           <Activity className="text-brand-green" size={22} />
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl bg-emerald-400/10 p-2">
-            <p className="text-xl font-black text-emerald-300">{statuses.on_track}</p>
-            <p className="text-[10px] text-emerald-200/70">Na meta</p>
+        <div className="mt-4 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-3xl font-black text-white">{averageScore ?? '—'}<span className="text-sm text-brand-muted">/100</span></p>
+            <p className="mt-1 text-xs text-brand-muted">{scoredClients.length} de {clients.length} clientes pontuáveis</p>
           </div>
-          <div className="rounded-xl bg-amber-400/10 p-2">
-            <p className="text-xl font-black text-amber-300">{statuses.attention}</p>
-            <p className="text-[10px] text-amber-200/70">Atenção</p>
-          </div>
-          <div className="rounded-xl bg-rose-400/10 p-2">
-            <p className="text-xl font-black text-rose-300">{statuses.critical}</p>
-            <p className="text-[10px] text-rose-200/70">Críticos</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg bg-emerald-400/10 px-2 py-1.5"><p className="font-black text-emerald-300">{healthy}</p><p className="text-[9px] text-emerald-200/70">Saudáveis</p></div>
+            <div className="rounded-lg bg-amber-400/10 px-2 py-1.5"><p className="font-black text-amber-300">{attention}</p><p className="text-[9px] text-amber-200/70">Atenção</p></div>
+            <div className="rounded-lg bg-rose-400/10 px-2 py-1.5"><p className="font-black text-rose-300">{critical}</p><p className="text-[9px] text-rose-200/70">Críticos</p></div>
           </div>
         </div>
-        <p className="mt-3 text-xs text-brand-muted">{statuses.insufficient_data + statuses.partial_data + statuses.unavailable} clientes ainda sem avaliação conclusiva.</p>
+        <p className="mt-3 text-xs text-brand-muted">{unavailable} clientes ainda sem metas ou dados suficientes para uma pontuação confiável.</p>
       </article>
 
       <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
