@@ -1,8 +1,10 @@
 import type { Campaign, Client } from '../../types';
+import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { invokeFunction } from '../invokeFunction';
+import { isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 import type { MetaSyncResponse } from './metaSyncTypes';
 
-export type MetaSyncPeriod = 'today' | 'last_7d' | 'last_30d';
+export type MetaSyncPeriod = DashboardPeriod;
 export type MetaSyncLevel = 'campaign' | 'adset' | 'ad' | 'creative';
 
 export interface MetaSyncOptions {
@@ -21,7 +23,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   if (typeof legacyAdAccountId === 'string') {
     return {
       adAccountId: legacyAdAccountId || undefined,
-      periods: ['last_7d'],
+      periods: ['this_month'],
       requestedLevel: 'campaign',
     };
   }
@@ -29,8 +31,57 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   const options = clientOrOptions as MetaSyncOptions;
   return {
     ...options,
-    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['last_7d'],
+    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['this_month'],
     requestedLevel: options.requestedLevel ?? 'campaign',
+  };
+}
+
+export interface OperationalMetaSyncResult {
+  success: boolean;
+  status: 'running' | 'success' | 'partial' | 'failed';
+  runId: string | null;
+  message?: string;
+}
+
+export interface OperationalMetaSyncInput {
+  metaAssetId: string;
+  period: DashboardPeriod;
+  requestedLevel?: MetaSyncLevel;
+  campaignIds?: string[];
+  adsetIds?: string[];
+  adIds?: string[];
+  creativeIds?: string[];
+}
+
+async function syncOperationalMetaAsset(
+  input: OperationalMetaSyncInput
+): Promise<OperationalMetaSyncResult> {
+  if (isMetaE2EMode) {
+    metaE2EState.syncedPeriods.add(input.period);
+    return {
+      success: true,
+      status: 'success',
+      runId: `run-e2e-${input.period}-${input.requestedLevel || 'campaign'}`,
+    };
+  }
+
+  const response = await invokeFunction<MetaSyncResponse>('meta-sync-ads', {
+    metaAssetId: input.metaAssetId,
+    periods: [input.period],
+    requestedLevel: input.requestedLevel || 'campaign',
+    selectedEntityIds: {
+      campaign_ids: input.campaignIds || [],
+      adset_ids: input.adsetIds || [],
+      ad_ids: input.adIds || [],
+      creative_ids: input.creativeIds || [],
+    },
+  });
+
+  return {
+    success: response.success,
+    status: response.status,
+    runId: response.runId,
+    message: response.message,
   };
 }
 
@@ -65,6 +116,12 @@ export async function syncClientMeta(
   return response;
 }
 
-export function syncMetaAsset(options: MetaSyncOptions): Promise<MetaSyncResponse> {
-  return syncClientMeta(options);
+export function syncMetaAsset(input: OperationalMetaSyncInput): Promise<OperationalMetaSyncResult>;
+export function syncMetaAsset(input: MetaSyncOptions): Promise<MetaSyncResponse>;
+export function syncMetaAsset(
+  input: OperationalMetaSyncInput | MetaSyncOptions
+): Promise<OperationalMetaSyncResult> | Promise<MetaSyncResponse> {
+  return 'period' in input
+    ? syncOperationalMetaAsset(input)
+    : syncClientMeta(input);
 }

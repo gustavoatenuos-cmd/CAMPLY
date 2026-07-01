@@ -10,7 +10,7 @@ export type TraceableMetricCompleteness =
   | 'mixed_currency'
   | 'unavailable';
 
-export type TraceableMetricSourceLevel = 'campaign' | 'adset' | 'ad' | 'aggregated';
+export type TraceableMetricSourceLevel = 'account' | 'campaign' | 'adset' | 'ad' | 'aggregated';
 
 export interface TraceableMetric {
   metricId: string;
@@ -33,6 +33,7 @@ export interface TraceableMetric {
   campaignId: string | null;
   adsetId: string | null;
   adId: string | null;
+  unavailableReason?: string | null;
 }
 
 const completenessStatuses = new Set<TraceableMetricCompleteness>([
@@ -48,7 +49,7 @@ const completenessStatuses = new Set<TraceableMetricCompleteness>([
   'unavailable',
 ]);
 
-const sourceLevels = new Set<TraceableMetricSourceLevel>(['campaign', 'adset', 'ad', 'aggregated']);
+const sourceLevels = new Set<TraceableMetricSourceLevel>(['account', 'campaign', 'adset', 'ad', 'aggregated']);
 
 function nullableString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
@@ -85,6 +86,7 @@ export function unavailableTraceableMetric(metricId: string): TraceableMetric {
     campaignId: null,
     adsetId: null,
     adId: null,
+    unavailableReason: 'metric_unavailable',
   };
 }
 
@@ -125,6 +127,7 @@ export function normalizeTraceableMetric(metricId: string, value: unknown): Trac
     campaignId: nullableString(metric.campaignId),
     adsetId: nullableString(metric.adsetId),
     adId: nullableString(metric.adId),
+    unavailableReason: nullableString(metric.unavailableReason),
   };
 }
 
@@ -154,23 +157,67 @@ export function deriveCostMetric(
   result: TraceableMetric | undefined
 ): TraceableMetric {
   const source = result || spend || unavailableTraceableMetric(metricId);
-  const derived: TraceableMetric = { ...source, metricId, value: null, available: false };
+  const derived: TraceableMetric = {
+    ...source,
+    metricId,
+    value: null,
+    available: false,
+    unavailableReason: 'missing_compatible_inputs',
+  };
 
   if (!spend?.available || !result?.available || spend.value === null || result.value === null) {
     return derived;
   }
   if (scopeSignature(spend) !== scopeSignature(result)) {
-    return { ...derived, completenessStatus: 'unavailable' };
+    return { ...derived, completenessStatus: 'unavailable', unavailableReason: 'incompatible_metric_scope' };
   }
-  if (result.value <= 0) return derived;
+  if (result.value <= 0) return { ...derived, unavailableReason: 'denominator_not_positive' };
 
   return {
     ...derived,
     value: spend.value / result.value,
     available: true,
+    unavailableReason: null,
     completenessStatus: spend.completenessStatus === 'complete'
       ? result.completenessStatus
       : spend.completenessStatus,
+  };
+}
+
+export function deriveScopedMetric(
+  metricId: string,
+  numerator: TraceableMetric | undefined,
+  denominator: TraceableMetric | undefined,
+  multiplier = 1
+): TraceableMetric {
+  const source = numerator || denominator || unavailableTraceableMetric(metricId);
+  const unavailable: TraceableMetric = {
+    ...source,
+    metricId,
+    value: null,
+    available: false,
+    completenessStatus: 'unavailable',
+    unavailableReason: 'missing_compatible_inputs',
+  };
+
+  if (!numerator?.available || !denominator?.available
+    || numerator.value === null || denominator.value === null) return unavailable;
+  if (scopeSignature(numerator) !== scopeSignature(denominator)) {
+    return { ...unavailable, unavailableReason: 'incompatible_metric_scope' };
+  }
+  if (denominator.value <= 0) {
+    return { ...unavailable, unavailableReason: 'denominator_not_positive' };
+  }
+
+  return {
+    ...source,
+    metricId,
+    value: (numerator.value / denominator.value) * multiplier,
+    available: true,
+    completenessStatus: numerator.completenessStatus === 'complete'
+      ? denominator.completenessStatus
+      : numerator.completenessStatus,
+    unavailableReason: null,
   };
 }
 
@@ -186,6 +233,7 @@ export function metricTraceLabel(metric: TraceableMetric): string {
     `Destino: ${metric.destinationType || 'não informado'}`,
     `Run: ${metric.syncRunId || '—'}`,
     `Qualidade: ${metric.completenessStatus}`,
+    `Indisponibilidade: ${metric.unavailableReason || '—'}`,
     `Coletado em: ${metric.collectedAt || '—'}`,
   ];
   return lines.join('\n');

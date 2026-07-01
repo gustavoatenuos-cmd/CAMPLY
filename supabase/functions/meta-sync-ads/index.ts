@@ -60,6 +60,8 @@ interface MetaAdSet extends MetaAdSetDefinition {
   name: string;
   status?: string;
   effective_status?: string;
+  daily_budget?: string | number;
+  lifetime_budget?: string | number;
 }
 
 interface MetaAdCreative {
@@ -70,6 +72,7 @@ interface MetaAdCreative {
   thumbnail_url?: string;
   image_url?: string;
   object_story_spec?: Record<string, unknown> | null;
+  updated_time?: string;
 }
 
 interface MetaAd {
@@ -82,8 +85,8 @@ interface MetaAd {
   creative?: MetaAdCreative;
 }
 
-const METRIC_DEFINITION_VERSION = '2026-06-27.1';
-const COLLECTION_CONTRACT_VERSION = '2026-06-30.2';
+const METRIC_DEFINITION_VERSION = '2026-07-01.1';
+const COLLECTION_CONTRACT_VERSION = '2026-07-01.1';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
 type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
@@ -100,6 +103,30 @@ const collectionStatus = <T>(result: PaginatedResult<T>): PeriodCompletenessStat
 
 const isIncomplete = (status: PeriodCompletenessStatus) =>
   status !== 'complete' && status !== 'zero_delivery';
+
+const localIsoDate = (date: Date, timezone: string): string => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+};
+
+const hasExactPeriodRange = (
+  period: string,
+  row: MetaInsightRow | undefined,
+  timezone: string,
+  now = new Date()
+): boolean => {
+  if (!row?.date_start || !row.date_stop || timezone === 'UNKNOWN') return false;
+  if (period !== 'this_month') return true;
+  const dateStop = localIsoDate(now, timezone);
+  const dateStart = `${dateStop.slice(0, 8)}01`;
+  return row.date_start === dateStart && row.date_stop === dateStop;
+};
 
 const normalizeIdArray = (...values: unknown[]): string[] => {
   const ids = values.flatMap((value) => Array.isArray(value) ? value : [])
@@ -227,6 +254,9 @@ export async function handleRequest(req: Request) {
         throw new HttpError(`Invalid period: ${p}`, 400);
       }
     }
+    if (periods.length !== 1) {
+      throw new HttpError('Exactly one requested period is required per synchronization run', 400);
+    }
 
     const selectedEntityIds = normalizeSelection(body);
     const requestedLevel = parseRequestedLevel(
@@ -293,11 +323,12 @@ export async function handleRequest(req: Request) {
       selectedEntityIds,
       fields: {
         campaigns: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
-        adsets: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting',
-        ads: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
-        campaignInsights: 'campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
-        adsetInsights: 'adset_id,campaign_id,date_start,date_stop,impressions,inline_link_clicks,spend,actions,action_values',
-        adInsights: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
+        adsets: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
+        ads: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
+        campaignInsights: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+        adsetInsights: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+        adInsights: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+        accountInsights: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
       },
     };
     const requestFingerprint = await buildRequestFingerprint(collectionContract);
@@ -306,29 +337,9 @@ export async function handleRequest(req: Request) {
     let currency = 'UNKNOWN';
     const collectionMessages: string[] = [];
     let accountContextStatus: PeriodCompletenessStatus = 'complete';
-    try {
-      const account = await fetchMetaGraph({
-        endpoint: `/${adAccountId}`,
-        accessToken,
-        appSecret,
-        params: { fields: 'timezone_name,currency' },
-      });
-      timezone = typeof account?.timezone_name === 'string' && account.timezone_name
-        ? account.timezone_name
-        : 'UNKNOWN';
-      currency = typeof account?.currency === 'string' && account.currency
-        ? account.currency
-        : 'UNKNOWN';
-      if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
-        accountContextStatus = 'validation_error';
-        collectionMessages.push('Meta account timezone or currency is unavailable.');
-      }
-    } catch (error) {
-      accountContextStatus = 'validation_error';
-      collectionMessages.push(`Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`);
-    }
 
-    // 1. Create run as running
+    // Reserve the run before any Graph API request. Database uniqueness and
+    // rate limits therefore protect the upstream API as well as persistence.
     const { error: runError } = await supabaseClient.from('meta_sync_runs').insert({
       id: usedRunId,
       user_id: userId,
@@ -352,7 +363,59 @@ export async function handleRequest(req: Request) {
         selected_entity_ids: selectedEntityIds,
       },
     });
-    if (runError) throw new HttpError(`Failed to create sync run: ${runError.message}`, 500);
+    if (runError) {
+      if (runError.code === '23505') {
+        return new Response(JSON.stringify({
+          success: false,
+          status: 'running',
+          runId: null,
+          error: {
+            code: 'META_SYNC_ALREADY_RUNNING',
+            message: 'Uma sincronização idêntica já está em andamento.',
+          },
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 409,
+        });
+      }
+      if (runError.message?.includes('rate limit')) {
+        throw new HttpError('Muitas sincronizações foram iniciadas. Aguarde um minuto e tente novamente.', 429);
+      }
+      throw new HttpError(`Failed to create sync run: ${runError.message}`, 500);
+    }
+
+    try {
+      const account = await fetchMetaGraph({
+        endpoint: `/${adAccountId}`,
+        accessToken,
+        appSecret,
+        params: { fields: 'timezone_name,currency' },
+      });
+      timezone = typeof account?.timezone_name === 'string' && account.timezone_name
+        ? account.timezone_name
+        : 'UNKNOWN';
+      currency = typeof account?.currency === 'string' && account.currency
+        ? account.currency
+        : 'UNKNOWN';
+      if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
+        accountContextStatus = 'validation_error';
+        collectionMessages.push('Meta account timezone or currency is unavailable.');
+      }
+    } catch (error) {
+      accountContextStatus = 'validation_error';
+      collectionMessages.push(`Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+
+    const { error: contextUpdateError } = await supabaseClient
+      .from('meta_sync_runs')
+      .update({
+        timezone: timezone === 'UNKNOWN' ? null : timezone,
+        currency: currency === 'UNKNOWN' ? null : currency,
+      })
+      .match({ id: usedRunId, user_id: userId, status: 'running' });
+    if (contextUpdateError) {
+      throw new HttpError(`Failed to persist Meta account context: ${contextUpdateError.message}`, 500);
+    }
 
     const campaignsResult = await fetchMetaGraphPaginated<MetaCampaign>({
       endpoint: `/${adAccountId}/campaigns`,
@@ -360,7 +423,6 @@ export async function handleRequest(req: Request) {
       appSecret,
       params: {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
-        filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
         limit: '100',
       },
     });
@@ -369,8 +431,7 @@ export async function handleRequest(req: Request) {
       accessToken,
       appSecret,
       params: {
-        fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting',
-        filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE'] }]),
+        fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
         limit: '100',
       },
     });
@@ -387,7 +448,7 @@ export async function handleRequest(req: Request) {
         accessToken,
         appSecret,
         params: {
-          fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
+          fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
           filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
           limit: '100',
         },
@@ -479,7 +540,11 @@ export async function handleRequest(req: Request) {
         adset_name: adset.name,
         optimization_goal: adset.optimization_goal || null,
         destination_type: adset.destination_type || null,
-        promoted_object: adset.promoted_object || null,
+        promoted_object: {
+          ...(adset.promoted_object || {}),
+          _camply_daily_budget: adset.daily_budget ?? null,
+          _camply_lifetime_budget: adset.lifetime_budget ?? null,
+        },
         attribution_setting: adset.attribution_setting || null,
         meta_status: adset.status || null,
         effective_status: adset.effective_status || null,
@@ -525,7 +590,7 @@ export async function handleRequest(req: Request) {
       classifiedObjectives.set(campaign.id, classifiedObjective);
       const mix = analyzeCampaignMix(campaignAdsets, campaign.objective);
       if (
-        requestedLevel === 'adset'
+        requestedLevel !== 'campaign'
         || mix.structuralMixedAttribution
         || mix.mixedObjective
         || mix.mixedDestination
@@ -544,9 +609,11 @@ export async function handleRequest(req: Request) {
     }
 
     const campaignInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
+    const accountInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
     const adsetInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
     const adInsightsByPeriod: Record<string, MetaInsightRow[]> = {};
     const collectionStatusByPeriod: Record<string, {
+      account: PeriodCompletenessStatus;
       campaign: PeriodCompletenessStatus;
       adset: PeriodCompletenessStatus;
       ad: PeriodCompletenessStatus;
@@ -556,13 +623,39 @@ export async function handleRequest(req: Request) {
     let totalRecordsFetched = campaignsResult.recordsFetched + adsetsResult.recordsFetched + adsResult.recordsFetched;
 
     for (const period of periods) {
+      const accountInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
+        endpoint: `/${adAccountId}/insights`,
+        accessToken,
+        appSecret,
+        params: {
+          level: 'account',
+          fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+          date_preset: period,
+          limit: '100',
+        },
+      });
+      totalPagesFetched += accountInsightsResult.pagesFetched;
+      totalRecordsFetched += accountInsightsResult.recordsFetched;
+      if (accountInsightsResult.errorMessage) {
+        collectionMessages.push(`Account insights ${period}: ${accountInsightsResult.errorMessage}`);
+      }
+      accountInsightsByPeriod[period] = accountInsightsResult.data;
+      const exactAccountRange = hasExactPeriodRange(
+        period,
+        accountInsightsResult.data[0],
+        timezone
+      );
+      if (!exactAccountRange) {
+        collectionMessages.push(`Account insights ${period}: exact date range is unavailable or invalid.`);
+      }
+
       const campaignInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
         endpoint: `/${adAccountId}/insights`,
         accessToken,
         appSecret,
         params: {
           level: 'campaign',
-          fields: 'campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
+          fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
           date_preset: period,
           limit: '100',
         },
@@ -587,7 +680,7 @@ export async function handleRequest(req: Request) {
           appSecret,
           params: {
             level: 'adset',
-            fields: 'adset_id,campaign_id,date_start,date_stop,impressions,inline_link_clicks,spend,actions,action_values',
+            fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
             date_preset: period,
             limit: '100',
           },
@@ -613,7 +706,7 @@ export async function handleRequest(req: Request) {
           appSecret,
           params: {
             level: 'ad',
-            fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,inline_link_clicks,spend,actions,action_values',
+            fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
             date_preset: period,
             limit: '100',
           },
@@ -644,6 +737,11 @@ export async function handleRequest(req: Request) {
         && (!row.adset_id || activeAdSetIds.has(row.adset_id))
       );
       collectionStatusByPeriod[period] = {
+        account: mergeCompletenessStatuses([
+          collectionStatus(accountInsightsResult),
+          accountContextStatus,
+          exactAccountRange ? 'complete' : 'validation_error',
+        ]),
         campaign: mergeCompletenessStatuses([
           collectionStatus(campaignInsightsResult),
           accountContextStatus,
@@ -657,6 +755,16 @@ export async function handleRequest(req: Request) {
           accountContextStatus,
         ]),
       };
+
+      p_raw_snapshots.push({
+        entity_level: 'account',
+        entity_id: period,
+        endpoint: `/${adAccountId}/insights?level=account&date_preset=${period}`,
+        payload: accountInsightsResult.data,
+        date_start: accountInsightsResult.data[0]?.date_start || null,
+        date_stop: accountInsightsResult.data[0]?.date_stop || null,
+        page_number: 1,
+      });
 
       p_raw_snapshots.push({
         entity_level: 'campaign',
@@ -696,6 +804,40 @@ export async function handleRequest(req: Request) {
     const campaignsWithInsights = [];
     const overallCompletenessByPeriod: Record<string, PeriodCompletenessStatus> = {};
 
+    for (const period of periods) {
+      const accountInsight = accountInsightsByPeriod[period][0];
+      if (!accountInsight) continue;
+      const accountNormalized = [
+        'UNCLASSIFIED',
+        'WHATSAPP',
+        'SALES',
+        'LEADS',
+        'TRAFFIC',
+      ].reduce<Record<string, ReturnType<typeof normalizeMetaMetrics>[string]>>((metrics, objective) => ({
+        ...metrics,
+        ...normalizeMetaMetrics([accountInsight], objective as Parameters<typeof normalizeMetaMetrics>[1], 'account'),
+      }), {});
+
+      Object.entries(accountNormalized).forEach(([metricId, result]) => {
+        p_normalized_metrics.push({
+          campaign_id: null,
+          adset_id: null,
+          metric_id: metricId,
+          metric_value: result.value,
+          action_type: result.metadata.action_types?.join(',') || null,
+          source_field: result.metadata.source_field || null,
+          date_start: accountInsight.date_start || null,
+          date_stop: accountInsight.date_stop || null,
+          timezone: timezone === 'UNKNOWN' ? null : timezone,
+          attribution_setting: null,
+          source_level: 'account',
+          completeness_status: collectionStatusByPeriod[period].account,
+          calculation_metadata: result.metadata,
+        });
+      });
+      overallCompletenessByPeriod[period] = collectionStatusByPeriod[period].account;
+    }
+
     for (const campaign of activeCampaigns) {
       const campaignAdsets = activeAdSets.filter((adset) => adset.campaign_id === campaign.id);
       const campaignAds = activeAds.filter((ad) => ad.campaign_id === campaign.id);
@@ -733,9 +875,10 @@ export async function handleRequest(req: Request) {
         attributionGroupsByPeriod[period] = analytics.attributionGroups;
         completenessByPeriod[period] = analytics.completeness;
         mixedAttributionByPeriod[period] = analytics.mix.effectiveMixedAttribution;
-        overallCompletenessByPeriod[period] = overallCompletenessByPeriod[period]
-          ? mergeCompletenessStatuses([overallCompletenessByPeriod[period], analytics.completeness.status])
-          : analytics.completeness.status;
+        overallCompletenessByPeriod[period] = mergeCompletenessStatuses([
+          overallCompletenessByPeriod[period] || 'complete',
+          analytics.completeness.status,
+        ]);
 
         const persistAtAdsetLevel = requiresAdsetInsights.has(campaign.id);
         
@@ -928,6 +1071,20 @@ export async function handleRequest(req: Request) {
     };
     const terminationReason = syncStatus === 'success' ? 'completed' : 'partial_collection';
 
+    const collectedRanges = p_normalized_metrics
+      .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop);
+    const dateStart = collectedRanges[0]?.date_start || null;
+    const dateStop = collectedRanges[0]?.date_stop || null;
+    const { error: contextError } = await supabaseClient.from('meta_sync_runs').update({
+      date_start: dateStart,
+      date_stop: dateStop,
+      timezone: timezone === 'UNKNOWN' ? null : timezone,
+      currency: currency === 'UNKNOWN' ? null : currency,
+    }).match({ id: usedRunId, status: 'running' });
+    if (contextError) {
+      throw new HttpError(`Failed to persist run context: ${contextError.message}`, 500);
+    }
+
     // CALL THE ATOMIC RPC!
     const { error: rpcError } = await supabaseClient.rpc('persist_meta_sync_run', {
         p_run_id: usedRunId,
@@ -989,7 +1146,15 @@ export async function handleRequest(req: Request) {
         console.error('Failed to persist Meta sync failure:', persistenceError);
       }
     }
-    const errorCode = error instanceof HttpError && error.status === 502 ? 'META_API_ERROR' : 'META_PERSISTENCE_FAILED';
+    const errorCode = error instanceof HttpError
+      ? error.status === 429
+        ? 'META_RATE_LIMITED'
+        : error.status === 502
+          ? 'META_API_ERROR'
+          : error.status === 400 || error.status === 403
+            ? 'META_VALIDATION_ERROR'
+            : 'META_PERSISTENCE_FAILED'
+      : 'META_PERSISTENCE_FAILED';
     return errorResponse(error, corsHeaders, usedRunId, errorCode);
   }
 }

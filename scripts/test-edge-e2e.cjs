@@ -131,6 +131,21 @@ async function run() {
     assertEqual(runs, '1', 'Run persisted');
   });
 
+  await runScenario('this_month_exact_account_source', assets.simple, accessToken, (res, json, q) => {
+    assertEqual(res.status, 200, 'HTTP Status');
+    assertEqual(json.success, true, 'JSON Success');
+    const runContract = q(`SELECT requested_period || ':' || requested_level || ':' || run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(runContract, 'this_month:campaign:full_account', 'Official monthly run contract');
+    const exactRange = q(`SELECT date_start = date_trunc('month', now() AT TIME ZONE timezone)::date AND date_stop = (now() AT TIME ZONE timezone)::date FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(exactRange, 't', 'Monthly run persisted the exact account-timezone range');
+    const accountSource = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account'`);
+    assertEqual(accountSource, 't', 'Monthly run persisted official account-level metrics');
+    const pausedCampaign = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);
+    assertEqual(pausedCampaign, '1', 'Paused campaign with period delivery remains collected');
+    const pausedAdset = q(`SELECT count(*) FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);
+    assertEqual(pausedAdset, '1', 'Paused Ad Set remains collected');
+  }, { periods: ['this_month'] });
+
   // 2. zero_delivery
   await runScenario('zero_delivery', assets.zero, accessToken, (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status');
@@ -204,18 +219,20 @@ async function run() {
     assertEqual(lastCompleteRun, runIdA, 'Dashboard selector should pick Run A');
     
     // Check that totals were inserted for A
-    const metricsA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}'`);
-    assertEqual(metricsA, '8', 'Run A inserted 8 rows of metrics');
+    const metricsA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND source_level='campaign'`);
+    assertEqual(metricsA, '9', 'Run A inserted 9 campaign metric rows, including total clicks');
+    const accountMetricsA = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND source_level='account'`);
+    assertEqual(accountMetricsA, 't', 'Run A inserted official account metrics');
 
     // Partial inserted something?
-    const metricsB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
-    assertEqual(metricsB, '8', 'Run B partial still inserted what it got');
+    const metricsB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='campaign'`);
+    assertEqual(metricsB, '9', 'Run B partial still inserted campaign metrics, including total clicks');
     
     // A's metrics are untouched and correct
-    const totalImpressionsA = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND metric_id='impressions'`);
+    const totalImpressionsA = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND source_level='account' AND metric_id='impressions'`);
     assertEqual(totalImpressionsA, '1000', 'Run A has 1000 impressions');
     
-    const totalImpressionsB = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND metric_id='impressions'`);
+    const totalImpressionsB = q(`SELECT metric_value FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account' AND metric_id='impressions'`);
     assertEqual(totalImpressionsB, '1000', 'Run B only has 1000 impressions because page 2 failed');
   });
 
@@ -339,11 +356,11 @@ async function run() {
     const campB = q(`SELECT campaign_name FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' LIMIT 1`);
     assertEqual(campB, 'Recon Campaign B', 'Campaign B applies correctly');
     
-    const countA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runARecon}'`);
-    assertEqual(countA, '6', 'Run A metrics kept (6 normalized metrics for traffic)');
+    const countA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runARecon}' AND source_level='campaign'`);
+    assertEqual(countA, '7', 'Run A metrics kept (7 normalized metrics for traffic, including total clicks)');
     
-    const countB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
-    assertEqual(countB, '6', 'Run B metrics kept (6 normalized metrics for traffic)');
+    const countB = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='campaign'`);
+    assertEqual(countB, '7', 'Run B metrics kept (7 normalized metrics for traffic, including total clicks)');
     
     const distinctAdsets = q(`SELECT count(DISTINCT adset_id) FROM meta_adset_snapshots WHERE ad_account_id='act_reconciliation'`);
     assertEqual(distinctAdsets, '1', 'It is the same adset, just snapshotted differently');
@@ -483,8 +500,8 @@ async function run() {
     process.exit(1);
   }
   
-  if (executedCount !== 27 || passedCount !== 27) {
-    console.error(`❌ [FAIL] Missing scenarios! Expected 27 executed and 27 passed.`);
+  if (executedCount !== 28 || passedCount !== 28) {
+    console.error(`❌ [FAIL] Missing scenarios! Expected 28 executed and 28 passed.`);
     process.exit(1);
   }
 }

@@ -25,7 +25,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
-import { TodayView } from './TodayView';
+import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 
 interface OverviewViewProps {
   data: CamplyData;
@@ -35,6 +35,7 @@ interface OverviewViewProps {
 }
 
 const periodLabels: Record<DashboardPeriod, string> = {
+  this_month: 'Mês atual',
   today: 'Hoje',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
@@ -72,6 +73,14 @@ function formatCurrency(value: number, currency = 'BRL'): string {
   }
 }
 
+function exactRangeLabel(clients: GlobalClientPerformance[]): string {
+  const ranges = new Set(clients.flatMap((client) => client.accounts
+    .filter((account) => account.dateStart && account.dateStop)
+    .map((account) => `${account.dateStart} a ${account.dateStop} (${account.timezone || 'fuso indisponível'})`)));
+  if (ranges.size === 0) return 'Período não sincronizado';
+  return Array.from(ranges).join(' · ');
+}
+
 function metricLabel(metricId: string): string {
   const labels: Record<string, string> = {
     whatsapp_conversations_started: 'conversas no WhatsApp',
@@ -93,45 +102,36 @@ function evaluationDescription(client: GlobalClientPerformance, evaluation: Perf
   return `${scope}: ${metricLabel(evaluation.metricId)} em ${actual}; meta ${target}.`;
 }
 
-function CompatibilityMode({
-  data,
-  insights,
-  updateData,
-  setActiveView,
+function DashboardUnavailable({
   message,
   retrying,
   onRetry,
-}: OverviewViewProps & {
+}: {
   message: string;
   retrying: boolean;
   onRetry: () => void;
 }) {
   return (
-    <div className="h-full overflow-y-auto bg-brand-ink">
-      <div className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-6 lg:px-8">
-        <strong>Modo de compatibilidade.</strong>{' '}
-        {message} Os dados abaixo vêm do workspace legado e não devem ser tratados como a nova central analítica rastreável.
+    <div className="grid h-full place-items-center bg-brand-ink p-6">
+      <div className="max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-amber-100">
+        <h1 className="text-xl font-black text-white">Dashboard indisponível</h1>
+        <p className="mt-2 text-sm leading-6">{message}</p>
+        <p className="mt-2 text-sm leading-6">As métricas do workspace e do armazenamento local não serão usadas como substituição.</p>
         <button
           type="button"
           onClick={onRetry}
           disabled={retrying}
-          className="ml-3 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-2.5 py-1 font-bold text-amber-100 transition hover:bg-amber-300/10 disabled:cursor-wait disabled:opacity-60"
+          className="mt-4 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-3 py-2 font-bold text-amber-100 transition hover:bg-amber-300/10 disabled:cursor-wait disabled:opacity-60"
         >
           <RefreshCw size={13} className={retrying ? 'animate-spin' : ''} /> Verificar novamente
         </button>
       </div>
-      <TodayView
-        data={data}
-        insights={insights}
-        updateData={updateData}
-        setActiveView={setActiveView}
-      />
     </div>
   );
 }
 
-export function OverviewView({ data, insights, updateData, setActiveView }: OverviewViewProps) {
-  const [period, setPeriod] = useState<DashboardPeriod>('last_7d');
+export function OverviewView({ data, setActiveView }: OverviewViewProps) {
+  const [period, setPeriod] = useState<DashboardPeriod>('this_month');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
@@ -221,11 +221,7 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
 
   if (capabilityState.mode === 'compatibility') {
     return (
-      <CompatibilityMode
-        data={data}
-        insights={insights}
-        updateData={updateData}
-        setActiveView={setActiveView}
+      <DashboardUnavailable
         message={compatibilityReasonMessage(capabilityState.reason)}
         retrying={capabilitiesLoading}
         onRetry={() => void loadCapabilities()}
@@ -235,11 +231,7 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
 
   if (error && clients.length === 0 && !loading) {
     return (
-      <CompatibilityMode
-        data={data}
-        insights={insights}
-        updateData={updateData}
-        setActiveView={setActiveView}
+      <DashboardUnavailable
         message="A capacidade foi confirmada, mas o dashboard analítico ficou temporariamente indisponível."
         retrying={loading}
         onRetry={() => void loadDashboard()}
@@ -255,7 +247,7 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
             <div>
               <div className="flex items-center gap-2 text-brand-green">
                 <CircleGauge size={18} />
-                <p className="text-xs font-bold uppercase tracking-[0.2em]">Visão geral</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em]">Dashboard</p>
               </div>
               <h1 className="mt-3 text-3xl font-black text-white lg:text-4xl">Performance real da operação.</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-muted">
@@ -289,13 +281,15 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
               >
                 <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                Atualizar visão
+                Atualizar Dashboard
               </button>
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-brand-line pt-4 text-xs text-brand-muted">
             <span>Período: <strong className="text-white">{periodLabels[period]}</strong></span>
+            <span>•</span>
+            <span>Intervalo exato: <strong className="text-white">{exactRangeLabel(clients)}</strong></span>
             <span>•</span>
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
@@ -338,6 +332,8 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
             </div>
 
             <ClientPerformanceTable clients={filteredClients} />
+
+            <MetaOperationalWorkspace data={data} compact onDataChanged={() => void loadDashboard()} />
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">

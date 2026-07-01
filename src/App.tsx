@@ -1,14 +1,15 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
-import { buildInsights, loadData, saveData } from './data/camplyStore';
-import { loadRemoteData, saveRemoteData } from './data/supabaseStore';
+import { buildInsights, clearUserData, initialData, loadData, saveData } from './data/camplyStore';
+import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData } from './data/supabaseStore';
 import { supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
+import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState } from './lib/meta/metaE2ERuntime';
 
 const ActivityView = React.lazy(() => import('./components/ActivityView').then(m => ({ default: m.ActivityView })));
 const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
@@ -27,27 +28,46 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [activeView, setActiveView] = useState<ViewId>('today');
-  const [data, setData] = useState<CamplyData>(() => loadData());
+  const [data, setData] = useState<CamplyData>(() => isMetaE2EMode ? metaE2EWorkspace : initialData);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
   const [claudeLoading, setClaudeLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const sessionUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (isMetaE2EMode) {
+      resetMetaE2EState();
+      setSession(null);
+      setAuthReady(true);
+      setRemoteLoaded(true);
+      return;
+    }
     if (!supabase) {
       setAuthReady(true);
       return;
     }
 
     void supabase.auth.getSession().then(({ data }) => {
+      sessionUserIdRef.current = data.session?.user.id || null;
+      resetRemoteWorkspaceState();
+      setRemoteLoaded(false);
       setSession(data.session);
+      setData(loadData(data.session?.user.id));
       setAuthReady(true);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const nextUserId = nextSession?.user.id || null;
+      if (sessionUserIdRef.current !== nextUserId) {
+        resetRemoteWorkspaceState();
+        setRemoteLoaded(false);
+        sessionUserIdRef.current = nextUserId;
+      }
       setSession(nextSession);
+      setData(nextSession ? loadData(nextSession.user.id) : initialData);
       setAuthReady(true);
     });
 
@@ -57,7 +77,7 @@ export default function App() {
   const authenticated = Boolean(session);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated || isMetaE2EMode) return;
 
     let active = true;
 
@@ -70,14 +90,14 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [authenticated]);
+  }, [authenticated, session?.user.id]);
 
   useEffect(() => {
-    saveData(data);
-  }, [data]);
+    saveData(data, session?.user.id);
+  }, [data, session?.user.id]);
 
   useEffect(() => {
-    if (!authenticated || !remoteLoaded) return;
+    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
 
     const timeout = window.setTimeout(() => {
       void saveRemoteData(data).then((saved) => {
@@ -89,7 +109,7 @@ export default function App() {
   }, [authenticated, data, remoteLoaded]);
 
   useEffect(() => {
-    if (!authenticated || !remoteLoaded) return;
+    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
     setData((current) => {
       const { newAlerts, newLogs } = runAgentEngine(current);
       if (newAlerts.length > 0 || newLogs.length > 0) {
@@ -104,7 +124,7 @@ export default function App() {
   }, [authenticated, remoteLoaded]);
 
   useEffect(() => {
-    if (!authenticated || !remoteLoaded) return;
+    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
     setClaudeLoading(true);
     generateAgentSummary(data).then((result) => {
       if (result) {
@@ -137,7 +157,12 @@ export default function App() {
   }
 
   if (!authenticated) {
-    return <AuthGate />;
+    return <AuthGate onMockLogin={isMetaE2EMode ? () => {
+      sessionUserIdRef.current = E2E_USER_ID;
+      setData(metaE2EWorkspace);
+      setSession({ user: { id: E2E_USER_ID } } as Session);
+      setRemoteLoaded(true);
+    } : undefined} />;
   }
 
   const agentAlertCount = (data.agentAlerts || []).filter(a => a.status === 'active').length;
@@ -148,7 +173,19 @@ export default function App() {
         activeView={activeView}
         setActiveView={setActiveView}
         alertCount={agentAlertCount}
-        onSignOut={() => void supabase?.auth.signOut()}
+        onSignOut={() => {
+          const userId = session?.user.id;
+          clearUserData(userId);
+          resetRemoteWorkspaceState();
+          setRemoteLoaded(false);
+          setData(initialData);
+          if (isMetaE2EMode) {
+            resetMetaE2EState();
+            setSession(null);
+            return;
+          }
+          void supabase?.auth.signOut();
+        }}
       />
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {syncError && (

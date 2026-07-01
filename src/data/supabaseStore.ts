@@ -1,5 +1,5 @@
 import { CamplyData } from '../types';
-import { normalizeData } from './camplyStore';
+import { normalizeData, sanitizeWorkspaceData } from './camplyStore';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 type WorkspaceRow = {
@@ -8,6 +8,10 @@ type WorkspaceRow = {
 };
 
 let remoteVersion: number | null = null;
+
+export const resetRemoteWorkspaceState = (): void => {
+  remoteVersion = null;
+};
 
 const getUserId = async (): Promise<string | null> => {
   if (!supabase) return null;
@@ -41,7 +45,7 @@ export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
   if (!userId) return false;
 
   const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace_with_client_registry', {
-    p_data: data,
+    p_data: sanitizeWorkspaceData(data),
     p_expected_version: remoteVersion,
   });
 

@@ -154,16 +154,16 @@ BEGIN
   );
 
   v_capabilities := public.get_analytics_capabilities();
-  IF (v_capabilities->>'contractVersion')::integer <> 2
+  IF (v_capabilities->>'contractVersion')::integer <> 3
      OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
      OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
-     OR NOT (v_capabilities->'supportedPeriods' @> '["today", "last_7d", "last_30d"]'::jsonb)
+     OR NOT (v_capabilities->'supportedPeriods' @> '["this_month", "today", "last_7d", "last_30d"]'::jsonb)
      OR NOT (v_capabilities->'supportedLevels' @> '["campaign", "adset", "ad"]'::jsonb)
      OR COALESCE((v_capabilities->>'traceableMetrics')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'Unexpected analytics capability contract: %', v_capabilities;
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
     RAISE EXCEPTION 'Traceable dashboard v2 must return an array';
   END IF;
@@ -316,9 +316,15 @@ DECLARE
   v_asset_a UUID := '10000000-0000-0000-0000-000000000201';
   v_asset_b UUID := '10000000-0000-0000-0000-000000000202';
   v_link_id UUID;
+  v_run_id UUID := '10000000-0000-0000-0000-000000000301';
+  v_selective_run_id UUID := '10000000-0000-0000-0000-000000000302';
+  v_partial_run_id UUID := '10000000-0000-0000-0000-000000000303';
   v_target_id UUID;
   v_next_version BIGINT;
   v_dashboard JSONB;
+  v_catalog JSONB;
+  v_hierarchy JSONB;
+  v_target_history JSONB;
   v_error_seen BOOLEAN;
   v_original_target NUMERIC;
 BEGIN
@@ -545,6 +551,155 @@ BEGIN
     RAISE EXCEPTION 'Dashboard must include linked client without sync and active target';
   END IF;
 
+  INSERT INTO public.meta_sync_runs (
+    id, user_id, integration_id, ad_account_id, graph_api_version,
+    requested_period, requested_level, run_scope, request_fingerprint,
+    status, started_at, finished_at, termination_reason, currency, timezone,
+    date_start, date_stop
+  ) VALUES (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
+    'this_month', 'campaign', 'full_account', 'operational-hierarchy-smoke',
+    'success', now() - interval '1 minute', now(), 'completed', 'BRL', 'America/Sao_Paulo',
+    date_trunc('month', current_date)::date, current_date
+  );
+
+  INSERT INTO public.meta_campaign_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    campaign_name, raw_objective, classified_objective, meta_status, effective_status
+  ) VALUES (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'Campanha pausada', 'OUTCOME_LEADS', 'LEADS', 'PAUSED', 'PAUSED'
+  );
+
+  INSERT INTO public.meta_adset_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, adset_name, optimization_goal, destination_type,
+    attribution_setting, meta_status, effective_status
+  ) VALUES (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'adset_paused', 'Conjunto pausado', 'LEAD_GENERATION', 'WHATSAPP',
+    '7d_click_1d_view', 'PAUSED', 'PAUSED'
+  );
+
+  INSERT INTO public.meta_ad_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, ad_id, ad_name, creative_id, meta_status, effective_status
+  ) VALUES (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'adset_paused', 'ad_paused', 'Anúncio pausado', 'creative_paused', 'PAUSED', 'PAUSED'
+  );
+
+  INSERT INTO public.meta_creative_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, creative_id,
+    creative_name, title, body, object_story_spec
+  ) VALUES (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'creative_paused',
+    'Criativo pausado', 'Agende agora', 'Converse pelo WhatsApp', '{"format":"IMAGE"}'::jsonb
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    attribution_setting, source_level, completeness_status
+  ) VALUES (
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'spend', 350, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    attribution_setting, source_level, completeness_status
+  )
+  SELECT
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', NULL,
+    metric_id, metric_value, date_trunc('month', current_date)::date, current_date,
+    'America/Sao_Paulo', NULL, 'account', 'complete'
+  FROM (VALUES
+    ('spend', 350::numeric),
+    ('messaging_conversations_started_total', 28::numeric),
+    ('purchases', 5::numeric),
+    ('purchase_value', 1400::numeric),
+    ('reach', 5000::numeric),
+    ('impressions', 10000::numeric),
+    ('frequency', 2::numeric),
+    ('cpm', 35::numeric),
+    ('link_clicks', 400::numeric),
+    ('landing_page_views', 300::numeric)
+  ) metrics(metric_id, metric_value);
+
+  INSERT INTO public.meta_sync_runs (
+    id, user_id, integration_id, ad_account_id, graph_api_version,
+    requested_period, requested_level, run_scope, selected_entity_ids,
+    request_fingerprint, status, started_at, finished_at, termination_reason,
+    currency, timezone, date_start, date_stop
+  ) VALUES
+  (
+    v_selective_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
+    'this_month', 'campaign', 'selected_campaigns', '{"campaign_ids":["campaign_paused"]}'::jsonb,
+    'selective-run-must-not-total', 'success', now() - interval '20 seconds', now() - interval '10 seconds',
+    'completed', 'BRL', 'America/Sao_Paulo', date_trunc('month', current_date)::date, current_date
+  ),
+  (
+    v_partial_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
+    'this_month', 'campaign', 'full_account', '{}'::jsonb,
+    'newer-partial-run', 'partial', now() - interval '5 seconds', now(),
+    'partial_collection', 'BRL', 'America/Sao_Paulo', date_trunc('month', current_date)::date, current_date
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, metric_id, metric_value,
+    date_start, date_stop, timezone, source_level, completeness_status
+  ) VALUES (
+    v_user_a, v_selective_run_id, v_integration_a, 'act_phase1_a', 'spend', 9999,
+    date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo', 'account', 'complete'
+  );
+
+  v_catalog := public.get_client_meta_asset_catalog('client_alpha');
+  IF jsonb_array_length(v_catalog->'clients') <> 1
+     OR jsonb_array_length(v_catalog->'clients'->0->'accounts') <> 1
+     OR NOT (v_catalog->'clients'->0->'accounts'->0->'availablePeriods' @> '["this_month"]'::jsonb) THEN
+    RAISE EXCEPTION 'Operational asset catalog is incomplete: %', v_catalog;
+  END IF;
+
+  v_hierarchy := public.get_meta_performance_hierarchy(v_link_id, 'this_month', 'campaign', NULL, 1, 25);
+  IF v_hierarchy->>'state' <> 'ready'
+     OR v_hierarchy->'items'->0->>'effectiveStatus' <> 'PAUSED'
+     OR COALESCE((v_hierarchy->'items'->0->'metrics'->'spend'->>'available')::boolean, false) IS NOT TRUE
+     OR (v_hierarchy->'items'->0->'metrics'->'spend'->>'value')::numeric <> 350 THEN
+    RAISE EXCEPTION 'Operational hierarchy did not preserve paused data and traceability: %', v_hierarchy;
+  END IF;
+
+  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
+  IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 350
+     OR (v_dashboard->0->'accounts'->0->'metrics'->'reach'->>'value')::numeric <> 5000
+     OR v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'sourceLevel' <> 'account'
+     OR v_dashboard->0->'accounts'->0->>'dateStart' <> date_trunc('month', current_date)::date::text
+     OR v_dashboard->0->'accounts'->0->>'dateStop' <> current_date::text
+     OR v_dashboard->0->'accounts'->0->'lastSuccessfulRun'->>'id' <> v_run_id::text THEN
+    RAISE EXCEPTION 'Monthly dashboard did not use the exact successful account run: %', v_dashboard;
+  END IF;
+
+  PERFORM public.set_client_performance_target(
+    v_link_id, 'leads', 'minimum_results', 10, 'campaign_paused',
+    '2026-06-20T00:00:00Z'::timestamptz
+  );
+  v_target_history := public.get_client_performance_target_history(v_link_id, NULL);
+  IF jsonb_array_length(v_target_history) <> 2
+     OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_target_history) target
+       WHERE target->>'campaignId' IS NOT NULL
+     ) THEN
+    RAISE EXCEPTION 'Account target history leaked campaign-scoped targets: %', v_target_history;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_client_meta_asset_catalog(TEXT)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Operational hierarchy RPC privilege boundary is unsafe';
+  END IF;
+
   PERFORM public.unlink_client_meta_asset(v_link_id);
 
   IF NOT EXISTS (SELECT 1 FROM public.client_meta_assets WHERE id = v_link_id AND unlinked_at IS NOT NULL) THEN
@@ -552,6 +707,65 @@ BEGIN
   END IF;
 
   DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
+END $$;
+
+-- Operational sync concurrency and per-user rate limiting
+DO $$
+DECLARE
+  v_user_id UUID := '10000000-0000-0000-0000-000000000021';
+  v_integration_id UUID := '10000000-0000-0000-0000-000000000121';
+  v_run_id UUID := '10000000-0000-0000-0000-000000000221';
+  v_error_seen BOOLEAN := false;
+  i INTEGER;
+BEGIN
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (v_user_id, 'operational-limits@camply.test', '{}');
+  INSERT INTO public.meta_integrations (id, user_id, access_token_encrypted, status)
+  VALUES (v_integration_id, v_user_id, 'token', 'active');
+
+  INSERT INTO public.meta_sync_runs (
+    id, user_id, integration_id, ad_account_id, graph_api_version,
+    requested_period, request_fingerprint, status
+  ) VALUES (
+    v_run_id, v_user_id, v_integration_id, 'act_limits', 'v23.0',
+    'last_7d', 'same-running-request', 'running'
+  );
+
+  BEGIN
+    INSERT INTO public.meta_sync_runs (
+      user_id, integration_id, ad_account_id, graph_api_version,
+      requested_period, request_fingerprint, status
+    ) VALUES (
+      v_user_id, v_integration_id, 'act_limits', 'v23.0',
+      'last_7d', 'same-running-request', 'running'
+    );
+  EXCEPTION WHEN unique_violation THEN
+    v_error_seen := true;
+  END;
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Concurrent identical running sync was not rejected';
+  END IF;
+
+  DELETE FROM public.meta_sync_runs WHERE user_id = v_user_id;
+  v_error_seen := false;
+  BEGIN
+    FOR i IN 1..31 LOOP
+      INSERT INTO public.meta_sync_runs (
+        user_id, integration_id, ad_account_id, graph_api_version,
+        requested_period, request_fingerprint, status
+      ) VALUES (
+        v_user_id, v_integration_id, 'act_limits', 'v23.0',
+        'last_7d', 'rate-' || i, 'failed'
+      );
+    END LOOP;
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    v_error_seen := true;
+  END;
+  IF NOT v_error_seen THEN
+    RAISE EXCEPTION 'Per-user Meta sync rate limit was not enforced';
+  END IF;
+
+  DELETE FROM auth.users WHERE id = v_user_id;
 END $$;
 
 SELECT

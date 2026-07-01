@@ -4,6 +4,13 @@ import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPa
 import { evaluatePerformanceTarget } from './evaluatePerformance';
 import { calculatePerformanceScore, type PerformanceScore } from './performanceScore';
 import { normalizeTraceableMetric, type TraceableMetric } from './traceableMetrics';
+import {
+  E2E_CLIENT_ID,
+  E2E_LINK_ID,
+  e2eMetric,
+  isMetaE2EMode,
+  metaE2EState,
+} from '../meta/metaE2ERuntime';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -114,6 +121,7 @@ function normalizeMetricMap(metrics: Record<string, MetricContract> | undefined)
 function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Date; end: Date } {
   const end = new Date(currentDate);
   const start = new Date(currentDate);
+  if (period === 'this_month') start.setUTCDate(1);
   if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
   if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
   return { start, end };
@@ -333,6 +341,92 @@ export async function loadGlobalPerformanceDashboard(options: {
   assetIds?: string[];
   dashboardRpc: AnalyticsCapabilities['dashboardRpc'];
 }): Promise<GlobalClientPerformance[]> {
+  if (isMetaE2EMode) {
+    const accountMetrics = {
+      spend: e2eMetric('spend', 350, 'account'),
+      impressions: e2eMetric('impressions', 12000, 'account'),
+      reach: e2eMetric('reach', 6000, 'account'),
+      frequency: e2eMetric('frequency', 2, 'account'),
+      cpm: e2eMetric('cpm', 29.1667, 'account'),
+      link_clicks: e2eMetric('link_clicks', 420, 'account'),
+      landing_page_views: e2eMetric('landing_page_views', 310, 'account'),
+      messaging_conversations_started_total: e2eMetric('messaging_conversations_started_total', 28, 'account'),
+      leads: e2eMetric('leads', 16, 'account'),
+      purchases: e2eMetric('purchases', 3, 'account'),
+      purchase_value: e2eMetric('purchase_value', 1400, 'account'),
+      purchase_roas: e2eMetric('purchase_roas', 4, 'account'),
+    };
+    const campaignMetrics = {
+      spend: e2eMetric('spend', 350, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      impressions: e2eMetric('impressions', 12000, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      reach: e2eMetric('reach', 6000, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      frequency: e2eMetric('frequency', 2, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      cpm: e2eMetric('cpm', 29.1667, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      link_clicks: e2eMetric('link_clicks', 420, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      landing_page_views: e2eMetric('landing_page_views', 310, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      messaging_conversations_started_total: e2eMetric('messaging_conversations_started_total', 28, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      leads: e2eMetric('leads', 16, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      purchases: e2eMetric('purchases', 3, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      purchase_value: e2eMetric('purchase_value', 1400, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+      purchase_roas: e2eMetric('purchase_roas', 4, 'campaign', { campaignId: 'campaign-paused-e2e' }),
+    };
+    const hasPeriod = metaE2EState.syncedPeriods.has(options.period);
+    const rows: GlobalClientPerformance[] = [{
+      clientId: E2E_CLIENT_ID,
+      clientName: 'Clínica Mock',
+      clientStatus: metaE2EState.linked ? (hasPeriod ? 'available' : 'never_synced') : 'not_connected',
+      accounts: metaE2EState.linked ? [{
+        clientMetaAssetId: E2E_LINK_ID,
+        metaAssetId: '20000000-0000-0000-0000-00000000e2e0',
+        integrationId: 'integration-e2e',
+        adAccountId: 'act_e2e',
+        accountName: 'Conta Meta Mock',
+        currency: 'BRL',
+        timezone: 'America/Sao_Paulo',
+        dateStart: hasPeriod ? '2026-07-01' : null,
+        dateStop: hasPeriod ? '2026-07-01' : null,
+        metrics: hasPeriod ? accountMetrics : {},
+        budgetPacing: null,
+        dataQuality: { status: hasPeriod ? 'complete' : 'unavailable', reason: hasPeriod ? null : 'period_not_synced' },
+        lastSuccessfulRun: hasPeriod ? {
+          id: 'run-e2e', status: 'success', startedAt: '2026-07-01T17:59:00Z',
+          finishedAt: '2026-07-01T18:00:00Z', terminationReason: 'completed',
+        } : null,
+        lastAttempt: null,
+      }] : [],
+      metrics: hasPeriod && metaE2EState.linked ? accountMetrics : {},
+      metricGroups: metaE2EState.linked && hasPeriod ? [{
+        clientMetaAssetId: E2E_LINK_ID,
+        metaAssetId: '20000000-0000-0000-0000-00000000e2e0',
+        currency: 'BRL',
+        campaignId: 'campaign-paused-e2e',
+        campaignName: 'Campanha histórica pausada',
+        classifiedObjective: 'LEADS',
+        destinationType: 'WHATSAPP',
+        attributionSetting: '7d_click_1d_view',
+        spend: 350,
+        completenessStatus: 'complete',
+        metrics: campaignMetrics,
+      }] : [],
+      resolvedTargets: metaE2EState.targets as unknown as PerformanceTarget[],
+      evaluations: [],
+      budgetPacing: null,
+      score: {
+        value: null,
+        status: 'unavailable',
+        confidence: 0,
+        coveragePercent: 0,
+        summary: 'Pontuação ainda não calculada.',
+        signals: [],
+      },
+      dataQuality: { status: hasPeriod && metaE2EState.linked ? 'complete' : 'unavailable', reason: hasPeriod ? null : 'period_not_synced' },
+      lastSuccessfulRun: null,
+      lastAttempt: null,
+      hasNewerPartial: false,
+      hasNewerFailure: false,
+    }];
+    return enrichGlobalPerformanceDashboard(rows, options.period, new Date('2026-07-01T18:00:00Z'));
+  }
   if (!isSupabaseConfigured || !supabase) return [];
 
   const { data, error } = await supabase.rpc(

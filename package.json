@@ -10,7 +10,8 @@
     "test": "vitest run",
     "preview": "vite preview --host=0.0.0.0",
     "validate:meta:local": "bash scripts/validate-meta-local.sh",
-    "test:meta:e2e": "node scripts/test-edge-e2e.cjs"
+    "test:meta:e2e": "node scripts/test-edge-e2e.cjs",
+    "test:browser:e2e": "bash scripts/test-browser-e2e.sh"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

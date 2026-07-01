@@ -93,6 +93,18 @@ export const METRIC_REGISTRY: Record<string, MetaCanonicalMetric> = {
     deduplicationRule: 'none',
     supportedLevels: ['campaign', 'adset', 'ad']
   },
+  clicks: {
+    id: 'clicks',
+    label: 'Cliques (todos)',
+    description: 'Total de cliques em qualquer parte do anúncio no período.',
+    source: 'insights',
+    compatibleObjectives: 'ALL',
+    aggregationRule: 'sum',
+    formatter: 'integer',
+    missingDataRule: 'zero',
+    deduplicationRule: 'none',
+    supportedLevels: ['campaign', 'adset', 'ad']
+  },
   frequency: {
     id: 'frequency',
     label: 'Frequência',

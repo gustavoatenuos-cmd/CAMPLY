@@ -1,8 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../supabase';
+import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
-export const ANALYTICS_CONTRACT_VERSION = 2;
+export const ANALYTICS_CONTRACT_VERSION = 3;
 
-export const dashboardPeriods = ['today', 'last_7d', 'last_30d'] as const;
+export const dashboardPeriods = ['this_month', 'today', 'last_7d', 'last_30d'] as const;
 export type DashboardPeriod = typeof dashboardPeriods[number];
 
 export const analyticsLevels = ['campaign', 'adset', 'ad'] as const;
@@ -100,6 +101,18 @@ export async function loadAnalyticsCapabilities(
     return supabase.rpc('get_analytics_capabilities');
   }
 ): Promise<AnalyticsCapabilityState> {
+  if (isMetaE2EMode) {
+    return parseAnalyticsCapabilities({
+      contractVersion: ANALYTICS_CONTRACT_VERSION,
+      dashboardAvailable: true,
+      dashboardRpc: 'get_global_performance_dashboard_v2',
+      supportedPeriods: dashboardPeriods,
+      supportedLevels: analyticsLevels,
+      targetsAvailable: true,
+      reconciliationAvailable: true,
+      traceableMetrics: true,
+    });
+  }
   try {
     const { data, error } = await rpc();
     if (error) {

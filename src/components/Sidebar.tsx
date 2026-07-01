@@ -3,7 +3,7 @@ import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
 const items = [
-  { id: 'today', label: 'Visão geral', icon: LayoutDashboard },
+  { id: 'today', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'agentChat', label: 'Chat IA (Voz)', icon: BotMessageSquare },
   { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
   { id: 'creativeCritic', label: 'Lab. Criativo', icon: Sparkles },

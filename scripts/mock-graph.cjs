@@ -103,6 +103,16 @@ const server = http.createServer((req, res) => {
 
   let date_start = '2026-06-27';
   let date_stop = '2026-06-27';
+  if (parsedUrl.query.date_preset === 'this_month') {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+    date_start = `${parts.year}-${parts.month}-01`;
+    date_stop = `${parts.year}-${parts.month}-${parts.day}`;
+  }
   if (parsedUrl.query.time_range) {
      try {
        const tr = JSON.parse(parsedUrl.query.time_range);

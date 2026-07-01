@@ -2,7 +2,8 @@ import { FormEvent, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Hero } from './ui/hero-1';
 
-export function AuthGate() {
+export function AuthGate({ onMockLogin }: { onMockLogin?: () => void } = {}) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -10,6 +11,12 @@ export function AuthGate() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
+
+    if (onMockLogin) {
+      setLoading(true);
+      onMockLogin();
+      return;
+    }
 
     if (!supabase) {
       setError('Supabase não configurado.');
@@ -19,7 +26,7 @@ export function AuthGate() {
     setLoading(true);
 
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: 'gustavoatenuos@gmail.com',
+      email: email.trim(),
       password,
     });
 
@@ -46,19 +53,31 @@ export function AuthGate() {
           <section className="w-full max-w-sm text-center">
             <form onSubmit={submit} className="flex flex-col items-center space-y-4">
               <input
+                type="email"
+                aria-label="E-mail"
+                placeholder="Seu e-mail"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
+                autoComplete="username"
+                autoFocus
+                required
+              />
+              <input
                 type="password"
                 aria-label="Senha de Acesso Mestre"
                 placeholder="Senha de Acesso Mestre"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-full border border-white/20 bg-white/5 px-6 py-3 text-center text-white outline-none transition placeholder:text-gray-400 focus:border-white/50"
-                autoFocus
+                autoComplete="current-password"
                 required
               />
 
               {error && <p role="alert" className="text-sm font-medium text-rose-400">{error}</p>}
 
               <button
+                data-testid="login-submit"
                 disabled={loading}
                 className="mt-2 w-full rounded-full bg-white px-8 py-3 font-semibold text-black transition hover:bg-gray-200 disabled:cursor-wait disabled:opacity-70"
               >
