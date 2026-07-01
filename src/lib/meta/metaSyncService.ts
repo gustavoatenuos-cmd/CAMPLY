@@ -17,18 +17,20 @@ export interface MetaSyncOptions {
 }
 
 function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOptions {
-  if ('metaAdAccountId' in clientOrOptions) {
+  const legacyAdAccountId = (clientOrOptions as Client).metaAdAccountId;
+  if (typeof legacyAdAccountId === 'string') {
     return {
-      adAccountId: clientOrOptions.metaAdAccountId || undefined,
+      adAccountId: legacyAdAccountId || undefined,
       periods: ['last_7d'],
       requestedLevel: 'campaign',
     };
   }
 
+  const options = clientOrOptions as MetaSyncOptions;
   return {
-    ...clientOrOptions,
-    periods: clientOrOptions.periods?.length ? Array.from(new Set(clientOrOptions.periods)) : ['last_7d'],
-    requestedLevel: clientOrOptions.requestedLevel ?? 'campaign',
+    ...options,
+    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['last_7d'],
+    requestedLevel: options.requestedLevel ?? 'campaign',
   };
 }
 
