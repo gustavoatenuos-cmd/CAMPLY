@@ -7,7 +7,9 @@ import type {
   MetricContract,
 } from '../../lib/performance/globalPerformanceDashboard';
 import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/performance/types';
+import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
+import { TraceableMetricValue } from './TraceableMetricValue';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -29,11 +31,6 @@ function formatCurrency(value: number | null, currency: string | null): string {
   } catch {
     return `${currency} ${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`;
   }
-}
-
-function cost(spend: number | null, results: number | null): number | null {
-  if (spend === null || results === null || results <= 0) return null;
-  return spend / results;
 }
 
 const severity: Record<PerformanceStatus, number> = {
@@ -71,10 +68,14 @@ function accountRowKey(clientId: string, account: GlobalPerformanceAccount): str
 }
 
 function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
-  const spend = metricValue(group.metrics.spend) ?? group.spend;
-  const conversations = metricValue(group.metrics.messaging_conversations_started_total);
-  const leads = metricValue(group.metrics.leads);
-  const purchases = metricValue(group.metrics.purchases);
+  const spendMetric = group.metrics.spend;
+  const conversationsMetric = group.metrics.messaging_conversations_started_total;
+  const leadsMetric = group.metrics.leads;
+  const purchasesMetric = group.metrics.purchases;
+  const spend = metricValue(spendMetric);
+  const conversations = metricValue(conversationsMetric);
+  const leads = metricValue(leadsMetric);
+  const purchases = metricValue(purchasesMetric);
 
   return (
     <div className="grid gap-3 rounded-xl border border-brand-line/70 bg-brand-ink/40 p-4 md:grid-cols-[minmax(240px,1.7fr)_repeat(4,minmax(90px,0.7fr))] md:items-center">
@@ -89,19 +90,19 @@ function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
           {group.destinationType || 'Destino não informado'} · {group.attributionSetting || 'Atribuição não informada'}
         </p>
       </div>
-      <MetricCell label="Investido" value={formatCurrency(spend, group.currency)} />
-      <MetricCell label="Conversas" value={formatNumber(conversations)} />
-      <MetricCell label="Leads" value={formatNumber(leads)} />
-      <MetricCell label="Compras" value={formatNumber(purchases)} />
+      <MetricCell label="Investido" value={formatCurrency(spend, group.currency)} metric={spendMetric} />
+      <MetricCell label="Conversas" value={formatNumber(conversations)} metric={conversationsMetric} />
+      <MetricCell label="Leads" value={formatNumber(leads)} metric={leadsMetric} />
+      <MetricCell label="Compras" value={formatNumber(purchases)} metric={purchasesMetric} />
     </div>
   );
 }
 
-function MetricCell({ label, value }: { label: string; value: string }) {
+function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</p>
-      <p className="mt-1 font-bold text-white">{value}</p>
+      <p className="mt-1 font-bold text-white"><TraceableMetricValue metric={metric}>{value}</TraceableMetricValue></p>
     </div>
   );
 }
@@ -147,10 +148,17 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
           <tbody className="divide-y divide-brand-line/70">
             {rows.map(({ client, account }) => {
               const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
-              const spend = account ? metricValue(account.metrics.spend) : null;
-              const conversations = account ? metricValue(account.metrics.messaging_conversations_started_total) : null;
-              const leads = account ? metricValue(account.metrics.leads) : null;
-              const purchases = account ? metricValue(account.metrics.purchases) : null;
+              const spendMetric = account?.metrics.spend;
+              const conversationsMetric = account?.metrics.messaging_conversations_started_total;
+              const leadsMetric = account?.metrics.leads;
+              const purchasesMetric = account?.metrics.purchases;
+              const spend = metricValue(spendMetric);
+              const conversations = metricValue(conversationsMetric);
+              const leads = metricValue(leadsMetric);
+              const purchases = metricValue(purchasesMetric);
+              const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', spendMetric, conversationsMetric);
+              const costPerLead = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
+              const costPerPurchase = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
               const evaluations = account
                 ? client.evaluations.filter((evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
@@ -175,7 +183,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                           <p className="truncate text-xs text-brand-muted">{account?.accountName || 'Nenhuma conta vinculada'}</p>
                         </div>
                       </div>
-                      <div className="px-4 py-4 font-bold text-white">{formatCurrency(spend, account?.currency || null)}</div>
+                      <div className="px-4 py-4 font-bold text-white"><TraceableMetricValue metric={spendMetric}>{formatCurrency(spend, account?.currency || null)}</TraceableMetricValue></div>
                       <div className="px-4 py-4">
                         {account?.budgetPacing ? (
                           <div>
@@ -184,12 +192,12 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                           </div>
                         ) : '—'}
                       </div>
-                      <div className="px-4 py-4 text-white">{formatNumber(conversations)}</div>
-                      <div className="px-4 py-4 text-white">{formatCurrency(cost(spend, conversations), account?.currency || null)}</div>
-                      <div className="px-4 py-4 text-white">{formatNumber(leads)}</div>
-                      <div className="px-4 py-4 text-white">{formatCurrency(cost(spend, leads), account?.currency || null)}</div>
-                      <div className="px-4 py-4 text-white">{formatNumber(purchases)}</div>
-                      <div className="px-4 py-4 text-white">{formatCurrency(cost(spend, purchases), account?.currency || null)}</div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue></div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerConversation}>{formatCurrency(metricValue(costPerConversation), account?.currency || null)}</TraceableMetricValue></div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue></div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerLead}>{formatCurrency(metricValue(costPerLead), account?.currency || null)}</TraceableMetricValue></div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue></div>
+                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerPurchase}>{formatCurrency(metricValue(costPerPurchase), account?.currency || null)}</TraceableMetricValue></div>
                       <div className="px-4 py-4"><PerformanceStatusBadge status={performanceStatus} /></div>
                       <div className="px-4 py-4">
                         <p className="font-semibold text-white">{statusLabel(client.clientStatus)}</p>

@@ -6,7 +6,24 @@ import {
   type GlobalClientPerformance,
 } from './globalPerformanceDashboard';
 import { resolveTarget } from './resolveTarget';
+import { unavailableTraceableMetric } from './traceableMetrics';
 import type { PerformanceTarget } from './types';
+
+const traceMetric = (metricId: string, value: number) => ({
+  ...unavailableTraceableMetric(metricId),
+  value,
+  available: true,
+  completenessStatus: 'complete' as const,
+  currency: 'BRL',
+  dateStart: '2026-06-01',
+  dateStop: '2026-06-07',
+  timezone: 'America/Sao_Paulo',
+  syncRunId: 'run_1',
+  collectedAt: '2026-06-07T12:00:00Z',
+  clientMetaAssetId: 'link_1',
+  accountId: 'act_1',
+  accountName: 'Conta 1',
+});
 
 describe('evaluatePerformanceTarget', () => {
   it('calculates cost per result from spend and result volume', () => {
@@ -155,8 +172,8 @@ describe('enrichGlobalPerformanceDashboard', () => {
           dateStart: '2026-06-01',
           dateStop: '2026-06-07',
           metrics: {
-            spend: { value: 180, available: true, completenessStatus: 'complete' },
-            leads: { value: 10, available: true, completenessStatus: 'complete' },
+            spend: traceMetric('spend', 180),
+            leads: traceMetric('leads', 10),
           },
           budgetPacing: null,
           dataQuality: { status: 'complete', reason: null },
@@ -165,8 +182,8 @@ describe('enrichGlobalPerformanceDashboard', () => {
         },
       ],
       metrics: {
-        spend: { value: 180, available: true, completenessStatus: 'complete' },
-        leads: { value: 10, available: true, completenessStatus: 'complete' },
+        spend: traceMetric('spend', 180),
+        leads: traceMetric('leads', 10),
       },
       metricGroups: [
         {
@@ -181,8 +198,8 @@ describe('enrichGlobalPerformanceDashboard', () => {
           spend: 180,
           completenessStatus: 'complete',
           metrics: {
-            spend: { value: 180, available: true, completenessStatus: 'complete' },
-            leads: { value: 10, available: true, completenessStatus: 'complete' },
+            spend: traceMetric('spend', 180),
+            leads: traceMetric('leads', 10),
           },
         },
       ],

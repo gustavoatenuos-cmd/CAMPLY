@@ -6,6 +6,15 @@ function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
 }
 
+function addAvailableMetric(total: number | null, metric: MetricContract | undefined): number | null {
+  const value = metricValue(metric);
+  return value === null ? total : (total ?? 0) + value;
+}
+
+function formatCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('pt-BR');
+}
+
 function formatCurrency(value: number, currency: string | null): string {
   if (!currency) return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
   try {
@@ -37,9 +46,9 @@ function clientEvaluationStatus(client: GlobalClientPerformance): PerformanceSta
 
 export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerformance[] }) {
   const currencyTotals = new Map<string, number>();
-  let conversations = 0;
-  let leads = 0;
-  let purchases = 0;
+  let conversations: number | null = null;
+  let leads: number | null = null;
+  let purchases: number | null = null;
 
   for (const client of clients) {
     for (const account of client.accounts) {
@@ -49,9 +58,9 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         currencyTotals.set(currency, (currencyTotals.get(currency) || 0) + spend);
       }
     }
-    conversations += metricValue(client.metrics.messaging_conversations_started_total) || 0;
-    leads += metricValue(client.metrics.leads) || 0;
-    purchases += metricValue(client.metrics.purchases) || 0;
+    conversations = addAvailableMetric(conversations, client.metrics.messaging_conversations_started_total);
+    leads = addAvailableMetric(leads, client.metrics.leads);
+    purchases = addAvailableMetric(purchases, client.metrics.purchases);
   }
 
   const statuses = clients.reduce<Record<PerformanceStatus, number>>((acc, client) => {
@@ -129,15 +138,15 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div>
-            <p className="text-xl font-black text-white">{conversations.toLocaleString('pt-BR')}</p>
+            <p className="text-xl font-black text-white">{formatCount(conversations)}</p>
             <p className="text-[10px] text-brand-muted">Conversas</p>
           </div>
           <div>
-            <p className="text-xl font-black text-white">{leads.toLocaleString('pt-BR')}</p>
+            <p className="text-xl font-black text-white">{formatCount(leads)}</p>
             <p className="text-[10px] text-brand-muted">Leads</p>
           </div>
           <div>
-            <p className="text-xl font-black text-white">{purchases.toLocaleString('pt-BR')}</p>
+            <p className="text-xl font-black text-white">{formatCount(purchases)}</p>
             <p className="text-[10px] text-brand-muted">Compras</p>
           </div>
         </div>

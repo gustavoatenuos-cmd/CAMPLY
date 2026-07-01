@@ -1,6 +1,8 @@
 import { isSupabaseConfigured, supabase } from '../supabase';
+import type { AnalyticsCapabilities, DashboardPeriod } from './analyticsCapabilities';
 import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPacing';
 import { evaluatePerformanceTarget } from './evaluatePerformance';
+import { normalizeTraceableMetric, type TraceableMetric } from './traceableMetrics';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -18,13 +20,9 @@ export type GlobalClientStatus =
   | 'partial'
   | 'failed';
 
-export type DashboardPeriod = 'today' | 'last_7d' | 'last_30d';
+export type { DashboardPeriod } from './analyticsCapabilities';
 
-export interface MetricContract {
-  value: number | null;
-  available: boolean;
-  completenessStatus: string | null;
-}
+export type MetricContract = TraceableMetric;
 
 export interface RunSummary {
   id: string;
@@ -96,20 +94,15 @@ function asFiniteNumber(value: unknown): number | null {
   return null;
 }
 
-function normalizeMetric(metric: MetricContract | undefined): MetricContract | undefined {
+function normalizeMetric(metricId: string, metric: MetricContract | undefined): MetricContract | undefined {
   if (!metric) return undefined;
-  const value = asFiniteNumber(metric.value);
-  return {
-    value,
-    available: Boolean(metric.available) && value !== null,
-    completenessStatus: metric.completenessStatus ?? null,
-  };
+  return normalizeTraceableMetric(metricId, metric);
 }
 
 function normalizeMetricMap(metrics: Record<string, MetricContract> | undefined): Record<string, MetricContract> {
   const result: Record<string, MetricContract> = {};
   for (const [metricId, metric] of Object.entries(metrics ?? {})) {
-    const normalized = normalizeMetric(metric);
+    const normalized = normalizeMetric(metricId, metric);
     if (normalized) result[metricId] = normalized;
   }
   return result;
@@ -156,7 +149,7 @@ function evaluateTarget(
   const relevantGroups = client.metricGroups.filter((group) => {
     if (group.clientMetaAssetId !== target.clientMetaAssetId) return false;
     if (target.campaignId && group.campaignId !== target.campaignId) return false;
-    const metric = normalizeMetric(group.metrics[target.metricId]);
+    const metric = normalizeMetric(target.metricId, group.metrics[target.metricId]);
     return Boolean(metric?.available);
   });
 
@@ -172,14 +165,11 @@ function evaluateTarget(
     let partialStatus: string | null = null;
 
     for (const group of relevantGroups) {
-      const resultMetric = normalizeMetric(group.metrics[target.metricId]);
-      const spendMetric = normalizeMetric(group.metrics.spend);
+      const resultMetric = normalizeMetric(target.metricId, group.metrics[target.metricId]);
+      const spendMetric = normalizeMetric('spend', group.metrics.spend);
       if (resultMetric?.value !== null && resultMetric?.value !== undefined) resultValue += resultMetric.value;
       if (spendMetric?.available && spendMetric.value !== null) {
         spendValue += spendMetric.value;
-        hasSpend = true;
-      } else if (group.spend !== null && Number.isFinite(group.spend)) {
-        spendValue += group.spend;
         hasSpend = true;
       }
 
@@ -210,8 +200,8 @@ function evaluateTarget(
     return buildUnavailableEvaluation(target, 'campaign_metric_unavailable');
   }
 
-  const metric = normalizeMetric(account.metrics[target.metricId]);
-  const spend = normalizeMetric(account.metrics.spend);
+  const metric = normalizeMetric(target.metricId, account.metrics[target.metricId]);
+  const spend = normalizeMetric('spend', account.metrics.spend);
   return evaluatePerformanceTarget(target, metric, { spend: spend?.value ?? null });
 }
 
@@ -221,7 +211,7 @@ function calculateAccountPacing(
   period: DashboardPeriod,
   currentDate: Date
 ): BudgetPacingResult | null {
-  const spend = normalizeMetric(account.metrics.spend);
+  const spend = normalizeMetric('spend', account.metrics.spend);
   if (!spend?.available || spend.value === null || !account.timezone) return null;
 
   const accountTargets = targets.filter(
@@ -305,14 +295,18 @@ export async function loadGlobalPerformanceDashboard(options: {
   period: DashboardPeriod;
   clientIds?: string[];
   assetIds?: string[];
+  dashboardRpc: AnalyticsCapabilities['dashboardRpc'];
 }): Promise<GlobalClientPerformance[]> {
   if (!isSupabaseConfigured || !supabase) return [];
 
-  const { data, error } = await supabase.rpc('get_global_performance_dashboard', {
-    p_period: options.period,
-    p_client_ids: options.clientIds?.length ? options.clientIds : null,
-    p_asset_ids: options.assetIds?.length ? options.assetIds : null,
-  });
+  const { data, error } = await supabase.rpc(
+    options.dashboardRpc,
+    {
+      p_period: options.period,
+      p_client_ids: options.clientIds?.length ? options.clientIds : null,
+      p_asset_ids: options.assetIds?.length ? options.assetIds : null,
+    }
+  );
 
   if (error) {
     throw new Error(`Failed to load global performance dashboard: ${error.message}`);

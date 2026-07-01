@@ -13,9 +13,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CamplyData, Insight, ViewId } from '../types';
 import {
   loadGlobalPerformanceDashboard,
-  type DashboardPeriod,
   type GlobalClientPerformance,
 } from '../lib/performance/globalPerformanceDashboard';
+import {
+  compatibilityReasonMessage,
+  loadAnalyticsCapabilities,
+  type AnalyticsCapabilityState,
+  type DashboardPeriod,
+} from '../lib/performance/analyticsCapabilities';
 import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performance/types';
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
@@ -88,40 +93,95 @@ function evaluationDescription(client: GlobalClientPerformance, evaluation: Perf
   return `${scope}: ${metricLabel(evaluation.metricId)} em ${actual}; meta ${target}.`;
 }
 
-function isMissingAnalyticsSchema(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return normalized.includes('could not find the function')
-    || normalized.includes('get_global_performance_dashboard')
-    || normalized.includes('schema cache')
-    || normalized.includes('pgrst202');
+function CompatibilityMode({
+  data,
+  insights,
+  updateData,
+  setActiveView,
+  message,
+  retrying,
+  onRetry,
+}: OverviewViewProps & {
+  message: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="h-full overflow-y-auto bg-brand-ink">
+      <div className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-6 lg:px-8">
+        <strong>Modo de compatibilidade.</strong>{' '}
+        {message} Os dados abaixo vêm do workspace legado e não devem ser tratados como a nova central analítica rastreável.
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retrying}
+          className="ml-3 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-2.5 py-1 font-bold text-amber-100 transition hover:bg-amber-300/10 disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCw size={13} className={retrying ? 'animate-spin' : ''} /> Verificar novamente
+        </button>
+      </div>
+      <TodayView
+        data={data}
+        insights={insights}
+        updateData={updateData}
+        setActiveView={setActiveView}
+      />
+    </div>
+  );
 }
 
 export function OverviewView({ data, insights, updateData, setActiveView }: OverviewViewProps) {
   const [period, setPeriod] = useState<DashboardPeriod>('last_7d');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
+  const [capabilityState, setCapabilityState] = useState<AnalyticsCapabilityState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | GlobalClientPerformance['clientStatus']>('all');
 
+  const loadCapabilities = useCallback(async () => {
+    setCapabilitiesLoading(true);
+    const state = await loadAnalyticsCapabilities();
+    setCapabilityState(state);
+    if (state.mode === 'analytics') {
+      setPeriod((currentPeriod) => (
+        state.capabilities.supportedPeriods.includes(currentPeriod)
+          ? currentPeriod
+          : state.capabilities.supportedPeriods[0]
+      ));
+    }
+    setCapabilitiesLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void loadCapabilities();
+  }, [loadCapabilities]);
+
+  const capabilities = capabilityState?.mode === 'analytics' ? capabilityState.capabilities : null;
+
   const loadDashboard = useCallback(async () => {
+    if (!capabilities) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await loadGlobalPerformanceDashboard({ period });
+      const result = await loadGlobalPerformanceDashboard({
+        period,
+        dashboardRpc: capabilities.dashboardRpc,
+      });
       setClients(result);
       setLastLoadedAt(new Date());
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a visão geral.');
+    } catch {
+      setError('dashboard_unavailable');
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [capabilities, period]);
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    if (capabilities) void loadDashboard();
+  }, [capabilities, loadDashboard]);
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
@@ -148,28 +208,42 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
     .reduce((total, receivable) => total + receivable.amount, 0);
   const activeAlerts = data.agentAlerts.filter((alert) => alert.status === 'active').length;
 
-  if (error && clients.length === 0 && !loading) {
-    const missingSchema = isMissingAnalyticsSchema(error);
+  if (capabilitiesLoading || !capabilityState) {
     return (
-      <div className="h-full overflow-y-auto bg-brand-ink">
-        <div className="border-b border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 sm:px-6 lg:px-8">
-          <strong>{missingSchema ? 'A nova Visão geral ainda não está ativa no banco.' : 'A nova Visão geral ficou temporariamente indisponível.'}</strong>{' '}
-          Para não interromper o sistema, a visão anterior foi restaurada automaticamente. Nenhuma métrica nova será exibida como confiável até a estrutura analítica estar disponível.
-          <button
-            type="button"
-            onClick={() => void loadDashboard()}
-            className="ml-3 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-2.5 py-1 font-bold text-amber-100 transition hover:bg-amber-300/10"
-          >
-            <RefreshCw size={13} /> Tentar novamente
-          </button>
+      <div className="grid h-full place-items-center bg-brand-ink text-brand-muted">
+        <div className="text-center">
+          <RefreshCw className="mx-auto animate-spin text-brand-green" size={26} />
+          <p className="mt-3">Verificando o contrato analítico seguro...</p>
         </div>
-        <TodayView
-          data={data}
-          insights={insights}
-          updateData={updateData}
-          setActiveView={setActiveView}
-        />
       </div>
+    );
+  }
+
+  if (capabilityState.mode === 'compatibility') {
+    return (
+      <CompatibilityMode
+        data={data}
+        insights={insights}
+        updateData={updateData}
+        setActiveView={setActiveView}
+        message={compatibilityReasonMessage(capabilityState.reason)}
+        retrying={capabilitiesLoading}
+        onRetry={() => void loadCapabilities()}
+      />
+    );
+  }
+
+  if (error && clients.length === 0 && !loading) {
+    return (
+      <CompatibilityMode
+        data={data}
+        insights={insights}
+        updateData={updateData}
+        setActiveView={setActiveView}
+        message="A capacidade foi confirmada, mas o dashboard analítico ficou temporariamente indisponível."
+        retrying={loading}
+        onRetry={() => void loadDashboard()}
+      />
     );
   }
 
@@ -204,7 +278,9 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
                 onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
                 className="rounded-xl border border-brand-line bg-brand-ink px-3 py-2.5 text-sm text-white outline-none focus:border-brand-green"
               >
-                {Object.entries(periodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {capabilityState.capabilities.supportedPeriods.map((value) => (
+                  <option key={value} value={value}>{periodLabels[value]}</option>
+                ))}
               </select>
               <button
                 type="button"
@@ -224,6 +300,8 @@ export function OverviewView({ data, insights, updateData, setActiveView }: Over
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
             <span>Clientes retornados: <strong className="text-white">{clients.length}</strong></span>
+            <span>•</span>
+            <span>Contrato: <strong className="text-white">v{capabilityState.capabilities.contractVersion} rastreável</strong></span>
           </div>
         </header>
 
