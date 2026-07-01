@@ -219,6 +219,14 @@ describe('enrichGlobalPerformanceDashboard', () => {
       ],
       evaluations: [],
       budgetPacing: null,
+      score: {
+        value: null,
+        status: 'unavailable',
+        confidence: 0,
+        coveragePercent: 0,
+        summary: 'Pontuação ainda não calculada.',
+        signals: [],
+      },
       dataQuality: { status: 'complete', reason: null },
       lastSuccessfulRun: null,
       lastAttempt: null,
@@ -245,5 +253,6 @@ describe('enrichGlobalPerformanceDashboard', () => {
       currency: 'BRL',
     });
     expect(result.budgetPacing?.actualSpend).toBe(180);
+    expect(result.score.value).not.toBeNull();
   });
 });
