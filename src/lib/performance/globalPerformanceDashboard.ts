@@ -64,6 +64,7 @@ export interface GlobalPerformanceAccount {
   dateStop: string | null;
   metrics: Record<string, MetricContract>;
   budgetPacing: BudgetPacingResult | null;
+  score?: PerformanceScore;
   dataQuality: DataQualityContract;
   lastSuccessfulRun: RunSummary | null;
   lastAttempt: RunSummary | null;
@@ -254,6 +255,7 @@ export function enrichGlobalPerformanceDashboard(
         ...account,
         metrics: normalizeMetricMap(account.metrics),
         budgetPacing: null,
+        score: undefined,
       };
       return {
         ...normalizedAccount,
@@ -289,7 +291,22 @@ export function enrichGlobalPerformanceDashboard(
       .filter((target) => !['daily_budget', 'monthly_budget'].includes(target.targetKind))
       .map((target) => evaluateTarget(normalizedRow, target));
 
-    const pacingResults = accounts
+    const scoredAccounts = accounts.map((account) => {
+      const accountEvaluations = evaluations.filter(
+        (evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId
+      );
+      return {
+        ...account,
+        score: calculatePerformanceScore({
+          clientStatus: normalizedRow.clientStatus,
+          dataQuality: account.dataQuality,
+          evaluations: accountEvaluations,
+          budgetPacing: account.budgetPacing,
+        }),
+      };
+    });
+
+    const pacingResults = scoredAccounts
       .map((account) => account.budgetPacing)
       .filter((value): value is BudgetPacingResult => value !== null);
     const budgetPacing = combineBudgetPacingByCurrency(pacingResults);
@@ -302,6 +319,7 @@ export function enrichGlobalPerformanceDashboard(
 
     return {
       ...normalizedRow,
+      accounts: scoredAccounts,
       evaluations,
       budgetPacing,
       score,
