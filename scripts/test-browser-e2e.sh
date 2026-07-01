@@ -39,7 +39,7 @@ fi
 "${BROWSER[@]}" open http://127.0.0.1:3000
 "${BROWSER[@]}" wait --load networkidle
 assert_js 'document.body.innerText.includes("Gestão de Tráfego Inteligente")' 'login screen did not render'
-"${BROWSER[@]}" fill 'input[aria-label="E-mail"]' "e2e@camply.test"
+assert_js '!document.querySelector("input[type=email]")' 'password-only login should not render an email field'
 "${BROWSER[@]}" fill 'input[type="password"]' "senha-segura-e2e"
 "${BROWSER[@]}" press Enter
 "${BROWSER[@]}" wait 1000
