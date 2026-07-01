@@ -80,7 +80,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function scoreStatus(value: number): PerformanceScoreStatus {
+function scoreStatus(value: number): Exclude<PerformanceScoreStatus, 'unavailable'> {
   if (value >= 85) return 'excellent';
   if (value >= 70) return 'healthy';
   if (value >= 50) return 'attention';
