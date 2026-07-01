@@ -4,7 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
 import { buildInsights, clearUserData, initialData, loadData, saveData } from './data/camplyStore';
-import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData } from './data/supabaseStore';
+import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
 import { supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
@@ -34,6 +34,7 @@ export default function App() {
   const [claudeLoading, setClaudeLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const sessionUserIdRef = useRef<string | null>(null);
+  const skipNextRemoteSaveRef = useRef(false);
 
   useEffect(() => {
     if (isMetaE2EMode) {
@@ -98,6 +99,11 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
+    if (skipNextRemoteSaveRef.current) {
+      skipNextRemoteSaveRef.current = false;
+      setSyncError(null);
+      return;
+    }
 
     const timeout = window.setTimeout(() => {
       void saveRemoteData(data).then((saved) => {
@@ -152,6 +158,19 @@ export default function App() {
     });
   };
 
+  const persistClientData = async (nextData: CamplyData, clientId: string) => {
+    if (!authenticated || isMetaE2EMode) {
+      skipNextRemoteSaveRef.current = true;
+      setData(nextData);
+      return;
+    }
+
+    await saveRemoteDataAndConfirmClient(nextData, clientId);
+    skipNextRemoteSaveRef.current = true;
+    setData(nextData);
+    setSyncError(null);
+  };
+
   if (!authReady) {
     return <div className="grid min-h-screen place-items-center bg-brand-ink text-brand-soft">Validando sessão...</div>;
   }
@@ -204,7 +223,7 @@ export default function App() {
             />
           )}
           {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
-          {activeView === 'clients' && <ClientsView data={data} updateData={updateData} />}
+          {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
           {activeView === 'mediaFinance' && <FinanceView data={data} />}
           {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
           {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}

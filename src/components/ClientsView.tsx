@@ -8,12 +8,14 @@ import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 interface ClientsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
+  persistClientData?: (nextData: CamplyData, clientId: string) => Promise<void>;
 }
 
-export function ClientsView({ data, updateData }: ClientsViewProps) {
+export function ClientsView({ data, updateData, persistClientData }: ClientsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState(data.clients[0]?.id || '');
+  const [metaWorkspaceKey, setMetaWorkspaceKey] = useState(0);
   const editingClient = data.clients.find((client) => client.id === editingClientId);
 
   const setStatus = (id: string, status: ClientStatus) => {
@@ -80,13 +82,18 @@ export function ClientsView({ data, updateData }: ClientsViewProps) {
           </div>
         )}
 
-        <MetaOperationalWorkspace data={data} initialClientId={selectedClientId} />
+        <MetaOperationalWorkspace key={`${selectedClientId}-${metaWorkspaceKey}`} data={data} initialClientId={selectedClientId} />
 
         <ClientFormModal
           data={data}
           updateData={updateData}
+          persistClientData={persistClientData}
           editingClient={editingClient}
           open={modalOpen}
+          onClientPersisted={(clientId) => {
+            setSelectedClientId(clientId);
+            setMetaWorkspaceKey((current) => current + 1);
+          }}
           onClose={() => { setModalOpen(false); setEditingClientId(null); }}
         />
       </div>

@@ -21,6 +21,7 @@ import {
   type PeriodCompletenessStatus,
   type TrendPeriodSignature,
 } from '../_shared/meta/aggregation.ts';
+import { insightHasDelivery } from '../_shared/meta/mixedAttributionDetector.ts';
 
 interface SyncRequestBody {
   metaAssetId?: string;
@@ -115,17 +116,111 @@ const localIsoDate = (date: Date, timezone: string): string => {
   return `${value.year}-${value.month}-${value.day}`;
 };
 
-const hasExactPeriodRange = (
+const shiftIsoDate = (value: string, days: number): string => {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const isIsoDate = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+export interface PeriodRangeValidation {
+  status: PeriodCompletenessStatus;
+  warnings: string[];
+  errors: string[];
+  metadata: Record<string, unknown>;
+}
+
+export const validateReturnedPeriodRange = (
   period: string,
   row: MetaInsightRow | undefined,
   timezone: string,
   now = new Date()
-): boolean => {
-  if (!row?.date_start || !row.date_stop || timezone === 'UNKNOWN') return false;
-  if (period !== 'this_month') return true;
-  const dateStop = localIsoDate(now, timezone);
-  const dateStart = `${dateStop.slice(0, 8)}01`;
-  return row.date_start === dateStart && row.date_stop === dateStop;
+): PeriodRangeValidation => {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const dateStart = row?.date_start ?? null;
+  const dateStop = row?.date_stop ?? null;
+  const today = timezone !== 'UNKNOWN' ? localIsoDate(now, timezone) : null;
+  const expectedThisMonthStart = today ? `${today.slice(0, 8)}01` : null;
+
+  const metadata: Record<string, unknown> = {
+    period,
+    timezone,
+    returnedDateStart: dateStart,
+    returnedDateStop: dateStop,
+    expectedLocalToday: today,
+    expectedThisMonthStart,
+  };
+
+  if (timezone === 'UNKNOWN') {
+    errors.push('Timezone unavailable for account period validation.');
+  }
+  if (!isIsoDate(dateStart)) {
+    errors.push('Meta returned no valid date_start for the requested period.');
+  }
+  if (!isIsoDate(dateStop)) {
+    errors.push('Meta returned no valid date_stop for the requested period.');
+  }
+  if (errors.length > 0) {
+    return { status: 'validation_error', warnings, errors, metadata };
+  }
+
+  if (dateStart > dateStop) {
+    errors.push('Meta returned date_start after date_stop.');
+  }
+  if (today && dateStop > today) {
+    errors.push('Meta returned a future date_stop for the account timezone.');
+  }
+
+  if (period === 'this_month') {
+    metadata.expectedDateStart = expectedThisMonthStart;
+    metadata.expectedDateStop = today;
+    if (dateStart !== expectedThisMonthStart) {
+      errors.push('Meta this_month date_start does not match the account month start.');
+    }
+    if (today && dateStop !== today) {
+      warnings.push('Meta this_month date_stop differs from the local expectation; using returned range.');
+    }
+  } else if (period === 'today') {
+    metadata.expectedDateStart = today;
+    metadata.expectedDateStop = today;
+    if (today && (dateStart !== today || dateStop !== today)) {
+      errors.push('Meta today range does not match the account local date.');
+    }
+  } else if (period === 'last_7d') {
+    const expectedStart = today ? shiftIsoDate(today, -6) : null;
+    metadata.expectedDateStart = expectedStart;
+    metadata.expectedDateStop = today;
+    if (expectedStart && today && (dateStart !== expectedStart || dateStop !== today)) {
+      const validRelatedRange = dateStart >= expectedStart && dateStart <= dateStop && dateStop <= today;
+      if (validRelatedRange) {
+        warnings.push('Meta last_7d range differs from local expectation; using returned range.');
+      } else {
+        errors.push('Meta last_7d range is not related to the requested period.');
+      }
+    }
+  } else if (period === 'last_30d') {
+    const expectedStart = today ? shiftIsoDate(today, -29) : null;
+    metadata.expectedDateStart = expectedStart;
+    metadata.expectedDateStop = today;
+    if (expectedStart && today && (dateStart !== expectedStart || dateStop !== today)) {
+      const validRelatedRange = dateStart >= expectedStart && dateStart <= dateStop && dateStop <= today;
+      if (validRelatedRange) {
+        warnings.push('Meta last_30d range differs from local expectation; using returned range.');
+      } else {
+        errors.push('Meta last_30d range is not related to the requested period.');
+      }
+    }
+  }
+
+  return {
+    status: errors.length > 0 ? 'validation_error' : 'complete',
+    warnings,
+    errors,
+    metadata,
+  };
 };
 
 const normalizeIdArray = (...values: unknown[]): string[] => {
@@ -224,6 +319,79 @@ const terminationReasonForError = (error: unknown): string => {
     }
   }
   return 'unexpected_error';
+};
+
+type SupabaseAdminClient = Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'];
+
+interface PersistedSyncVerification {
+  runId: string;
+  status: string | null;
+  finishedAt: string | null;
+  dateStart: string | null;
+  dateStop: string | null;
+  timezone: string | null;
+  currency: string | null;
+  accountMetricsCount: number;
+  campaignMetricsCount: number;
+  dashboardQualified: boolean;
+}
+
+const countPersistedMetrics = async (
+  supabaseClient: SupabaseAdminClient,
+  runId: string,
+  userId: string,
+  sourceLevel: 'account' | 'campaign'
+): Promise<number> => {
+  const { count, error } = await supabaseClient
+    .from('meta_normalized_metrics')
+    .select('id', { count: 'exact', head: true })
+    .eq('sync_run_id', runId)
+    .eq('user_id', userId)
+    .eq('source_level', sourceLevel);
+
+  if (error) {
+    throw new HttpError(`Failed to verify persisted ${sourceLevel} metrics: ${error.message}`, 500);
+  }
+
+  return count ?? 0;
+};
+
+const verifyPersistedSyncRun = async (
+  supabaseClient: SupabaseAdminClient,
+  runId: string,
+  userId: string,
+  requestedPeriod: string
+): Promise<PersistedSyncVerification> => {
+  const { data: run, error: runError } = await supabaseClient
+    .from('meta_sync_runs')
+    .select('id,status,finished_at,date_start,date_stop,timezone,currency,run_scope,requested_level,requested_period')
+    .eq('id', runId)
+    .eq('user_id', userId)
+    .single();
+
+  if (runError || !run) {
+    throw new HttpError(`Failed to verify persisted sync run: ${runError?.message || 'run not found'}`, 500);
+  }
+
+  const accountMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'account');
+  const campaignMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'campaign');
+
+  return {
+    runId,
+    status: run.status ?? null,
+    finishedAt: run.finished_at ?? null,
+    dateStart: run.date_start ?? null,
+    dateStop: run.date_stop ?? null,
+    timezone: run.timezone ?? null,
+    currency: run.currency ?? null,
+    accountMetricsCount,
+    campaignMetricsCount,
+    dashboardQualified: run.status === 'success'
+      && run.run_scope === 'full_account'
+      && run.requested_level === 'campaign'
+      && run.requested_period === requestedPeriod
+      && accountMetricsCount > 0,
+  };
 };
 
 export async function handleRequest(req: Request) {
@@ -336,6 +504,9 @@ export async function handleRequest(req: Request) {
     let timezone = 'UNKNOWN';
     let currency = 'UNKNOWN';
     const collectionMessages: string[] = [];
+    const collectionWarnings: string[] = [];
+    const collectionErrors: string[] = [];
+    const rangeDiagnosticsByPeriod: Record<string, PeriodRangeValidation['metadata']> = {};
     let accountContextStatus: PeriodCompletenessStatus = 'complete';
 
     // Reserve the run before any Graph API request. Database uniqueness and
@@ -399,11 +570,14 @@ export async function handleRequest(req: Request) {
         : 'UNKNOWN';
       if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
         accountContextStatus = 'validation_error';
+        collectionErrors.push('Meta account timezone or currency is unavailable.');
         collectionMessages.push('Meta account timezone or currency is unavailable.');
       }
     } catch (error) {
       accountContextStatus = 'validation_error';
-      collectionMessages.push(`Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`);
+      const message = `Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`;
+      collectionErrors.push(message);
+      collectionMessages.push(message);
     }
 
     const { error: contextUpdateError } = await supabaseClient
@@ -640,13 +814,23 @@ export async function handleRequest(req: Request) {
         collectionMessages.push(`Account insights ${period}: ${accountInsightsResult.errorMessage}`);
       }
       accountInsightsByPeriod[period] = accountInsightsResult.data;
-      const exactAccountRange = hasExactPeriodRange(
+      const accountRangeValidation = validateReturnedPeriodRange(
         period,
         accountInsightsResult.data[0],
         timezone
       );
-      if (!exactAccountRange) {
-        collectionMessages.push(`Account insights ${period}: exact date range is unavailable or invalid.`);
+      rangeDiagnosticsByPeriod[period] = accountRangeValidation.metadata;
+      for (const warning of accountRangeValidation.warnings) {
+        const message = `Account insights ${period}: ${warning}`;
+        collectionWarnings.push(message);
+        collectionMessages.push(message);
+        console.warn(message, accountRangeValidation.metadata);
+      }
+      for (const validationError of accountRangeValidation.errors) {
+        const message = `Account insights ${period}: ${validationError}`;
+        collectionErrors.push(message);
+        collectionMessages.push(message);
+        console.warn(message, accountRangeValidation.metadata);
       }
 
       const campaignInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
@@ -740,7 +924,10 @@ export async function handleRequest(req: Request) {
         account: mergeCompletenessStatuses([
           collectionStatus(accountInsightsResult),
           accountContextStatus,
-          exactAccountRange ? 'complete' : 'validation_error',
+          accountRangeValidation.status,
+          accountInsightsResult.data[0] && !insightHasDelivery(accountInsightsResult.data[0])
+            ? 'zero_delivery'
+            : 'complete',
         ]),
         campaign: mergeCompletenessStatuses([
           collectionStatus(campaignInsightsResult),
@@ -1050,11 +1237,28 @@ export async function handleRequest(req: Request) {
         adsResult.completionStatus !== 'complete'
         || Object.values(collectionStatusByPeriod).some((status) => isIncomplete(status.ad))
       );
+    const accountMetricRows = p_normalized_metrics.filter((metric) => metric.source_level === 'account');
+    const accountDeliveryDetected = accountInsightsByPeriod[periods[0]]?.some((row) => insightHasDelivery(row)) ?? false;
+    if (accountDeliveryDetected && accountMetricRows.length === 0) {
+      const message = 'Account delivery was detected but no account-level metrics were prepared for persistence.';
+      collectionErrors.push(message);
+      collectionMessages.push(message);
+    }
+    if (accountMetricRows.some((metric) => !metric.date_start || !metric.date_stop)) {
+      const message = 'Account-level metrics contain missing date_start or date_stop.';
+      collectionErrors.push(message);
+      collectionMessages.push(message);
+    }
+    if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
+      const message = 'Meta account context is incomplete after collection.';
+      if (!collectionErrors.includes(message)) collectionErrors.push(message);
+    }
     const collectionIncomplete = Object.values(overallCompletenessByPeriod).some(isIncomplete)
       || campaignsResult.completionStatus !== 'complete'
       || adsetsResult.completionStatus !== 'complete'
       || adCollectionIncomplete
-      || accountContextStatus !== 'complete';
+      || accountContextStatus !== 'complete'
+      || collectionErrors.length > 0;
     
     // Using partial if collection is incomplete.
     const syncStatus = collectionIncomplete ? 'partial' : 'success';
@@ -1068,6 +1272,9 @@ export async function handleRequest(req: Request) {
       request_fingerprint: requestFingerprint,
       requested_level: requestedLevel,
       selected_entity_ids: selectedEntityIds,
+      collection_warnings: collectionWarnings,
+      collection_errors: collectionErrors,
+      range_diagnostics_by_period: rangeDiagnosticsByPeriod,
     };
     const terminationReason = syncStatus === 'success' ? 'completed' : 'partial_collection';
 
@@ -1109,6 +1316,32 @@ export async function handleRequest(req: Request) {
        throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
     }
 
+    const persisted = syncStatus === 'success'
+      ? await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0])
+      : null;
+    const successVerificationErrors: string[] = [];
+    if (syncStatus === 'success' && persisted) {
+      if (persisted.status !== 'success') successVerificationErrors.push(`run status is ${persisted.status || 'missing'}`);
+      if (!persisted.finishedAt) successVerificationErrors.push('finished_at was not persisted');
+      if (!persisted.dateStart) successVerificationErrors.push('date_start was not persisted');
+      if (!persisted.dateStop) successVerificationErrors.push('date_stop was not persisted');
+      if (!persisted.timezone) successVerificationErrors.push('timezone was not persisted');
+      if (!persisted.currency) successVerificationErrors.push('currency was not persisted');
+      if (accountDeliveryDetected && persisted.accountMetricsCount === 0) {
+        successVerificationErrors.push('account delivery exists but no account metrics were persisted');
+      }
+      if (accountMetricRows.length > 0 && persisted.accountMetricsCount === 0) {
+        successVerificationErrors.push('prepared account metrics were not readable after persistence');
+      }
+      if (!persisted.dashboardQualified) {
+        successVerificationErrors.push('dashboard cannot qualify this run as the latest reliable account source');
+      }
+    }
+
+    if (successVerificationErrors.length > 0) {
+      throw new HttpError(`Database persistence verification failed: ${successVerificationErrors.join('; ')}`, 500);
+    }
+
     return new Response(JSON.stringify({
       success: syncStatus === 'success' || syncStatus === 'partial',
       status: syncStatus,
@@ -1123,6 +1356,7 @@ export async function handleRequest(req: Request) {
       collectionContractVersion: COLLECTION_CONTRACT_VERSION,
       timezone,
       currency,
+      persisted,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: syncStatus === 'partial' ? 206 : 200,

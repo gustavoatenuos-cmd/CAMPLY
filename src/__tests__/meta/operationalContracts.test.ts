@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { initialData, normalizeData, sanitizeWorkspaceData } from '../../data/camplyStore';
 import { reconcileTraceableMetric } from '../../lib/meta/reconciliationService';
 import {
@@ -54,6 +55,26 @@ const operationalCampaign: Campaign = {
   } },
   syncRunId: 'run-legacy',
 };
+
+const clientFormModalSource = readFileSync(
+  new URL('../../components/ClientFormModal.tsx', import.meta.url),
+  'utf8'
+);
+
+const clientsViewSource = readFileSync(
+  new URL('../../components/ClientsView.tsx', import.meta.url),
+  'utf8'
+);
+
+const appSource = readFileSync(
+  new URL('../../App.tsx', import.meta.url),
+  'utf8'
+);
+
+const supabaseStoreSource = readFileSync(
+  new URL('../../data/supabaseStore.ts', import.meta.url),
+  'utf8'
+);
 
 describe('operational analytics contracts', () => {
   it('derives cost and ratio only from metrics with the exact same trace scope', () => {
@@ -148,5 +169,20 @@ describe('operational analytics contracts', () => {
     });
     expect(normalized.clients[0].metaAdAccountName).toBeUndefined();
     expect(normalized.campaigns).toEqual([]);
+  });
+
+  it('keeps the client modal open until remote persistence and client_identity confirmation succeed', () => {
+    expect(clientFormModalSource).toContain('persistClientData');
+    expect(clientFormModalSource).toContain('onClientPersisted');
+    expect(clientFormModalSource).toContain('Salvando no banco');
+    expect(clientFormModalSource).toContain('role="alert"');
+    expect(clientFormModalSource).toContain('catch (saveError)');
+
+    expect(clientsViewSource).toContain('metaWorkspaceKey');
+    expect(clientsViewSource).toContain('onClientPersisted');
+    expect(appSource).toContain('saveRemoteDataAndConfirmClient');
+    expect(appSource).toContain('skipNextRemoteSaveRef');
+    expect(supabaseStoreSource).toContain('confirmClientIdentity');
+    expect(supabaseStoreSource).toContain('saveRemoteDataAndConfirmClient');
   });
 });

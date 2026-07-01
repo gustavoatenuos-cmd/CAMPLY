@@ -7,6 +7,11 @@ const migration = readFileSync(
   'utf8'
 );
 
+const operationalReliabilityMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260701000022_operational_dashboard_reliability.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -22,5 +27,38 @@ describe('mixed attribution migration safety', () => {
     expect(migration).not.toContain("SET timezone = 'UTC'");
     expect(migration).toContain('meta_normalized_metrics_source_level_check');
     expect(migration).toContain('meta_normalized_metrics_completeness_check');
+  });
+});
+
+describe('operational dashboard reliability migration safety', () => {
+  it('uses direct function definitions instead of editing previous SQL text', () => {
+    expect(operationalReliabilityMigration).not.toMatch(/pg_get_functiondef/i);
+    expect(operationalReliabilityMigration).not.toMatch(/regexp_replace/i);
+    expect(operationalReliabilityMigration).not.toMatch(/\breplace\s*\(/i);
+    expect(operationalReliabilityMigration).toContain('CREATE OR REPLACE FUNCTION public.get_analytics_capabilities()');
+    expect(operationalReliabilityMigration).toContain('CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2');
+  });
+
+  it('qualifies dashboard data only from full successful account-level campaign syncs', () => {
+    expect(operationalReliabilityMigration).toContain("r.status = 'success'");
+    expect(operationalReliabilityMigration).toContain("r.run_scope = 'full_account'");
+    expect(operationalReliabilityMigration).toContain("r.requested_level = 'campaign'");
+    expect(operationalReliabilityMigration).toContain("r.requested_period = p_period");
+    expect(operationalReliabilityMigration).toContain("m.source_level = 'account'");
+    expect(operationalReliabilityMigration).toContain("m.source_level = 'campaign'");
+  });
+
+  it('repairs client_identity from camply_workspace without archiving or deleting clients', () => {
+    expect(operationalReliabilityMigration).toContain('INSERT INTO public.client_identity');
+    expect(operationalReliabilityMigration).toContain('FROM public.camply_workspace w');
+    expect(operationalReliabilityMigration).toContain('ON CONFLICT (user_id, client_id) DO UPDATE');
+    expect(operationalReliabilityMigration).not.toMatch(/\bDELETE\s+FROM\s+public\.client_identity/i);
+    expect(operationalReliabilityMigration).not.toMatch(/\bUPDATE\s+public\.client_identity\s+SET\s+archived_at/i);
+  });
+
+  it('does not aggregate uuid columns with min or max directly', () => {
+    expect(operationalReliabilityMigration).not.toMatch(/\bmin\s*\(\s*(ls\.id|a\.client_meta_asset_id)\s*\)/i);
+    expect(operationalReliabilityMigration).toContain('min(ls.id::text)');
+    expect(operationalReliabilityMigration).toContain('min(a.client_meta_asset_id::text)::uuid');
   });
 });
