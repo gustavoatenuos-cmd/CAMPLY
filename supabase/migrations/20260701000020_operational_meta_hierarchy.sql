@@ -246,7 +246,7 @@ BEGIN
           WHERE cma.user_id = v_user_id
             AND cma.client_id = ci.client_id
             AND cma.unlinked_at IS NULL
-            AND mi.user_id = v_user_id
+            AND mi.user_id::text = v_user_id::text
         ), '[]'::jsonb)
       ) ORDER BY ci.display_name)
       FROM public.client_identity ci
@@ -272,7 +272,7 @@ BEGIN
         ON cma.meta_asset_id = ma.id
        AND cma.user_id = v_user_id
        AND cma.unlinked_at IS NULL
-      WHERE mi.user_id = v_user_id
+      WHERE mi.user_id::text = v_user_id::text
         AND mi.status = 'active'
         AND ma.asset_type = 'adaccount'
     ), '[]'::jsonb)
@@ -441,7 +441,7 @@ BEGIN
   WHERE cma.id = p_client_meta_asset_id
     AND cma.user_id = v_user_id
     AND cma.unlinked_at IS NULL
-    AND mi.user_id = v_user_id;
+    AND mi.user_id::text = v_user_id::text;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Client Meta asset link not found' USING ERRCODE = '42501';

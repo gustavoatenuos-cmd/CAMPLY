@@ -349,7 +349,7 @@ BEGIN
     FROM public.meta_assets ma
     JOIN public.meta_integrations mi ON mi.id = ma.integration_id
     WHERE ma.id = p_meta_asset_id
-      AND mi.user_id = v_user_id
+      AND mi.user_id::text = v_user_id::text
       AND ma.asset_type = 'adaccount'
   ) THEN
     RAISE EXCEPTION 'Meta asset not found for authenticated user' USING ERRCODE = '42501';
@@ -477,7 +477,7 @@ BEGIN
       AND cma.user_id = v_user_id
       AND cma.unlinked_at IS NULL
       AND ci.archived_at IS NULL
-      AND mi.user_id = v_user_id
+      AND mi.user_id::text = v_user_id::text
   ) THEN
     RAISE EXCEPTION 'Client Meta asset link not found for authenticated user' USING ERRCODE = '42501';
   END IF;
@@ -629,7 +629,7 @@ BEGIN
       ma.timezone_name AS timezone
     FROM active_links al
     JOIN public.meta_assets ma ON ma.id = al.meta_asset_id
-    JOIN public.meta_integrations mi ON mi.id = ma.integration_id AND mi.user_id = v_user_id
+    JOIN public.meta_integrations mi ON mi.id = ma.integration_id AND mi.user_id::text = v_user_id::text
   ),
   latest_attempt AS (
     SELECT DISTINCT ON (ar.client_id, ar.meta_asset_id)

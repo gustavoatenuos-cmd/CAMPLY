@@ -55,7 +55,7 @@ BEGIN
     JOIN public.meta_assets ma ON ma.id = al.meta_asset_id
     JOIN public.meta_integrations mi
       ON mi.id = ma.integration_id
-     AND mi.user_id = v_user_id
+     AND mi.user_id::text = v_user_id::text
   ),
   latest_attempt AS (
     SELECT DISTINCT ON (a.client_meta_asset_id)
