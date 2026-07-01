@@ -2,6 +2,7 @@ import { isSupabaseConfigured, supabase } from '../supabase';
 import type { AnalyticsCapabilities, DashboardPeriod } from './analyticsCapabilities';
 import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPacing';
 import { evaluatePerformanceTarget } from './evaluatePerformance';
+import { calculatePerformanceScore, type PerformanceScore } from './performanceScore';
 import { normalizeTraceableMetric, type TraceableMetric } from './traceableMetrics';
 import type {
   BudgetPacingResult,
@@ -78,6 +79,7 @@ export interface GlobalClientPerformance {
   resolvedTargets: PerformanceTarget[];
   evaluations: PerformanceEvaluation[];
   budgetPacing: BudgetPacingResult | null;
+  score: PerformanceScore;
   dataQuality: DataQualityContract;
   lastSuccessfulRun: RunSummary | null;
   lastAttempt: RunSummary | null;
@@ -273,6 +275,14 @@ export function enrichGlobalPerformanceDashboard(
       resolvedTargets: targets,
       evaluations: [],
       budgetPacing: null,
+      score: {
+        value: null,
+        status: 'unavailable',
+        confidence: 0,
+        coveragePercent: 0,
+        summary: 'Pontuação ainda não calculada.',
+        signals: [],
+      },
     };
 
     const evaluations = targets
@@ -282,11 +292,19 @@ export function enrichGlobalPerformanceDashboard(
     const pacingResults = accounts
       .map((account) => account.budgetPacing)
       .filter((value): value is BudgetPacingResult => value !== null);
+    const budgetPacing = combineBudgetPacingByCurrency(pacingResults);
+    const score = calculatePerformanceScore({
+      clientStatus: normalizedRow.clientStatus,
+      dataQuality: normalizedRow.dataQuality,
+      evaluations,
+      budgetPacing,
+    });
 
     return {
       ...normalizedRow,
       evaluations,
-      budgetPacing: combineBudgetPacingByCurrency(pacingResults),
+      budgetPacing,
+      score,
     };
   });
 }
