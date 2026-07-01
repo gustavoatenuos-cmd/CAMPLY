@@ -5,6 +5,12 @@ echo "=== VALIDAÇÃO LOCAL DO META ANALYTICS ENGINE ==="
 
 FUNCTION_PID=""
 MOCK_CONTAINER_NAME="camply-mock-graph"
+SUPABASE_CLI="${SUPABASE_CLI:-./node_modules/.bin/supabase}"
+
+if [[ ! -x "$SUPABASE_CLI" ]]; then
+  echo "Erro: Supabase CLI local não encontrada. Execute npm ci antes da validação."
+  exit 1
+fi
 
 cleanup() {
   echo "--- Executando cleanup ---"
@@ -19,7 +25,7 @@ cleanup() {
   docker rm "$MOCK_CONTAINER_NAME" 2>/dev/null || true
   
   echo "Encerrando Supabase (stop --no-backup)..."
-  npx supabase stop --no-backup || true
+  "$SUPABASE_CLI" stop --no-backup || true
   
   echo "Removendo supabase/functions/.env..."
   rm -f supabase/functions/.env
@@ -64,7 +70,7 @@ EOF
 
 # 2. Iniciar o Supabase local
 echo "2. Iniciando Supabase local..."
-npx supabase start
+"$SUPABASE_CLI" start
 
 # Descobrir a rede do Supabase
 SUPABASE_NETWORK=$(docker network ls --filter name=supabase -q | head -n 1)
@@ -96,7 +102,7 @@ mv supabase/migrations/20260627000017_* /tmp/camply_migrations/ 2>/dev/null || t
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."
-npx supabase db reset
+"$SUPABASE_CLI" db reset
 
 # 5. Aplicar fixtures legadas
 echo "5. Aplicando fixtures legadas (antes da migration 3)..."
@@ -105,7 +111,7 @@ PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgr
 # 6. Devolver migrations e aplicar
 echo "6. Aplicando migrations >= 3..."
 mv /tmp/camply_migrations/*.sql supabase/migrations/ 2>/dev/null || true
-npx supabase migration up --include-all
+"$SUPABASE_CLI" migration up --include-all
 
 # 7. Executar smoke test (RLS, constraints, etc sem usar GRANT ALL na psql)
 echo "7. Executando Smoke Test SQL..."

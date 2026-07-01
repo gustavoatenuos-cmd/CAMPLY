@@ -131,6 +131,98 @@ BEGIN
 
 END $$;
 
+-- Analytics capability negotiation and traceable metric contract
+DO $$
+DECLARE
+  v_user_id UUID := gen_random_uuid();
+  v_capabilities JSONB;
+  v_dashboard JSONB;
+  v_missing_metric JSONB;
+  v_unavailable_metric JSONB;
+  v_zero_metric JSONB;
+  v_security_definer BOOLEAN;
+  v_search_path TEXT[];
+BEGIN
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (v_user_id, 'analytics-capabilities@camply.test', '{}');
+
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', v_user_id::text, 'role', 'authenticated')::text,
+    true
+  );
+
+  v_capabilities := public.get_analytics_capabilities();
+  IF (v_capabilities->>'contractVersion')::integer <> 2
+     OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
+     OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
+     OR NOT (v_capabilities->'supportedPeriods' @> '["today", "last_7d", "last_30d"]'::jsonb)
+     OR NOT (v_capabilities->'supportedLevels' @> '["campaign", "adset", "ad"]'::jsonb)
+     OR COALESCE((v_capabilities->>'traceableMetrics')::boolean, false) IS NOT TRUE THEN
+    RAISE EXCEPTION 'Unexpected analytics capability contract: %', v_capabilities;
+  END IF;
+
+  v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
+  IF jsonb_typeof(v_dashboard) <> 'array' THEN
+    RAISE EXCEPTION 'Traceable dashboard v2 must return an array';
+  END IF;
+
+  v_missing_metric := public.decorate_analytics_metric(
+    'impressions',
+    NULL,
+    jsonb_build_object('sourceLevel', 'aggregated')
+  );
+  IF v_missing_metric->'value' <> 'null'::jsonb
+     OR (v_missing_metric->>'available')::boolean IS NOT FALSE
+     OR v_missing_metric->>'completenessStatus' <> 'unavailable' THEN
+    RAISE EXCEPTION 'Missing metric must remain unavailable: %', v_missing_metric;
+  END IF;
+
+  v_unavailable_metric := public.decorate_analytics_metric(
+    'impressions',
+    jsonb_build_object('value', 99, 'available', false, 'completenessStatus', 'complete'),
+    jsonb_build_object('sourceLevel', 'campaign')
+  );
+  IF v_unavailable_metric->'value' <> 'null'::jsonb
+     OR (v_unavailable_metric->>'available')::boolean IS NOT FALSE THEN
+    RAISE EXCEPTION 'Unavailable metric must not retain a value: %', v_unavailable_metric;
+  END IF;
+
+  v_zero_metric := public.decorate_analytics_metric(
+    'impressions',
+    jsonb_build_object('value', 0, 'available', true, 'completenessStatus', 'zero_delivery'),
+    jsonb_build_object('sourceLevel', 'campaign', 'syncRunId', 'run-zero')
+  );
+  IF (v_zero_metric->>'value')::numeric <> 0
+     OR (v_zero_metric->>'available')::boolean IS NOT TRUE
+     OR v_zero_metric->>'completenessStatus' <> 'zero_delivery' THEN
+    RAISE EXCEPTION 'Real zero must stay available: %', v_zero_metric;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_analytics_capabilities()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon must not execute get_analytics_capabilities';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.get_analytics_capabilities()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated must execute get_analytics_capabilities';
+  END IF;
+  IF has_function_privilege('anon', 'public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[])', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon must not execute get_global_performance_dashboard_v2';
+  END IF;
+
+  SELECT p.prosecdef, p.proconfig
+  INTO v_security_definer, v_search_path
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'get_global_performance_dashboard_v2';
+
+  IF NOT v_security_definer OR v_search_path IS NULL OR NOT ('search_path=""' = ANY(v_search_path)) THEN
+    RAISE EXCEPTION 'Dashboard v2 must be SECURITY DEFINER with search_path=""';
+  END IF;
+
+  DELETE FROM auth.users WHERE id = v_user_id;
+END $$;
+
 -- Meta sync collection contract checks
 DO $$
 DECLARE
