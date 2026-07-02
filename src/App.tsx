@@ -140,7 +140,9 @@ export default function App() {
 
     const timeout = window.setTimeout(() => {
       void saveRemoteData(data).then((saved) => {
-        setSyncError(saved ? null : 'Não foi possível sincronizar. Recarregue antes de continuar para evitar conflito de dados.');
+        setSyncError(saved
+          ? null
+          : 'Não foi possível salvar uma alteração do CRM no banco. Recarregue antes de editar novamente. A sincronização das contas Meta não foi alterada.');
       });
     }, 500);
 
