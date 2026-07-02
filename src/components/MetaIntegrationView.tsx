@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Facebook, Link as LinkIcon, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import { invokeFunction } from '../lib/invokeFunction';
+import { loadCachedClientMetaAssetCatalog } from '../lib/meta/clientMetaAssetService';
 import type { CamplyData } from '../types';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -29,7 +30,7 @@ type IntegrationStatus = {
   remoteValidated?: boolean;
 };
 
-type ConnectionStatus = 'loading' | 'active' | 'none' | 'expired' | 'unavailable';
+type ConnectionStatus = 'unknown' | 'loading' | 'active' | 'none' | 'expired' | 'unavailable';
 
 export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [integration, setIntegration] = useState<IntegrationStatus['integration'] | null>(null);
@@ -38,7 +39,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('loading');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   const checkStatus = useCallback(async (verifyRemote = false) => {
@@ -46,7 +47,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     setError(null);
     setNotice(null);
     try {
-      const response = await invokeFunction<IntegrationStatus>('meta-validate-token', { verifyRemote }, 12_000);
+      const response = await invokeFunction<IntegrationStatus>('meta-validate-token', { verifyRemote }, verifyRemote ? 30_000 : 20_000);
       if (response.status === 'active') {
         setIntegration(response.integration);
         setAssets(response.assets || []);
@@ -67,7 +68,18 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     }
   }, []);
 
-  useEffect(() => { void checkStatus(false); }, [checkStatus]);
+  useEffect(() => {
+    const cachedCatalog = loadCachedClientMetaAssetCatalog();
+    if (!cachedCatalog) return;
+    const cachedAssets = cachedCatalog.availableAssets.map((asset) => ({
+      id: asset.metaAssetId,
+      asset_id: asset.adAccountId,
+      asset_name: asset.accountName,
+      asset_type: 'adaccount',
+    }));
+    setAssets(cachedAssets);
+    if (cachedAssets.length > 0) setConnectionStatus('active');
+  }, []);
 
   const connect = async () => {
     setLoading(true);
@@ -115,13 +127,15 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const connectionTitle = connectionStatus === 'loading'
     ? 'Carregando conexão salva...'
     : connectionStatus === 'active'
-      ? `Conectado como ${integration?.meta_user_name || 'usuário Meta'}`
+      ? `Conexão Meta salva${integration?.meta_user_name ? ` · ${integration.meta_user_name}` : ''}`
       : connectionStatus === 'expired'
         ? 'Autorização expirada'
         : connectionStatus === 'unavailable'
           ? 'Conexão salva temporariamente indisponível'
+          : connectionStatus === 'unknown'
+            ? 'Conexão salva será verificada sob demanda'
           : 'Conta não conectada';
-  const connected = connectionStatus === 'active' && Boolean(integration);
+  const connected = connectionStatus === 'active';
 
   return (
     <section className="h-full overflow-y-auto bg-brand-ink p-4 sm:p-5 lg:p-8">
@@ -138,12 +152,17 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
           <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
             <div className="flex items-start justify-between gap-3">
               <div><p className="text-xs font-bold uppercase tracking-wider text-brand-green">Conexão salva</p><h2 className="mt-1 text-lg font-black text-white">{connectionTitle}</h2></div>
-              <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${connected ? 'bg-emerald-400/10 text-emerald-200' : connectionStatus === 'expired' ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5 text-brand-muted'}`}>{connected ? 'ATIVA' : connectionStatus === 'loading' ? 'CARREGANDO' : connectionStatus === 'expired' ? 'REAUTORIZAR' : connectionStatus === 'unavailable' ? 'INDISPONÍVEL' : 'DESCONECTADA'}</span>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${connected ? 'bg-emerald-400/10 text-emerald-200' : connectionStatus === 'expired' ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5 text-brand-muted'}`}>{connected ? 'SALVA' : connectionStatus === 'loading' ? 'CARREGANDO' : connectionStatus === 'expired' ? 'REAUTORIZAR' : connectionStatus === 'unavailable' ? 'INDISPONÍVEL' : connectionStatus === 'unknown' ? 'SOB DEMANDA' : 'DESCONECTADA'}</span>
             </div>
-            <p className="mt-3 text-sm text-brand-muted">Ao abrir a página, o CAMPLY lê o estado persistido no banco e não consulta o Facebook. A validação remota e a descoberta só acontecem quando você solicitar.</p>
+            <p className="mt-3 text-sm text-brand-muted">Ao abrir a página, o CAMPLY usa o último estado operacional salvo. O Facebook e a validação remota só são consultados quando você solicitar.</p>
             {integration?.last_validated_at && <p className="mt-2 text-xs text-brand-soft">Última validação solicitada: {new Date(integration.last_validated_at).toLocaleString('pt-BR')}</p>}
             <div className="mt-5 flex flex-wrap gap-2">
-              {connectionStatus === 'unavailable' ? (
+              {connectionStatus === 'unknown' ? (
+                <>
+                  <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Verificar conexão salva</button>
+                  <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> Conectar com Facebook</button>
+                </>
+              ) : connectionStatus === 'unavailable' ? (
                 <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Tentar leitura novamente</button>
               ) : !connected ? <>
                 <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {loading ? 'Carregando...' : connectionStatus === 'expired' ? 'Reautorizar Facebook' : 'Conectar com Facebook'}</button>

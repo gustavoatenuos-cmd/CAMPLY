@@ -61,6 +61,7 @@ export function MetaOperationalWorkspace({
   const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('this_month');
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [targetsOpen, setTargetsOpen] = useState(false);
@@ -86,9 +87,13 @@ export function MetaOperationalWorkspace({
     }
     setLoading(true);
     setError(null);
+    setWarning(null);
     try {
       const next = await loadClientMetaAssetCatalog(clientId);
       setCatalog(next);
+      if (next.source === 'cache') {
+        setWarning(`A conexão com o banco demorou; exibindo o último estado salvo neste navegador${next.cachedAt ? ` em ${new Date(next.cachedAt).toLocaleString('pt-BR')}` : ''}. Nenhuma sincronização nova foi iniciada.`);
+      }
       const accounts = next.clients.find((client) => client.clientId === clientId)?.accounts || [];
       setAccountId((current) => accounts.some((account) => account.clientMetaAssetId === current)
         ? current
@@ -203,6 +208,7 @@ export function MetaOperationalWorkspace({
       </div>
 
       {error && <div role="alert" className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</div>}
+      {warning && <div role="status" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">{warning}</div>}
       {action && <div role="status" className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">{action}</div>}
 
       {!clientId ? (
