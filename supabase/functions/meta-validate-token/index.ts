@@ -28,6 +28,19 @@ async function optionalBody(req: Request): Promise<{ verifyRemote?: boolean }> {
   }
 }
 
+async function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new HttpError(message, 503)), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([Promise.resolve(operation), timeout])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 export async function handleRequest(req: Request) {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -41,12 +54,21 @@ export async function handleRequest(req: Request) {
 
     // The stored connection is authoritative for normal page loads. A remote
     // token check only happens after an explicit user action.
-    const { data: integration, error: intError } = await supabaseClient
+    const { data: integrationRows, error: intError } = await withTimeout(
+      supabaseClient
       .from('meta_integrations')
       .select('*')
       .eq('user_id', userId)
-      .single()
+      .eq('provider', 'meta')
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .limit(1),
+      6_000,
+      'A leitura da conexão Meta salva demorou mais que o esperado. A conexão salva foi preservada.'
+    )
 
+    const integration = Array.isArray(integrationRows) ? integrationRows[0] : null
     if (intError || !integration) {
       return jsonResponse({ status: 'none', source: 'database' })
     }
@@ -60,12 +82,16 @@ export async function handleRequest(req: Request) {
       })
     }
 
-    const { data: assets, error: assetsError } = await supabaseClient
+    const { data: assets, error: assetsError } = await withTimeout(
+      supabaseClient
       .from('meta_assets')
       .select('id,integration_id,asset_type,asset_id,asset_name,asset_status,currency,timezone_name,is_selected,created_at,updated_at')
       .eq('integration_id', integration.id)
       .order('asset_type')
-      .order('asset_name')
+      .order('asset_name'),
+      6_000,
+      'A leitura dos ativos Meta salvos demorou mais que o esperado. A conexão salva foi preservada.'
+    )
 
     if (assetsError) throw new HttpError('Não foi possível carregar os ativos Meta salvos.', 503)
 

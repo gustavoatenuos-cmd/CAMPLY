@@ -34,13 +34,13 @@ type ConnectionStatus = 'unknown' | 'loading' | 'active' | 'none' | 'expired' | 
 
 function metaActionError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : '';
-  if (/meta-oauth-start|demorou mais que o esperado/i.test(message)) {
-    const detail = message ? ` Detalhe técnico: ${message}` : '';
-    return `Não foi possível iniciar a autorização com o Facebook agora. A conexão salva não foi alterada; tente novamente em alguns segundos.${detail}`;
-  }
   if (/meta-validate-token/i.test(message)) {
     const detail = message ? ` Detalhe técnico: ${message}` : '';
     return `Não foi possível verificar a conexão salva agora. A leitura operacional permanece preservada.${detail}`;
+  }
+  if (/meta-oauth-start/i.test(message)) {
+    const detail = message ? ` Detalhe técnico: ${message}` : '';
+    return `Não foi possível iniciar a autorização com o Facebook agora. A conexão salva não foi alterada; tente novamente em alguns segundos.${detail}`;
   }
   return message || fallback;
 }
@@ -49,6 +49,8 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [integration, setIntegration] = useState<IntegrationStatus['integration'] | null>(null);
   const [assets, setAssets] = useState<MetaAsset[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [connectLoading, setConnectLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   const checkStatus = useCallback(async (verifyRemote = false) => {
-    setLoading(true);
+    setStatusLoading(true);
     setError(null);
     setNotice(null);
     try {
@@ -75,7 +77,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       setConnectionStatus((current) => current === 'active' ? current : 'unavailable');
       setError(metaActionError(statusError, 'Não foi possível carregar a conexão salva. Tente novamente.'));
     } finally {
-      setLoading(false);
+      setStatusLoading(false);
     }
   }, []);
 
@@ -112,7 +114,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   }, []);
 
   const connect = async () => {
-    setLoading(true);
+    setConnectLoading(true);
     setError(null);
     try {
       const response = await invokeFunction<{ url: string }>('meta-oauth-start');
@@ -120,7 +122,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       window.location.assign(response.url);
     } catch (connectError) {
       setError(metaActionError(connectError, 'Não foi possível iniciar a conexão.'));
-      setLoading(false);
+      setConnectLoading(false);
     }
   };
 
@@ -189,15 +191,18 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
             <div className="mt-5 flex flex-wrap gap-2">
               {connectionStatus === 'unknown' ? (
                 <>
-                  <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Verificar conexão salva</button>
-                  <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> Conectar com Facebook</button>
+                  <button type="button" onClick={() => void checkStatus(false)} disabled={statusLoading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={statusLoading ? 'animate-spin' : ''} /> Verificar conexão salva</button>
+                  <button type="button" onClick={() => void connect()} disabled={connectLoading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {connectLoading ? 'Abrindo Facebook...' : 'Conectar com Facebook'}</button>
                 </>
               ) : connectionStatus === 'unavailable' ? (
-                <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Tentar leitura novamente</button>
+                <>
+                  <button type="button" onClick={() => void checkStatus(false)} disabled={statusLoading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={statusLoading ? 'animate-spin' : ''} /> Tentar leitura novamente</button>
+                  <button type="button" onClick={() => void connect()} disabled={connectLoading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {connectLoading ? 'Abrindo Facebook...' : 'Conectar com Facebook'}</button>
+                </>
               ) : !connected ? <>
-                <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {loading ? 'Carregando...' : connectionStatus === 'expired' ? 'Reautorizar Facebook' : 'Conectar com Facebook'}</button>
+                <button type="button" onClick={() => void connect()} disabled={connectLoading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {connectLoading ? 'Abrindo Facebook...' : connectionStatus === 'expired' ? 'Reautorizar Facebook' : 'Conectar com Facebook'}</button>
               </> : <>
-                <button type="button" onClick={() => void checkStatus(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><ShieldCheck size={16} className={loading ? 'animate-pulse' : ''} /> Validar acesso</button>
+                <button type="button" onClick={() => void checkStatus(true)} disabled={statusLoading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><ShieldCheck size={16} className={statusLoading ? 'animate-pulse' : ''} /> Validar acesso</button>
                 <button type="button" onClick={() => void discoverAssets()} disabled={syncing} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 font-black text-brand-ink disabled:opacity-60"><RefreshCw size={16} className={syncing ? 'animate-spin' : ''} /> Descobrir ativos</button>
                 <button type="button" onClick={() => setConfirmDisconnectOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2 font-bold text-rose-200 disabled:opacity-60"><Unlink size={16} /> Desconectar</button>
               </>}

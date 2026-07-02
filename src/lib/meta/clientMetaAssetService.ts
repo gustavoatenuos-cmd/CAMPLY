@@ -160,7 +160,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
   try {
     const catalog = await invokeFunction<ClientMetaAssetCatalog>('meta-client-catalog', {
       clientId: clientId || null,
-    }, 20_000);
+    }, 8_000);
     const edgeCatalog = { ...catalog, source: 'edge' as const };
     writeCachedCatalog(clientId, edgeCatalog);
     return edgeCatalog;
@@ -175,7 +175,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       supabaseData.rpc('get_client_meta_asset_catalog', {
         p_client_id: clientId || null,
       }),
-      10_000,
+      5_000,
       'A leitura dos vínculos salvos demorou mais que o esperado.'
     );
     if (error) throw new Error('Não foi possível carregar os vínculos Meta.');
@@ -183,15 +183,9 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     writeCachedCatalog(clientId, catalog);
     return catalog;
   } catch (rpcError) {
-    try {
-      const catalog = await loadClientMetaAssetCatalogDirect(clientId);
-      writeCachedCatalog(clientId, catalog);
-      return catalog;
-    } catch {
-      const cached = readCachedCatalog(clientId);
-      if (cached) return cached;
-      throw rpcError instanceof Error ? rpcError : new Error('Não foi possível carregar os vínculos Meta.');
-    }
+    const cached = readCachedCatalog(clientId);
+    if (cached) return cached;
+    throw rpcError instanceof Error ? rpcError : new Error('Não foi possível carregar os vínculos Meta.');
   }
 }
 

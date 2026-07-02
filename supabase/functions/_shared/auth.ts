@@ -43,6 +43,19 @@ function userFromVerifiedGatewayJwt(token: string) {
   }
 }
 
+async function withAuthTimeout<T>(operation: PromiseLike<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Supabase Auth remote verification timed out')), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([Promise.resolve(operation), timeout])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 export async function requireAuthenticatedUser(req: Request) {
   const authorization = req.headers.get('Authorization')
   if (!authorization?.startsWith('Bearer ')) {
@@ -61,10 +74,19 @@ export async function requireAuthenticatedUser(req: Request) {
     global: { headers: { Authorization: authorization } },
   })
   const token = authorization.slice('Bearer '.length)
+  const gatewayUser = userFromVerifiedGatewayJwt(token)
   const shouldVerifyRemotely = Deno.env.get('CAMPLY_VERIFY_AUTH_REMOTELY') === 'true'
-  const user = shouldVerifyRemotely
-    ? (await userClient.auth.getUser(token)).data.user
-    : userFromVerifiedGatewayJwt(token)
+  let user = gatewayUser
+  if (shouldVerifyRemotely) {
+    try {
+      user = (await withAuthTimeout(userClient.auth.getUser(token), 4_000)).data.user || gatewayUser
+    } catch (error) {
+      console.warn('Remote Supabase Auth verification unavailable; using Edge gateway verified JWT payload.', {
+        message: error instanceof Error ? error.message : String(error),
+      })
+      user = gatewayUser
+    }
+  }
 
   if (!user || user.is_anonymous) throw new HttpError('Unauthorized', 401)
 
