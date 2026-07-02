@@ -3,6 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, HttpError, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { decryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
+import { withDirectPostgres } from '../_shared/direct-postgres.ts'
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), {
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -28,17 +29,29 @@ async function optionalBody(req: Request): Promise<{ verifyRemote?: boolean }> {
   }
 }
 
-async function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new HttpError(message, 503)), timeoutMs)
-  })
+async function loadSavedConnection(userId: string) {
+  return await withDirectPostgres(async (sql) => {
+    const integrations = await sql<Record<string, unknown>[]>`
+      select *
+      from public.meta_integrations
+      where user_id::text = ${userId}
+        and provider = 'meta'
+        and status = 'active'
+      order by updated_at desc nulls last, created_at desc nulls last
+      limit 1
+    `
+    const integration = integrations[0] || null
+    if (!integration) return { integration: null, assets: [] }
 
-  try {
-    return await Promise.race([Promise.resolve(operation), timeout])
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
+    const assets = await sql<Record<string, unknown>[]>`
+      select id, integration_id, asset_type, asset_id, asset_name, asset_status,
+             currency, timezone_name, is_selected, created_at, updated_at
+      from public.meta_assets
+      where integration_id = ${String(integration.id)}::uuid
+      order by asset_type, asset_name
+    `
+    return { integration, assets }
+  })
 }
 
 export async function handleRequest(req: Request) {
@@ -47,29 +60,15 @@ export async function handleRequest(req: Request) {
   }
 
   try {
-    const { user, adminClient: supabaseClient } = await requireAuthenticatedUser(req)
+    const { user } = await requireAuthenticatedUser(req)
     const userId = user.id
 
     const { verifyRemote = false } = await optionalBody(req)
 
-    // The stored connection is authoritative for normal page loads. A remote
-    // token check only happens after an explicit user action.
-    const { data: integrationRows, error: intError } = await withTimeout(
-      supabaseClient
-      .from('meta_integrations')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('provider', 'meta')
-      .eq('status', 'active')
-      .order('updated_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false, nullsFirst: false })
-      .limit(1),
-      6_000,
-      'A leitura da conexão Meta salva demorou mais que o esperado. A conexão salva foi preservada.'
-    )
-
-    const integration = Array.isArray(integrationRows) ? integrationRows[0] : null
-    if (intError || !integration) {
+    // The stored connection is authoritative for normal page loads. Use direct
+    // Postgres here because PostgREST pool exhaustion must not block OAuth.
+    const { integration, assets } = await loadSavedConnection(userId)
+    if (!integration) {
       return jsonResponse({ status: 'none', source: 'database' })
     }
 
@@ -82,24 +81,11 @@ export async function handleRequest(req: Request) {
       })
     }
 
-    const { data: assets, error: assetsError } = await withTimeout(
-      supabaseClient
-      .from('meta_assets')
-      .select('id,integration_id,asset_type,asset_id,asset_name,asset_status,currency,timezone_name,is_selected,created_at,updated_at')
-      .eq('integration_id', integration.id)
-      .order('asset_type')
-      .order('asset_name'),
-      6_000,
-      'A leitura dos ativos Meta salvos demorou mais que o esperado. A conexão salva foi preservada.'
-    )
-
-    if (assetsError) throw new HttpError('Não foi possível carregar os ativos Meta salvos.', 503)
-
     if (!verifyRemote) {
       return jsonResponse({
         status: 'active',
         integration: safeIntegration(integration),
-        assets: assets || [],
+        assets,
         source: 'database',
         remoteValidated: false,
       })
@@ -136,25 +122,32 @@ export async function handleRequest(req: Request) {
     }
 
     if (!debugData.data.is_valid) {
-      await supabaseClient
-        .from('meta_integrations')
-        .update({ status: 'expired' })
-        .eq('id', integration.id);
+      await withDirectPostgres(async (sql) => {
+        await sql`
+          update public.meta_integrations
+          set status = 'expired',
+              updated_at = now()
+          where id = ${String(integration.id)}::uuid
+        `
+      })
       
       return jsonResponse({ status: 'expired', source: 'remote', remoteValidated: true })
     }
 
     const validatedAt = new Date().toISOString()
-    const { error: updateError } = await supabaseClient
-      .from('meta_integrations')
-      .update({ last_validated_at: validatedAt })
-      .eq('id', integration.id);
-    if (updateError) throw new HttpError('A validação foi concluída, mas não pôde ser registrada.', 503)
+    await withDirectPostgres(async (sql) => {
+      await sql`
+        update public.meta_integrations
+        set last_validated_at = ${validatedAt}::timestamptz,
+            updated_at = now()
+        where id = ${String(integration.id)}::uuid
+      `
+    })
 
     return jsonResponse({
       status: 'active',
       integration: safeIntegration(integration, validatedAt),
-      assets: assets || [],
+      assets,
       source: 'remote',
       remoteValidated: true,
     })

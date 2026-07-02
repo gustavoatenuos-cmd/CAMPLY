@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
+import { withDirectPostgres } from '../_shared/direct-postgres.ts'
 
 type ClientRow = { client_id: string; display_name: string | null }
 type IntegrationRow = { id: string }
@@ -78,145 +79,147 @@ serve(async (req) => {
   }
 
   try {
-    const { user, adminClient } = await requireAuthenticatedUser(req)
+    const { user } = await requireAuthenticatedUser(req)
     const { clientId, p_client_id } = await optionalBody(req)
     const requestedClientId = clientId || p_client_id || null
 
-    let clientsQuery = adminClient
-      .from('client_identity')
-      .select('client_id,display_name')
-      .eq('user_id', user.id)
-      .is('archived_at', null)
-      .order('display_name', { ascending: true })
+    const catalog = await withDirectPostgres(async (sql) => {
+      const clients = requestedClientId
+        ? await sql<ClientRow[]>`
+          select client_id, display_name
+          from public.client_identity
+          where user_id = ${user.id}::uuid
+            and client_id = ${requestedClientId}
+            and archived_at is null
+          order by display_name asc
+        `
+        : await sql<ClientRow[]>`
+          select client_id, display_name
+          from public.client_identity
+          where user_id = ${user.id}::uuid
+            and archived_at is null
+          order by display_name asc
+        `
 
-    if (requestedClientId) {
-      clientsQuery = clientsQuery.eq('client_id', requestedClientId)
-    }
+      const integrationsData = await sql<IntegrationRow[]>`
+        select id
+        from public.meta_integrations
+        where user_id::text = ${user.id}
+          and status = 'active'
+      `
 
-    const { data: clientsData, error: clientsError } = await clientsQuery
-    if (clientsError) throw clientsError
+      const integrationIds = integrationsData.map((item) => item.id)
 
-    const { data: integrationsData, error: integrationsError } = await adminClient
-      .from('meta_integrations')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
+      if (integrationIds.length === 0) {
+        return {
+          clients: clients.map((client) => ({
+            clientId: client.client_id,
+            clientName: client.display_name || client.client_id,
+            accounts: [],
+          })),
+          availableAssets: [],
+          source: 'edge',
+        }
+      }
 
-    if (integrationsError) throw integrationsError
+      const assets = await sql<AssetRow[]>`
+        select id, integration_id, asset_id, asset_name, currency, timezone_name, asset_status
+        from public.meta_assets
+        where integration_id = any(${integrationIds}::uuid[])
+          and asset_type = 'adaccount'
+        order by asset_name asc
+      `
 
-    const clients = (clientsData || []) as ClientRow[]
-    const integrationIds = ((integrationsData || []) as IntegrationRow[]).map((item) => item.id)
+      const assetIds = assets.map((asset) => asset.id)
+      const adAccountIds = assets.map((asset) => asset.asset_id)
 
-    if (integrationIds.length === 0) {
-      return jsonResponse({
+      const links = assetIds.length === 0
+        ? []
+        : await sql<LinkRow[]>`
+          select id, client_id, meta_asset_id, linked_at
+          from public.client_meta_assets
+          where user_id = ${user.id}::uuid
+            and meta_asset_id = any(${assetIds}::uuid[])
+            and unlinked_at is null
+        `
+
+      const runs = adAccountIds.length === 0
+        ? []
+        : await sql<RunRow[]>`
+          select id, status, requested_period, requested_level, run_scope, started_at, finished_at,
+                 termination_reason, pages_fetched, records_fetched, integration_id, ad_account_id
+          from public.meta_sync_runs
+          where user_id = ${user.id}::uuid
+            and integration_id = any(${integrationIds}::uuid[])
+            and ad_account_id = any(${adAccountIds}::text[])
+          order by started_at desc
+          limit 500
+        `
+
+      const assetById = new Map(assets.map((asset) => [asset.id, asset]))
+      const linkByAssetId = new Map(links.map((link) => [link.meta_asset_id, link]))
+      const lastAttemptByAccount = new Map<string, RunRow>()
+      const lastSuccessByAccount = new Map<string, RunRow>()
+      const periodsByAccount = new Map<string, Set<string>>()
+
+      for (const run of runs) {
+        const key = `${run.integration_id}:${run.ad_account_id}`
+        lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run))
+        if (run.status === 'success') {
+          lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run))
+          if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'].includes(run.requested_period)) {
+            const periods = periodsByAccount.get(key) || new Set<string>()
+            periods.add(run.requested_period)
+            periodsByAccount.set(key, periods)
+          }
+        }
+      }
+
+      return {
         clients: clients.map((client) => ({
           clientId: client.client_id,
           clientName: client.display_name || client.client_id,
-          accounts: [],
+          accounts: links
+            .filter((link) => link.client_id === client.client_id)
+            .map((link) => {
+              const asset = assetById.get(link.meta_asset_id)
+              if (!asset) return null
+              const key = `${asset.integration_id}:${asset.asset_id}`
+              return {
+                clientMetaAssetId: link.id,
+                metaAssetId: asset.id,
+                integrationId: asset.integration_id,
+                adAccountId: asset.asset_id,
+                accountName: asset.asset_name || asset.asset_id,
+                currency: asset.currency,
+                timezone: asset.timezone_name,
+                assetStatus: asset.asset_status,
+                linkedAt: link.linked_at,
+                availablePeriods: Array.from(periodsByAccount.get(key) || []).sort(),
+                lastAttempt: runSummary(lastAttemptByAccount.get(key)),
+                lastSuccess: runSummary(lastSuccessByAccount.get(key)),
+              }
+            })
+            .filter(Boolean),
         })),
-        availableAssets: [],
+        availableAssets: assets.map((asset) => {
+          const link = linkByAssetId.get(asset.id) || null
+          return {
+            metaAssetId: asset.id,
+            integrationId: asset.integration_id,
+            adAccountId: asset.asset_id,
+            accountName: asset.asset_name || asset.asset_id,
+            currency: asset.currency,
+            timezone: asset.timezone_name,
+            assetStatus: asset.asset_status,
+            linkedClientId: link?.client_id || null,
+            clientMetaAssetId: link?.id || null,
+          }
+        }),
         source: 'edge',
-      })
-    }
-
-    const { data: assetsData, error: assetsError } = await adminClient
-      .from('meta_assets')
-      .select('id,integration_id,asset_id,asset_name,currency,timezone_name,asset_status')
-      .in('integration_id', integrationIds)
-      .eq('asset_type', 'adaccount')
-      .order('asset_name', { ascending: true })
-    if (assetsError) throw assetsError
-
-    const assets = (assetsData || []) as AssetRow[]
-    const assetIds = assets.map((asset) => asset.id)
-    const adAccountIds = assets.map((asset) => asset.asset_id)
-
-    const linksResult = assetIds.length === 0
-      ? { data: [], error: null }
-      : await adminClient
-        .from('client_meta_assets')
-        .select('id,client_id,meta_asset_id,linked_at')
-        .eq('user_id', user.id)
-        .in('meta_asset_id', assetIds)
-        .is('unlinked_at', null)
-    if (linksResult.error) throw linksResult.error
-
-    const runsResult = adAccountIds.length === 0
-      ? { data: [], error: null }
-      : await adminClient
-        .from('meta_sync_runs')
-        .select('id,status,requested_period,requested_level,run_scope,started_at,finished_at,termination_reason,pages_fetched,records_fetched,integration_id,ad_account_id')
-        .eq('user_id', user.id)
-        .in('integration_id', integrationIds)
-        .in('ad_account_id', adAccountIds)
-        .order('started_at', { ascending: false })
-        .limit(500)
-    if (runsResult.error) throw runsResult.error
-
-    const links = (linksResult.data || []) as LinkRow[]
-    const runs = (runsResult.data || []) as RunRow[]
-    const assetById = new Map(assets.map((asset) => [asset.id, asset]))
-    const linkByAssetId = new Map(links.map((link) => [link.meta_asset_id, link]))
-    const lastAttemptByAccount = new Map<string, RunRow>()
-    const lastSuccessByAccount = new Map<string, RunRow>()
-    const periodsByAccount = new Map<string, Set<string>>()
-
-    for (const run of runs) {
-      const key = `${run.integration_id}:${run.ad_account_id}`
-      lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run))
-      if (run.status === 'success') {
-        lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run))
-        if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'].includes(run.requested_period)) {
-          const periods = periodsByAccount.get(key) || new Set<string>()
-          periods.add(run.requested_period)
-          periodsByAccount.set(key, periods)
-        }
       }
-    }
-
-    return jsonResponse({
-      clients: clients.map((client) => ({
-        clientId: client.client_id,
-        clientName: client.display_name || client.client_id,
-        accounts: links
-          .filter((link) => link.client_id === client.client_id)
-          .map((link) => {
-            const asset = assetById.get(link.meta_asset_id)
-            if (!asset) return null
-            const key = `${asset.integration_id}:${asset.asset_id}`
-            return {
-              clientMetaAssetId: link.id,
-              metaAssetId: asset.id,
-              integrationId: asset.integration_id,
-              adAccountId: asset.asset_id,
-              accountName: asset.asset_name || asset.asset_id,
-              currency: asset.currency,
-              timezone: asset.timezone_name,
-              assetStatus: asset.asset_status,
-              linkedAt: link.linked_at,
-              availablePeriods: Array.from(periodsByAccount.get(key) || []).sort(),
-              lastAttempt: runSummary(lastAttemptByAccount.get(key)),
-              lastSuccess: runSummary(lastSuccessByAccount.get(key)),
-            }
-          })
-          .filter(Boolean),
-      })),
-      availableAssets: assets.map((asset) => {
-        const link = linkByAssetId.get(asset.id) || null
-        return {
-          metaAssetId: asset.id,
-          integrationId: asset.integration_id,
-          adAccountId: asset.asset_id,
-          accountName: asset.asset_name || asset.asset_id,
-          currency: asset.currency,
-          timezone: asset.timezone_name,
-          assetStatus: asset.asset_status,
-          linkedClientId: link?.client_id || null,
-          clientMetaAssetId: link?.id || null,
-        }
-      }),
-      source: 'edge',
     })
+    return jsonResponse(catalog)
   } catch (error) {
     return errorResponse(error, corsHeaders, null, 'META_CLIENT_CATALOG_FAILED')
   }
