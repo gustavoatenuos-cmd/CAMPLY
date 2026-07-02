@@ -45,6 +45,19 @@ function callbackSafeMessage(error: unknown): string {
   return 'Não foi possível concluir a autorização Meta.'
 }
 
+function databaseErrorMessage(stage: string, error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined): HttpError {
+  const message = safeText(error?.message, 'erro não informado')
+  const code = safeText(error?.code, '')
+  const suffix = code ? ` Código Supabase: ${code}.` : ''
+  console.error(`Meta OAuth database ${stage} failed`, {
+    code: error?.code,
+    message: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+  })
+  return new HttpError(`Não foi possível salvar a integração Meta no banco (${stage}): ${message}.${suffix}`, 500)
+}
+
 function redirectWithOAuthError(error: unknown): Response | null {
   const appBaseUrl = Deno.env.get('APP_BASE_URL')
   if (!appBaseUrl) return null
@@ -263,22 +276,30 @@ serve(async (req) => {
     const encryptedToken = await encryptToken(accessToken);
 
     // 6. Save or Update Integration
-    const { data: existingInt, error: searchError } = await supabaseClient
+    // Do not use maybeSingle(): existing legacy projects may already have
+    // duplicated rows for the same Meta user, and PostgREST treats that as an
+    // error. Pick the newest row and repair the active token there.
+    const { data: existingRows, error: searchError } = await supabaseClient
       .from('meta_integrations')
       .select('id')
       .eq('user_id', stateData.user_id)
+      .eq('provider', 'meta')
       .eq('meta_user_id', meData.id)
-      .maybeSingle();
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .limit(1);
       
     if (searchError) {
-      console.error('Database search error for integration');
-      throw new HttpError('Database operation failed', 500);
+      throw databaseErrorMessage('buscar integração existente', searchError);
     }
+
+    const existingInt = Array.isArray(existingRows) ? existingRows[0] : null
 
     if (existingInt) {
       const { error: updateError } = await supabaseClient
         .from('meta_integrations')
         .update({
+          provider: 'meta',
           access_token_encrypted: encryptedToken,
           meta_user_name: meData.name,
           granted_scopes: stateData.scopes,
@@ -289,17 +310,32 @@ serve(async (req) => {
         .eq('id', existingInt.id);
         
       if (updateError) {
-        console.error('Database update error for integration');
-        throw new HttpError('Database operation failed', 500);
+        throw databaseErrorMessage('atualizar integração existente', updateError);
       }
+
+      // Best-effort cleanup: keep only the selected row active if duplicates
+      // exist. This is intentionally non-blocking to avoid breaking OAuth.
+      supabaseClient
+        .from('meta_integrations')
+        .update({ status: 'revoked' })
+        .eq('user_id', stateData.user_id)
+        .eq('provider', 'meta')
+        .eq('meta_user_id', meData.id)
+        .neq('id', existingInt.id)
+        .then(({ error }) => {
+          if (error) console.warn('Duplicate Meta integration cleanup skipped', error.message)
+        })
     } else {
       const { error: insertError } = await supabaseClient
         .from('meta_integrations')
         .insert({
+          id: crypto.randomUUID(),
           user_id: stateData.user_id,
+          provider: 'meta',
           meta_user_id: meData.id,
           meta_user_name: meData.name,
           access_token_encrypted: encryptedToken,
+          token_type: 'bearer',
           granted_scopes: stateData.scopes,
           token_expires_at: tokenExpiresAt,
           status: 'active',
@@ -307,8 +343,7 @@ serve(async (req) => {
         });
         
       if (insertError) {
-        console.error('Database insert error for integration');
-        throw new HttpError('Database operation failed', 500);
+        throw databaseErrorMessage('criar integração', insertError);
       }
     }
 
