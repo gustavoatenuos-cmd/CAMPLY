@@ -479,7 +479,7 @@ async function run() {
   execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${intId2}', '${userId}', '${encryptOut2}', 'active');
   "`);
-  const assetB = setupAccount('act_duas_integrações', intId2);
+  const assetB = setupAccount('act_duas_integracoes', intId2);
   
   await runScenario('duas_integrações_ativas', assetB, accessToken, async (res, json, q) => {
     console.log("duas_integrações_ativas json:", JSON.stringify(json));
@@ -489,7 +489,7 @@ async function run() {
     
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    const tokens = stats.used_tokens['act_duas_integrações'] || [];
+    const tokens = stats.used_tokens['act_duas_integracoes'] || [];
     assertEqual(tokens.length, 1, 'Only one token should be used');
     assertEqual(tokens[0], 'mock***en_B', 'The masked token must match token B');
   });

@@ -125,6 +125,14 @@ const shiftIsoDate = (value: string, days: number): string => {
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
+const SAFE_META_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+const assertSafeMetaId = (value: string, label: string, status = 400) => {
+  if (!SAFE_META_ID_PATTERN.test(value)) {
+    throw new HttpError(`Invalid ${label}`, status);
+  }
+};
+
 export interface PeriodRangeValidation {
   status: PeriodCompletenessStatus;
   warnings: string[];
@@ -228,6 +236,9 @@ const normalizeIdArray = (...values: unknown[]): string[] => {
     .filter((value): value is string => typeof value === 'string')
     .map((value) => value.trim())
     .filter(Boolean);
+  for (const id of ids) {
+    assertSafeMetaId(id, 'selected Meta entity id');
+  }
   return Array.from(new Set(ids)).sort();
 };
 
@@ -410,8 +421,16 @@ export async function handleRequest(req: Request) {
     supabaseClient = auth.adminClient;
 
     const body = await req.json() as SyncRequestBody & { syncRunId?: string };
-    const metaAssetId = body.metaAssetId?.trim();
-    const legacyAdAccountId = body.adAccountId?.trim();
+    const metaAssetId = typeof body.metaAssetId === 'string' ? body.metaAssetId.trim() : undefined;
+    const legacyAdAccountId = typeof body.adAccountId === 'string' ? body.adAccountId.trim() : undefined;
+    if (body.metaAssetId !== undefined && typeof body.metaAssetId !== 'string') {
+      throw new HttpError('Invalid metaAssetId', 400);
+    }
+    if (body.adAccountId !== undefined && typeof body.adAccountId !== 'string') {
+      throw new HttpError('Invalid adAccountId', 400);
+    }
+    if (metaAssetId) assertSafeMetaId(metaAssetId, 'metaAssetId');
+    if (legacyAdAccountId) assertSafeMetaId(legacyAdAccountId, 'adAccountId');
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
@@ -474,6 +493,7 @@ export async function handleRequest(req: Request) {
 
     const integration = asset.meta_integrations;
     const adAccountId = asset.asset_id;
+    assertSafeMetaId(adAccountId, 'stored Meta ad account id', 500);
 
     const accessToken = await decryptToken(integration.access_token_encrypted);
     const appSecret = Deno.env.get('META_APP_SECRET');

@@ -12,6 +12,7 @@ import {
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const periodLabels: Record<DashboardPeriod, string> = {
   this_month: 'Mês atual',
@@ -48,6 +49,7 @@ export function MetaOperationalWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [targetsOpen, setTargetsOpen] = useState(false);
+  const [confirmUnlinkOpen, setConfirmUnlinkOpen] = useState(false);
 
   useEffect(() => {
     setClientId((current) => {
@@ -110,7 +112,8 @@ export function MetaOperationalWorkspace({
   };
 
   const unlinkAccount = async () => {
-    if (!account || !window.confirm(`Desvincular ${account.accountName} deste cliente? O histórico analítico será preservado.`)) return;
+    if (!account) return;
+    setConfirmUnlinkOpen(false);
     setLoading(true);
     setError(null);
     setAction(null);
@@ -210,7 +213,7 @@ export function MetaOperationalWorkspace({
                 <button data-testid="meta-sync-period" type="button" onClick={() => void synchronize('campaign')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-green/40 px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sincronizar período</button>
                 <button data-testid="meta-sync-account" type="button" onClick={() => void synchronize('creative')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-3 py-2 text-xs font-black text-brand-ink disabled:opacity-60">Sincronizar conta completa</button>
                 <button type="button" onClick={() => setTargetsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-black text-brand-soft"><Target size={14} /> Metas da conta</button>
-                <button type="button" onClick={() => void unlinkAccount()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-xs font-black text-rose-200 disabled:opacity-60"><Unlink size={14} /> Desvincular</button>
+                <button type="button" onClick={() => setConfirmUnlinkOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-xs font-black text-rose-200 disabled:opacity-60"><Unlink size={14} /> Desvincular</button>
               </div>
             </div>
             {clientCatalog && clientCatalog.accounts.length > 1 && (
@@ -225,6 +228,16 @@ export function MetaOperationalWorkspace({
 
           <MetaHierarchyExplorer account={account} period={period} refreshToken={refreshToken} onChanged={() => { void refresh(); onDataChanged?.(); }} />
           <TargetSettingsDrawer open={targetsOpen} onClose={() => setTargetsOpen(false)} clientMetaAssetId={account.clientMetaAssetId} campaignName={`Conta · ${account.accountName}`} onSaved={() => { void refresh(); onDataChanged?.(); }} />
+          <ConfirmDialog
+            open={confirmUnlinkOpen}
+            title="Desvincular conta Meta?"
+            description={`A conta ${account.accountName} será removida deste cliente. O histórico analítico já coletado será preservado.`}
+            confirmLabel="Desvincular"
+            tone="danger"
+            loading={loading}
+            onCancel={() => setConfirmUnlinkOpen(false)}
+            onConfirm={() => void unlinkAccount()}
+          />
         </div>
       )}
     </section>

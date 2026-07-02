@@ -208,7 +208,7 @@ const server = http.createServer((req, res) => {
       campaigns = [{ id: 'camp_ssrf', name: 'SSRF Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     } else if (accountId === 'act_reconciliation') {
       campaigns = [{ id: 'camp_recon', name: reconciliationState === 'A' ? 'Recon Campaign A' : 'Recon Campaign B', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
-    } else if (accountId === 'act_duas_integrações') {
+    } else if (accountId === 'act_duas_integracoes') {
       campaigns = [{ id: 'camp_duas', name: 'Duas Int', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE' }];
     }
     return res.end(JSON.stringify({ data: campaigns }));
@@ -245,7 +245,7 @@ const server = http.createServer((req, res) => {
       adsets = [{ id: 'adset_ssrf', campaign_id: 'camp_ssrf', name: 'Adset SSRF', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     } else if (accountId === 'act_reconciliation') {
       adsets = [{ id: 'adset_recon', campaign_id: 'camp_recon', name: 'Adset Recon', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', destination_type: reconciliationState === 'A' ? 'FACEBOOK' : 'WEBSITE' }];
-    } else if (accountId === 'act_duas_integrações') {
+    } else if (accountId === 'act_duas_integracoes') {
       adsets = [{ id: 'adset_duas', campaign_id: 'camp_duas', name: 'Adset Duas', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] }];
     }
     return res.end(JSON.stringify({ data: adsets, paging: { cursors: { after: 'cursor' } } }));
@@ -299,7 +299,7 @@ const server = http.createServer((req, res) => {
           creative: { id: 'creative_456', name: 'Criativo Outra Campanha' }
         }
       ];
-    } else if (accountId === 'act_duas_integrações') {
+    } else if (accountId === 'act_duas_integracoes') {
       ads = [
         {
           id: 'ad_duas',
@@ -412,7 +412,7 @@ const server = http.createServer((req, res) => {
       insights = isAdsetLevel
         ? [{ campaign_id: 'camp_recon', adset_id: 'adset_recon', impressions: '100', spend: '10', date_start, date_stop, attribution_setting: attr }]
         : [{ campaign_id: 'camp_recon', impressions: '100', spend: '10', date_start, date_stop }];
-    } else if (accountId === 'act_duas_integrações') {
+    } else if (accountId === 'act_duas_integracoes') {
       insights = isAdLevel
         ? [{ campaign_id: 'camp_duas', adset_id: 'adset_duas', ad_id: 'ad_duas', impressions: '100', spend: '10', date_start, date_stop }]
         : isAdsetLevel

@@ -3,7 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
-import { buildInsights, clearUserData, initialData, loadData, saveData } from './data/camplyStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
 import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
 import { supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
@@ -78,6 +79,19 @@ export default function App() {
   const authenticated = Boolean(session);
 
   useEffect(() => {
+    if (isMetaE2EMode) {
+      setActivityActor('Usuário E2E');
+      return;
+    }
+    const profileName = session?.user.user_metadata?.name;
+    setActivityActor(
+      typeof profileName === 'string' && profileName.trim()
+        ? profileName
+        : session?.user.email || null
+    );
+  }, [session]);
+
+  useEffect(() => {
     if (!authenticated || isMetaE2EMode) return;
 
     let active = true;
@@ -131,15 +145,26 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
+    let active = true;
+
     setClaudeLoading(true);
-    generateAgentSummary(data).then((result) => {
-      if (result) {
-        setClaudeSummary(result.summary_text);
-      }
-      setClaudeLoading(false);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated, remoteLoaded]);
+    const timeout = window.setTimeout(() => {
+      void generateAgentSummary(data).then((result) => {
+        if (!active) return;
+        if (result) {
+          setClaudeSummary(result.summary_text);
+        }
+        setClaudeLoading(false);
+      }).catch(() => {
+        if (active) setClaudeLoading(false);
+      });
+    }, 1_000);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [authenticated, data, remoteLoaded]);
 
   const insights = useMemo(() => buildInsights(data), [data]);
 
@@ -213,27 +238,29 @@ export default function App() {
           </div>
         )}
         <div className="min-h-0 flex-1">
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
-          {activeView === 'today' && (
-            <OverviewView
-              data={data}
-              insights={insights}
-              updateData={updateData}
-              setActiveView={setActiveView}
-            />
-          )}
-          {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
-          {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
-          {activeView === 'mediaFinance' && <FinanceView data={data} />}
-          {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
-          {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
-          {activeView === 'activity' && <ActivityView data={data} />}
-          {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
-          {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
-          {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
-          {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
-          {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
-          </Suspense>
+          <ErrorBoundary key={activeView} viewName={activeView}>
+            <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
+              {activeView === 'today' && (
+                <OverviewView
+                  data={data}
+                  insights={insights}
+                  updateData={updateData}
+                  setActiveView={setActiveView}
+                />
+              )}
+              {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
+              {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
+              {activeView === 'mediaFinance' && <FinanceView data={data} />}
+              {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
+              {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
+              {activeView === 'activity' && <ActivityView data={data} />}
+              {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
+              {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
+              {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
+              {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
+              {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />

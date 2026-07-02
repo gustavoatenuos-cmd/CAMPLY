@@ -185,4 +185,25 @@ describe('Persistence Failure Handling through Orchestrator', () => {
       p_user_id: 'user_123',
     }));
   });
+
+  it('rejects unsafe adAccountId values before building Graph API endpoints', async () => {
+    const { response, json } = await runScenario(undefined, {
+      adAccountId: 'act_mock_account/insights?fields=access_token',
+      periods: ['today'],
+    });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('Invalid adAccountId');
+  });
+
+  it('rejects unsafe selected entity ids before filtering Graph API data', async () => {
+    const { response, json } = await runScenario(undefined, {
+      metaAssetId: 'act_123',
+      periods: ['today'],
+      selectedCampaigns: ['camp_1', '../metadata'],
+    });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('Invalid selected Meta entity id');
+  });
 });

@@ -141,11 +141,29 @@ export const clearUserData = (userId?: string | null) => {
   window.localStorage.removeItem(storageKeyForUser(userId));
 };
 
-export const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+let fallbackIdCounter = 0;
+
+export const makeId = (prefix: string) => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `${prefix}-${uuid}`;
+
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  const entropy = Array.from(bytes).some(Boolean)
+    ? Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    : `${Date.now()}-${fallbackIdCounter++}`;
+  return `${prefix}-${entropy}`;
+};
+
+let currentActivityActor = 'Usuário autenticado';
+
+export const setActivityActor = (actor?: string | null) => {
+  currentActivityActor = actor?.trim() || 'Usuário autenticado';
+};
 
 export const createActivityLog = (input: Omit<ActivityLog, 'id' | 'actor' | 'createdAt'>): ActivityLog => ({
   id: makeId('log'),
-  actor: 'Gustavo',
+  actor: currentActivityActor,
   createdAt: new Date().toISOString(),
   ...input,
 });

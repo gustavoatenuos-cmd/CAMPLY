@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Facebook, Link as LinkIcon, RefreshCw, Shi
 import { invokeFunction } from '../lib/invokeFunction';
 import type { CamplyData } from '../types';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 
 interface MetaIntegrationViewProps {
   data: CamplyData;
@@ -28,6 +29,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   const checkStatus = useCallback(async () => {
     setLoading(true);
@@ -65,7 +67,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   };
 
   const disconnect = async () => {
-    if (!window.confirm('Desconectar a integração Meta? Os dados analíticos já coletados serão preservados.')) return;
+    setConfirmDisconnectOpen(false);
     setLoading(true);
     setError(null);
     try {
@@ -112,7 +114,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
             <div className="mt-5 flex flex-wrap gap-2">
               {!integration ? <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {loading ? 'Conectando...' : 'Conectar com Facebook'}</button> : <>
                 <button type="button" onClick={() => void discoverAssets()} disabled={syncing} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 font-black text-brand-ink disabled:opacity-60"><RefreshCw size={16} className={syncing ? 'animate-spin' : ''} /> Descobrir ativos</button>
-                <button type="button" onClick={() => void disconnect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2 font-bold text-rose-200 disabled:opacity-60"><Unlink size={16} /> Desconectar</button>
+                <button type="button" onClick={() => setConfirmDisconnectOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2 font-bold text-rose-200 disabled:opacity-60"><Unlink size={16} /> Desconectar</button>
               </>}
             </div>
           </article>
@@ -133,6 +135,17 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
           <h2 className="flex items-center gap-2 font-black text-white"><ShieldCheck className="text-brand-green" size={18} /> Limites de segurança</h2>
           <p className="mt-2 text-sm leading-6 text-brand-muted">Segredos não são enviados ao frontend; chamadas à Graph API ocorrem nas Edge Functions; vínculos são autorizados por usuário; coletas idênticas concorrentes e rajadas excessivas são bloqueadas.</p>
         </article>
+
+        <ConfirmDialog
+          open={confirmDisconnectOpen}
+          title="Desconectar integração Meta?"
+          description="A autorização será revogada no CAMPLY. Os dados analíticos já coletados permanecem preservados para auditoria."
+          confirmLabel="Desconectar"
+          tone="danger"
+          loading={loading}
+          onCancel={() => setConfirmDisconnectOpen(false)}
+          onConfirm={() => void disconnect()}
+        />
       </div>
     </section>
   );

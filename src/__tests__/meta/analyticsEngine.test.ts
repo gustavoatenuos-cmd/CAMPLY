@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCampaignPeriodAnalytics,
   evaluateTrendAvailability,
+  mergeCompletenessStatuses,
   type TrendPeriodSignature,
 } from '../../../supabase/functions/_shared/meta/aggregation.ts';
 import type { MetaAdSetDefinition, MetaInsightRow } from '../../../supabase/functions/_shared/meta/contracts.ts';
@@ -42,6 +43,12 @@ const context = {
 };
 
 describe('Meta analytics campaign mixing and period engine', () => {
+  it('prioritizes real collection errors over zero-delivery statuses', () => {
+    expect(mergeCompletenessStatuses(['complete', 'zero_delivery'])).toBe('complete');
+    expect(mergeCompletenessStatuses(['zero_delivery', 'zero_delivery'])).toBe('zero_delivery');
+    expect(mergeCompletenessStatuses(['complete', 'partial_page', 'api_error'])).toBe('api_error');
+  });
+
   it('keeps same attribution and objective unmixed', () => {
     const result = analyzeCampaignMix(
       [adset(), adset({ id: 'a2' })],
