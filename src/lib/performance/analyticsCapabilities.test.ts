@@ -10,7 +10,7 @@ import {
 } from './traceableMetrics';
 
 const validCapabilities = {
-  contractVersion: 3,
+  contractVersion: 4,
   dashboardAvailable: true,
   dashboardRpc: 'get_global_performance_dashboard_v2',
   supportedPeriods: ['this_month', 'today', 'last_7d', 'last_30d'],
@@ -21,7 +21,7 @@ const validCapabilities = {
 };
 
 describe('analytics capability negotiation', () => {
-  it('accepts the traceable v3 contract and only known values', () => {
+  it('accepts the traceable v4 contract and only known values', () => {
     const result = parseAnalyticsCapabilities({
       ...validCapabilities,
       supportedPeriods: [...validCapabilities.supportedPeriods, 'unsupported'],
@@ -41,6 +41,10 @@ describe('analytics capability negotiation', () => {
       reason: 'capability_contract_incompatible',
     });
     expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 2 })).toEqual({
+      mode: 'compatibility',
+      reason: 'capability_contract_incompatible',
+    });
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 3 })).toEqual({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });

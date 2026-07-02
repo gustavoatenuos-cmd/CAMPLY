@@ -3,6 +3,8 @@ set -euo pipefail
 
 BROWSER=(npx agent-browser)
 SERVER_PID=""
+E2E_PORT="${E2E_PORT:-3100}"
+E2E_BASE_URL="http://127.0.0.1:${E2E_PORT}"
 
 cleanup() {
   local status=$?
@@ -27,16 +29,20 @@ assert_js() {
   fi
 }
 
-if ! curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then
-  VITE_META_E2E_MODE=true npm run dev >/tmp/camply-browser-e2e.log 2>&1 &
-  SERVER_PID=$!
-  for _ in $(seq 1 30); do
-    curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1 && break
-    sleep 1
-  done
+VITE_META_E2E_MODE=true npm run dev -- --host=0.0.0.0 --port "$E2E_PORT" --strictPort >/tmp/camply-browser-e2e.log 2>&1 &
+SERVER_PID=$!
+for _ in $(seq 1 30); do
+  curl -fsS "$E2E_BASE_URL" >/dev/null 2>&1 && break
+  sleep 1
+done
+
+if ! curl -fsS "$E2E_BASE_URL" >/dev/null 2>&1; then
+  echo "Browser E2E failed: dev server did not start on ${E2E_BASE_URL}"
+  tail -120 /tmp/camply-browser-e2e.log || true
+  exit 1
 fi
 
-"${BROWSER[@]}" open http://127.0.0.1:3000
+"${BROWSER[@]}" open "$E2E_BASE_URL"
 "${BROWSER[@]}" wait --load networkidle
 assert_js 'document.body.innerText.includes("Gestão de Tráfego Inteligente")' 'login screen did not render'
 assert_js '!document.querySelector("input[type=email]")' 'password-only login should not render an email field'

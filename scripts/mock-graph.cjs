@@ -176,6 +176,8 @@ const server = http.createServer((req, res) => {
     return res.end("<html><body>Not JSON</body></html>");
   }
 
+  const isSimpleDeliveryAccount = accountId === 'act_simple' || accountId === 'act_rate_limit_recovered';
+
   if (path.match(/\/act_[a-z0-9_]+$/)) {
     return res.end(JSON.stringify({
       id: accountId,
@@ -186,7 +188,7 @@ const server = http.createServer((req, res) => {
 
   if (path.includes('/campaigns')) {
     let campaigns = [];
-    if (accountId === 'act_simple') {
+    if (isSimpleDeliveryAccount) {
       campaigns = [
         { id: 'camp_123', name: 'Simple Campaign', objective: 'OUTCOME_LEADS', effective_status: 'ACTIVE', daily_budget: '1000' },
         { id: 'camp_456', name: 'Other Campaign', objective: 'OUTCOME_TRAFFIC', effective_status: 'ACTIVE' },
@@ -214,7 +216,7 @@ const server = http.createServer((req, res) => {
 
   if (path.includes('/adsets')) {
     let adsets = [];
-    if (accountId === 'act_simple') {
+    if (isSimpleDeliveryAccount) {
       adsets = [
         { id: 'adset_123', campaign_id: 'camp_123', name: 'Adset 123', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
         { id: 'adset_456', campaign_id: 'camp_456', name: 'Adset 456', optimization_goal: 'LINK_CLICKS', effective_status: 'ACTIVE', attribution_spec: [{ event_type: 'CLICK_THROUGH', window_days: 7 }] },
@@ -251,7 +253,7 @@ const server = http.createServer((req, res) => {
 
   if (path.includes('/ads')) {
     let ads = [];
-    if (accountId === 'act_simple') {
+    if (isSimpleDeliveryAccount) {
       ads = [
         {
           id: 'ad_123',
@@ -349,7 +351,7 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    if (accountId === 'act_simple') {
+    if (isSimpleDeliveryAccount) {
       insights = isAdLevel
         ? [
             { campaign_id: 'camp_123', adset_id: 'adset_123', ad_id: 'ad_123', impressions: '700', spend: '35.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop },
@@ -368,7 +370,22 @@ const server = http.createServer((req, res) => {
             { campaign_id: 'camp_789', impressions: '200', spend: '10.00', actions: [{action_type: 'post_engagement', value: '20'}], reach: '100', date_start, date_stop }
           ];
     } else if (accountId === 'act_zero') {
-      insights = [];
+      const zeroInsight = {
+        impressions: '0',
+        reach: '0',
+        clicks: '0',
+        inline_link_clicks: '0',
+        spend: '0.00',
+        actions: [],
+        action_values: [],
+        date_start,
+        date_stop,
+      };
+      insights = isAdsetLevel
+        ? [{ ...zeroInsight, campaign_id: 'camp_zero', adset_id: 'adset_zero' }]
+        : insightLevel === 'account'
+        ? [zeroInsight]
+        : [{ ...zeroInsight, campaign_id: 'camp_zero' }];
     } else if (accountId === 'act_mixed_obj') {
       insights = isAdsetLevel 
         ? [

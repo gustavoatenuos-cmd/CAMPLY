@@ -150,8 +150,12 @@ async function run() {
   await runScenario('zero_delivery', assets.zero, accessToken, (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status');
     assertEqual(json.success, true, 'JSON Success');
-    const metricCount = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}'`);
-    assertEqual(metricCount, '0', 'Zero delivery means no metrics inserted');
+    const runStatus = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(runStatus, 'success', 'Zero delivery run is still successful');
+    const accountZeroMetrics = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account' AND completeness_status='zero_delivery' AND metric_value = 0`);
+    assertEqual(accountZeroMetrics, 't', 'Zero delivery persists account-level zero metrics');
+    const campaignZeroMetrics = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='campaign' AND completeness_status='zero_delivery' AND metric_value = 0`);
+    assertEqual(campaignZeroMetrics, 't', 'Zero delivery persists campaign-level zero metrics');
   });
 
   // 3. mixed_objective

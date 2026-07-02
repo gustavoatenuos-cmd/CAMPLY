@@ -920,15 +920,17 @@ export async function handleRequest(req: Request) {
         && (!row.campaign_id || activeCampaignIds.has(row.campaign_id))
         && (!row.adset_id || activeAdSetIds.has(row.adset_id))
       );
+      const accountInsight = accountInsightsResult.data[0];
+      const accountCollectionStatus = mergeCompletenessStatuses([
+        collectionStatus(accountInsightsResult),
+        accountContextStatus,
+        accountRangeValidation.status,
+      ]);
+
       collectionStatusByPeriod[period] = {
-        account: mergeCompletenessStatuses([
-          collectionStatus(accountInsightsResult),
-          accountContextStatus,
-          accountRangeValidation.status,
-          accountInsightsResult.data[0] && !insightHasDelivery(accountInsightsResult.data[0])
-            ? 'zero_delivery'
-            : 'complete',
-        ]),
+        account: accountCollectionStatus === 'complete' && accountInsight && !insightHasDelivery(accountInsight)
+          ? 'zero_delivery'
+          : accountCollectionStatus,
         campaign: mergeCompletenessStatuses([
           collectionStatus(campaignInsightsResult),
           accountContextStatus,
@@ -1089,7 +1091,7 @@ export async function handleRequest(req: Request) {
               timezone: timezone === 'UNKNOWN' ? null : timezone,
               attribution_setting: campaignAdsets[0]?.attribution_setting || null,
               source_level: 'campaign', // explicitly global
-              completeness_status: collectionStatusByPeriod[period].campaign, // strictly the campaign completion status
+              completeness_status: analytics.completeness.status,
               calculation_metadata: result.metadata,
             });
           });
@@ -1316,6 +1318,9 @@ export async function handleRequest(req: Request) {
        throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
     }
 
+    const dashboardQualificationRequired = runScope === 'full_account'
+      && requestedLevel === 'campaign';
+
     const persisted = syncStatus === 'success'
       ? await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0])
       : null;
@@ -1333,7 +1338,7 @@ export async function handleRequest(req: Request) {
       if (accountMetricRows.length > 0 && persisted.accountMetricsCount === 0) {
         successVerificationErrors.push('prepared account metrics were not readable after persistence');
       }
-      if (!persisted.dashboardQualified) {
+      if (dashboardQualificationRequired && !persisted.dashboardQualified) {
         successVerificationErrors.push('dashboard cannot qualify this run as the latest reliable account source');
       }
     }
@@ -1356,6 +1361,7 @@ export async function handleRequest(req: Request) {
       collectionContractVersion: COLLECTION_CONTRACT_VERSION,
       timezone,
       currency,
+      dashboardQualificationRequired,
       persisted,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

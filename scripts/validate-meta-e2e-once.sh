@@ -68,8 +68,22 @@ META_BASE_URL=http://mock-graph:9999
 META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
 EOF
 
-# 2. Iniciar o Supabase local
-echo "2. Iniciando Supabase local..."
+# 2. Preparar migrations incrementais antes de iniciar o Supabase.
+# O teste precisa recriar um banco legado até a migration 000002, aplicar fixtures
+# antigas e só então subir todas as migrations posteriores. Portanto nenhuma
+# migration >= 000003 pode estar presente durante `supabase start`/`db reset`.
+echo "2. Preparando migrations incrementais..."
+mkdir -p /tmp/camply_migrations
+rm -f /tmp/camply_migrations/*.sql
+for migration in supabase/migrations/*.sql; do
+  version="$(basename "$migration" | cut -d_ -f1)"
+  if [[ "$version" > "20260627000002" ]]; then
+    mv "$migration" /tmp/camply_migrations/
+  fi
+done
+
+# 3. Iniciar o Supabase local
+echo "3. Iniciando Supabase local..."
 "$SUPABASE_CLI" start
 
 # Descobrir a rede do Supabase
@@ -80,25 +94,6 @@ if [[ -z "$SUPABASE_NETWORK" ]]; then
 fi
 SUPABASE_NETWORK_NAME=$(docker network inspect $SUPABASE_NETWORK -f '{{.Name}}')
 echo "Rede Supabase detectada: $SUPABASE_NETWORK_NAME"
-
-# 3. Mover migrations temporariamente
-echo "3. Preparando teste de migration incremental..."
-mkdir -p /tmp/camply_migrations
-mv supabase/migrations/20260627000003_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000004_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000005_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000006_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000007_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000008_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000009_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000010_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000011_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000012_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000013_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000014_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000015_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000016_* /tmp/camply_migrations/ 2>/dev/null || true
-mv supabase/migrations/20260627000017_* /tmp/camply_migrations/ 2>/dev/null || true
 
 # 4. db reset
 echo "4. Executando db reset (até migration 2)..."
