@@ -184,6 +184,8 @@ assert_js '(() => { const button=document.querySelector("[data-testid=client-per
 step "hierarchy target and persistence"
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
+assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'explicit Meta synchronization did not persist a reliable snapshot'
+"${BROWSER[@]}" eval 'sessionStorage.setItem("camply-e2e-snapshot-label", document.querySelector("[data-testid=meta-last-snapshot]").innerText); true' >/dev/null
 
 "${BROWSER[@]}" find role button click --name "Abrir Campanha Campanha ativa mock"
 "${BROWSER[@]}" wait 100
@@ -214,6 +216,7 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'official Meta account link did not survive reload'
+assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText === sessionStorage.getItem("camply-e2e-snapshot-label")' 'saved Meta snapshot changed or disappeared after reload without an explicit synchronization'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 200
 assert_js 'document.body.innerText.includes("Meta: 15")' 'performance target did not survive reload'

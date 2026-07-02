@@ -13,6 +13,7 @@ import {
 } from '../meta/metaE2ERuntime';
 import { loadClientAnalysisProfile, mapClientProfileRow, type ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import { exactPeriodRange } from '../meta/periodRange';
+import { withTimeout } from '../withTimeout';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -695,13 +696,17 @@ export async function loadGlobalPerformanceDashboard(options: {
   }
   if (!isSupabaseConfigured || !supabase) return [];
 
-  const { data, error } = await supabase.rpc(
-    options.dashboardRpc,
-    {
-      p_period: options.period,
-      p_client_ids: options.clientIds?.length ? options.clientIds : null,
-      p_asset_ids: options.assetIds?.length ? options.assetIds : null,
-    }
+  const { data, error } = await withTimeout(
+    supabase.rpc(
+      options.dashboardRpc,
+      {
+        p_period: options.period,
+        p_client_ids: options.clientIds?.length ? options.clientIds : null,
+        p_asset_ids: options.assetIds?.length ? options.assetIds : null,
+      }
+    ),
+    15_000,
+    'A leitura do último snapshot salvo demorou mais que o esperado.'
   );
 
   if (error) {

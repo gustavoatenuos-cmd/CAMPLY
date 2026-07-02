@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { withTimeout } from '../withTimeout';
 import {
   E2E_ASSET_ID,
   E2E_CLIENT_ID,
@@ -98,9 +99,13 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     };
   }
   if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('get_client_meta_asset_catalog', {
-    p_client_id: clientId || null,
-  });
+  const { data, error } = await withTimeout(
+    supabase.rpc('get_client_meta_asset_catalog', {
+      p_client_id: clientId || null,
+    }),
+    10_000,
+    'A leitura dos vínculos salvos demorou mais que o esperado.'
+  );
   if (error) throw new Error('Não foi possível carregar os vínculos Meta.');
   return data as ClientMetaAssetCatalog;
 }

@@ -22,11 +22,21 @@ const periodLabels: Record<DashboardPeriod, string> = {
   last_30d: 'Últimos 30 dias',
 };
 
-function runLabel(account: ClientMetaAccount): string {
-  const run = account.lastAttempt;
-  if (!run) return 'Nenhuma tentativa registrada';
-  const state = run.status === 'success' ? 'Concluída' : run.status === 'partial' ? 'Parcial' : run.status === 'running' ? 'Em andamento' : 'Falhou';
-  return `${state} · ${new Date(run.finishedAt || run.startedAt).toLocaleString('pt-BR')}`;
+function savedSnapshotLabel(account: ClientMetaAccount): string {
+  const run = account.lastSuccess;
+  if (!run) return 'Nenhum snapshot confiável salvo';
+  return `Snapshot salvo em ${new Date(run.finishedAt || run.startedAt).toLocaleString('pt-BR')} · ${periodLabels[run.period as DashboardPeriod] || run.period}`;
+}
+
+function newerAttemptLabel(account: ClientMetaAccount): string | null {
+  const attempt = account.lastAttempt;
+  const success = account.lastSuccess;
+  if (!attempt || attempt.status === 'success') return null;
+  const attemptTime = new Date(attempt.finishedAt || attempt.startedAt).getTime();
+  const successTime = success ? new Date(success.finishedAt || success.startedAt).getTime() : 0;
+  if (attemptTime <= successTime) return null;
+  const state = attempt.status === 'partial' ? 'parcial' : attempt.status === 'running' ? 'em andamento' : 'falhou';
+  return `A tentativa mais recente está ${state}; o último snapshot confiável continua em uso.`;
 }
 
 export function MetaOperationalWorkspace({
@@ -153,8 +163,8 @@ export function MetaOperationalWorkspace({
       const result = await syncMetaAsset({ metaAssetId: account.metaAssetId, period, requestedLevel });
       if (!result.success || result.status === 'failed') throw new Error(result.message || 'A coleta Meta falhou.');
       setAction(result.status === 'partial'
-        ? 'Sincronização parcial concluída. Verifique a rastreabilidade antes de decidir.'
-        : `Sincronização ${requestedLevel === 'creative' ? 'completa' : 'de campanhas'} concluída.`);
+        ? 'Sincronização parcial registrada. O snapshot confiável anterior permanece disponível.'
+        : `Sincronização ${requestedLevel === 'creative' ? 'completa' : 'de campanhas'} concluída e salva no banco.`);
       await refresh();
       setRefreshToken((current) => current + 1);
       onDataChanged?.();
@@ -171,7 +181,7 @@ export function MetaOperationalWorkspace({
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central Meta Ads</p>
           <h2 className="mt-1 text-xl font-black text-white">Performance oficial por cliente</h2>
-          <p className="mt-1 max-w-3xl text-sm text-brand-muted">Vínculo, coleta e leitura usam o banco analítico. Esta visão operacional exibe somente campanhas ativas; campanhas pausadas seguem preservadas no histórico.</p>
+          <p className="mt-1 max-w-3xl text-sm text-brand-muted">A tela sempre lê o último snapshot salvo no banco. O Facebook só é consultado quando você clica em sincronizar; recarregar a página não inicia uma nova coleta.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <label className="text-xs font-bold text-brand-soft">
@@ -186,8 +196,8 @@ export function MetaOperationalWorkspace({
               {Object.entries(periodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <button type="button" onClick={() => void refreshReading()} disabled={loading} className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-bold text-brand-soft disabled:opacity-60">
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Atualizar leitura
+          <button type="button" onClick={() => void refreshReading()} disabled={loading} title="Relê o snapshot salvo sem consultar o Facebook" className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-bold text-brand-soft disabled:opacity-60">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Recarregar dados salvos
           </button>
         </div>
       </div>
@@ -199,6 +209,12 @@ export function MetaOperationalWorkspace({
         <EmptyState title="Nenhum cliente cadastrado" description="Cadastre um cliente operacional antes de vincular uma conta Meta." />
       ) : loading && !catalog ? (
         <div className="mt-5 flex min-h-40 items-center justify-center gap-2 text-brand-muted"><LoaderCircle className="animate-spin" size={18} /> Carregando vínculos oficiais...</div>
+      ) : error && !catalog ? (
+        <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-5 text-amber-100">
+          <h3 className="font-black text-white">Não foi possível ler o estado salvo</h3>
+          <p className="mt-1 text-sm">Nenhuma sincronização nova foi iniciada e nenhum vínculo foi removido.</p>
+          <button type="button" onClick={() => void refresh()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-sm font-bold"><RefreshCw size={14} /> Tentar novamente</button>
+        </div>
       ) : !account ? (
         <div className="mt-5 rounded-xl border border-dashed border-brand-line bg-brand-ink/40 p-5">
           <h3 className="font-black text-white">Conta Meta ainda não vinculada</h3>
@@ -222,7 +238,8 @@ export function MetaOperationalWorkspace({
                   <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-200">{account.assetStatus || 'STATUS N/D'}</span>
                 </div>
                 <p className="mt-1 text-xs text-brand-muted">{account.adAccountId} · {account.currency || 'Moeda N/D'} · {account.timezone || 'Fuso N/D'}</p>
-                <p className="mt-2 inline-flex items-center gap-1 text-xs text-brand-soft"><Clock3 size={13} /> {runLabel(account)}</p>
+                <p data-testid="meta-last-snapshot" className="mt-2 inline-flex items-center gap-1 text-xs text-brand-soft"><Clock3 size={13} /> {savedSnapshotLabel(account)}</p>
+                {newerAttemptLabel(account) && <p className="mt-1 text-xs text-amber-200">{newerAttemptLabel(account)}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 <button data-testid="meta-sync-period" type="button" onClick={() => void synchronize('campaign')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-green/40 px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sincronizar período</button>

@@ -80,6 +80,18 @@ describe('analytics capability negotiation', () => {
       reason: 'capability_contract_unavailable',
     });
   });
+
+  it('does not leave the Dashboard loading forever when the RPC hangs', async () => {
+    const result = await loadAnalyticsCapabilities(
+      () => new Promise(() => undefined),
+      5
+    );
+
+    expect(result).toEqual({
+      mode: 'compatibility',
+      reason: 'capability_contract_unavailable',
+    });
+  });
 });
 
 describe('traceable metric contract', () => {

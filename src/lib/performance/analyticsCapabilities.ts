@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
+import { withTimeout } from '../withTimeout';
 
 export const ANALYTICS_CONTRACT_VERSION = 5;
 
@@ -99,7 +100,8 @@ export async function loadAnalyticsCapabilities(
       return { data: null, error: { code: 'SUPABASE_NOT_CONFIGURED' } };
     }
     return supabase.rpc('get_analytics_capabilities');
-  }
+  },
+  timeoutMs = 10_000
 ): Promise<AnalyticsCapabilityState> {
   if (isMetaE2EMode) {
     return parseAnalyticsCapabilities({
@@ -114,7 +116,11 @@ export async function loadAnalyticsCapabilities(
     });
   }
   try {
-    const { data, error } = await rpc();
+    const { data, error } = await withTimeout(
+      rpc(),
+      timeoutMs,
+      'A verificação do contrato analítico demorou mais que o esperado.'
+    );
     if (error) {
       if (error.code === 'SUPABASE_NOT_CONFIGURED') {
         return { mode: 'compatibility', reason: 'supabase_not_configured' };
