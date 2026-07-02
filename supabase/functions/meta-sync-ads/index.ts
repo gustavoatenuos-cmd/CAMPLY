@@ -1341,7 +1341,8 @@ export async function handleRequest(req: Request) {
     }
 
     const dashboardQualificationRequired = runScope === 'full_account'
-      && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(requestedLevel);
+      && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(requestedLevel)
+      && accountMetricRows.length > 0;
 
     const persisted = syncStatus === 'success'
       ? await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0])

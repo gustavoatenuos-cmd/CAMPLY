@@ -32,24 +32,33 @@ export function MetaOperationalWorkspace({
   data,
   initialClientId,
   compact = false,
+  period: controlledPeriod,
+  onPeriodChange,
   onDataChanged,
 }: {
   data: CamplyData;
   initialClientId?: string;
   compact?: boolean;
+  period?: DashboardPeriod;
+  onPeriodChange?: (period: DashboardPeriod) => void;
   onDataChanged?: () => void;
 }) {
   const [clientId, setClientId] = useState(initialClientId || data.clients[0]?.id || '');
   const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
   const [accountId, setAccountId] = useState('');
   const [linkAssetId, setLinkAssetId] = useState('');
-  const [period, setPeriod] = useState<DashboardPeriod>('this_month');
+  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('this_month');
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [targetsOpen, setTargetsOpen] = useState(false);
   const [confirmUnlinkOpen, setConfirmUnlinkOpen] = useState(false);
+  const period = controlledPeriod || internalPeriod;
+  const setPeriod = (nextPeriod: DashboardPeriod) => {
+    if (!controlledPeriod) setInternalPeriod(nextPeriod);
+    onPeriodChange?.(nextPeriod);
+  };
 
   useEffect(() => {
     setClientId((current) => {
@@ -87,6 +96,11 @@ export function MetaOperationalWorkspace({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const refreshReading = async () => {
+    await refresh();
+    onDataChanged?.();
+  };
 
   const clientCatalog = catalog?.clients.find((client) => client.clientId === clientId);
   const account = clientCatalog?.accounts.find((item) => item.clientMetaAssetId === accountId) || clientCatalog?.accounts[0];
@@ -171,7 +185,7 @@ export function MetaOperationalWorkspace({
               {Object.entries(periodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <button type="button" onClick={() => void refresh()} disabled={loading} className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-bold text-brand-soft disabled:opacity-60">
+          <button type="button" onClick={() => void refreshReading()} disabled={loading} className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-bold text-brand-soft disabled:opacity-60">
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Atualizar leitura
           </button>
         </div>

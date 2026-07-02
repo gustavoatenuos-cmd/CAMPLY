@@ -161,6 +161,11 @@ export function MetaHierarchyExplorer({
     void loadRoot();
   }, [loadRoot, refreshToken]);
 
+  const refreshRoot = async () => {
+    await loadRoot();
+    onChanged?.();
+  };
+
   const loadChildren = async (item: MetaHierarchyItem, level: MetaHierarchyLevel) => {
     const childLevel = nextLevel[level];
     if (!childLevel) return;
@@ -271,9 +276,9 @@ export function MetaHierarchyExplorer({
   };
 
   if (loading) return <div className="flex min-h-48 items-center justify-center gap-2 rounded-xl border border-brand-line text-brand-muted"><LoaderCircle className="animate-spin" size={18} /> Carregando campanhas...</div>;
-  if (error && !root) return <StateMessage title="Não foi possível carregar a hierarquia" impact={error} action="Tentar novamente" onAction={() => void loadRoot()} />;
+  if (error && !root) return <StateMessage title="Não foi possível carregar a hierarquia" impact={error} action="Tentar novamente" onAction={() => void refreshRoot()} />;
   if (root?.state === 'period_not_synced') return <StateMessage title="Período ainda não sincronizado" impact="Nenhuma campanha confiável será exibida até uma sincronização completa deste período." />;
-  if (!root || root.items.length === 0) return <StateMessage title="Nenhuma campanha ativa encontrada" impact="A conta não possui campanhas ativas coletadas para este período, ou ainda precisa ser sincronizada." action="Atualizar leitura" onAction={() => void loadRoot()} />;
+  if (!root || root.items.length === 0) return <StateMessage title="Nenhuma campanha ativa encontrada" impact="A conta não possui campanhas ativas coletadas para este período, ou ainda precisa ser sincronizada." action="Atualizar leitura" onAction={() => void refreshRoot()} />;
 
   return (
     <div data-testid="meta-hierarchy" className="space-y-3">
@@ -283,7 +288,7 @@ export function MetaHierarchyExplorer({
           <p className="text-sm font-bold text-white">Hierarquia Meta oficial</p>
           <p className="text-xs text-brand-muted">{root.total} campanha(s) ativa(s) · run {root.run?.id || 'não informado'} · {root.run?.status || 'sem status'}</p>
         </div>
-        <button type="button" onClick={() => void loadRoot()} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"><RefreshCw size={13} /> Atualizar leitura</button>
+        <button type="button" onClick={() => void refreshRoot()} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"><RefreshCw size={13} /> Atualizar leitura</button>
       </div>
       {root.items.map((item) => (
         <EntityNode

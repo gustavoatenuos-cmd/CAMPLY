@@ -333,7 +333,13 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
             <ClientPerformanceTable clients={filteredClients} />
 
-            <MetaOperationalWorkspace data={data} compact onDataChanged={() => void loadDashboard()} />
+            <MetaOperationalWorkspace
+              data={data}
+              compact
+              period={period}
+              onPeriodChange={setPeriod}
+              onDataChanged={() => void loadDashboard()}
+            />
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
