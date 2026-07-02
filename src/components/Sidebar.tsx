@@ -1,9 +1,9 @@
-import { Banknote, BriefcaseBusiness, CalendarCheck, Columns3, History, Landmark, Settings, Sparkles, Users, BotMessageSquare, Facebook, LogOut } from 'lucide-react';
+import { Banknote, BriefcaseBusiness, Columns3, History, Landmark, LayoutDashboard, Settings, Sparkles, Users, BotMessageSquare, Facebook, LogOut } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
 const items = [
-  { id: 'today', label: 'Hoje', icon: CalendarCheck },
+  { id: 'today', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'agentChat', label: 'Chat IA (Voz)', icon: BotMessageSquare },
   { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
   { id: 'creativeCritic', label: 'Lab. Criativo', icon: Sparkles },
@@ -15,7 +15,7 @@ const items = [
   { id: 'intelligence', label: 'Inteligência', icon: Sparkles },
   { id: 'agentSettings', label: 'Config. Agente', icon: Settings },
   { id: 'metaIntegration', label: 'Integração Meta', icon: Facebook },
-] satisfies Array<{ id: ViewId; label: string; icon: typeof CalendarCheck }>;
+] satisfies Array<{ id: ViewId; label: string; icon: typeof LayoutDashboard }>;
 
 interface SidebarProps {
   activeView: ViewId;

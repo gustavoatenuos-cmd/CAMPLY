@@ -12,10 +12,15 @@ serve(async (req) => {
     const { user, adminClient } = await requireAuthenticatedUser(req)
     const userId = user.id
 
-    // Generate random state hash to prevent CSRF
-    const array = new Uint8Array(16);
+    const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    const stateHash = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    const rawState = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    
+    // Hash state for storage
+    const msgUint8 = new TextEncoder().encode(rawState);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const stateHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     
     const redirectUri = Deno.env.get('META_REDIRECT_URI');
     const appId = Deno.env.get('META_APP_ID');
@@ -51,7 +56,7 @@ serve(async (req) => {
     const authUrl = new URL(`https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth`);
     authUrl.searchParams.append('client_id', appId);
     authUrl.searchParams.append('redirect_uri', redirectUri);
-    authUrl.searchParams.append('state', stateHash);
+    authUrl.searchParams.append('state', rawState);
     authUrl.searchParams.append('scope', scopes.join(','));
     authUrl.searchParams.append('response_type', 'code');
 

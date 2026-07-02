@@ -1,3 +1,11 @@
+import type {
+  AttributionGroup,
+  GlobalMetrics,
+  MetaSyncStatus,
+  PeriodCompleteness,
+  TrendAvailability,
+} from './lib/meta/metaSyncTypes';
+
 export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat' | 'metaIntegration' | 'creativeCritic';
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
@@ -45,7 +53,7 @@ export interface CampaignMetrics {
   checkouts: number;
   purchases: number;
   impressions?: number;
-  conversations?: number;
+  conversations?: number; // @deprecated
 }
 
 export interface Campaign {
@@ -57,7 +65,7 @@ export interface Campaign {
   objective: MetaCampaignObjective | string;
   budget: number;
   spent: number;
-  lastOptimizedAt: string;
+  lastOptimizedAt?: string;
   nextAction: string;
   priority: Priority;
   metaCampaignId?: string;
@@ -68,24 +76,67 @@ export interface Campaign {
     id: string;
     name: string;
     status: string;
-    ads: Array<{
+    classified_objective?: string;
+    optimization_goal?: string;
+    destination_type?: string;
+    attribution_setting?: string;
+    effective_status?: string;
+    ads?: Array<{
       id: string;
       name: string;
       status: string;
+      effective_status?: string;
+      creative_id?: string | null;
+      creative?: {
+        id?: string;
+        name?: string;
+        title?: string;
+        body?: string;
+        thumbnail_url?: string;
+        image_url?: string;
+        object_story_spec?: Record<string, unknown> | null;
+      } | null;
+      metricsByPeriod?: Record<string, Record<string, number | string | null | undefined>>;
     }>;
   }>;
   targetResults?: number;
   targetCPA?: number;
-  results?: number;
+  results?: number; // @deprecated
   ctr?: number;
   cpc?: number;
-  cpr?: number;
+  cpr?: number; // @deprecated
   pageViews?: number;
   checkouts?: number;
   purchases?: number;
   impressions?: number;
-  conversations?: number;
-  metricsByPeriod?: Record<string, CampaignMetrics>;
+  conversations?: number; // @deprecated
+  metricsByPeriod?: Record<string, CampaignMetrics>; // @deprecated legacy field
+  classifiedObjective?: string;
+  normalizedMetricsByPeriod?: Record<string, Record<string, number>>; // @deprecated
+
+  // New Contract
+  structuralMixedAttribution?: boolean;
+  mixedAttribution?: boolean;
+  mixedAttributionByPeriod?: Record<string, boolean>;
+  mixedObjective?: boolean;
+  mixedDestination?: boolean;
+  globalMetricsByPeriod?: Record<string, GlobalMetrics>;
+  attributionGroupsByPeriod?: Record<string, AttributionGroup[]>;
+  completenessByPeriod?: Record<string, PeriodCompleteness>;
+  trendAvailabilityByPeriod?: Record<string, TrendAvailability>;
+  trendAvailable?: boolean;
+  trendUnavailableReason?: string;
+
+  lastSyncedAt?: string;
+  metaStatus?: string;
+  metaEffectiveStatus?: string;
+  syncRunId?: string;
+  lastSyncAttemptAt?: string;
+  lastSyncAttemptRunId?: string;
+  lastSyncStatus?: MetaSyncStatus;
+  partialSyncRunId?: string;
+  dataIsPartial?: boolean;
+  metaMissingFromLatestSync?: boolean;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
@@ -97,7 +148,9 @@ export type MetaCampaignObjective =
   | 'Engajamento'
   | 'Cadastros'
   | 'Promoção do app'
-  | 'Vendas';
+  | 'Vendas'
+  | 'MIXED'
+  | 'UNCLASSIFIED';
 
 export interface Receivable {
   id: string;

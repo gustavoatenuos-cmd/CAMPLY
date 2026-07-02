@@ -1,4 +1,4 @@
-import { FormEvent } from 'react';
+import { FormEvent, useState } from 'react';
 import { CamplyData, Client, BillingType, InvestmentPeriod, ClientStatus } from '../types';
 import { createActivityLog, makeId } from '../data/camplyStore';
 import React from 'react';
@@ -10,6 +10,8 @@ interface ClientFormModalProps {
   editingClient: Client | null | undefined;
   open: boolean;
   onClose: () => void;
+  persistClientData?: (nextData: CamplyData, clientId: string) => Promise<void>;
+  onClientPersisted?: (clientId: string) => void;
 }
 
 const billingTypes = [
@@ -23,9 +25,27 @@ const investmentPeriods = [
   { value: 'monthly', label: 'Por mês' },
 ];
 
-export function ClientFormModal({ data, updateData, editingClient, open, onClose }: ClientFormModalProps) {
-  const saveClient = (event: FormEvent<HTMLFormElement>) => {
+export function ClientFormModal({
+  data,
+  updateData,
+  editingClient,
+  open,
+  onClose,
+  persistClientData,
+  onClientPersisted,
+}: ClientFormModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const closeIfIdle = () => {
+    if (saving) return;
+    setError('');
+    onClose();
+  };
+
+  const saveClient = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saving) return;
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
@@ -51,11 +71,11 @@ export function ClientFormModal({ data, updateData, editingClient, open, onClose
       notes: String(form.get('notes') ?? ''),
     };
 
-    updateData((current) => ({
-      ...current,
+    const nextData: CamplyData = {
+      ...data,
       clients: editingClient
-        ? current.clients.map((client) => (client.id === editingClient.id ? nextClient : client))
-        : [nextClient, ...current.clients],
+        ? data.clients.map((client) => (client.id === editingClient.id ? nextClient : client))
+        : [nextClient, ...data.clients],
       activityLogs: [
         createActivityLog({
           action: editingClient ? 'client_updated' : 'client_created',
@@ -69,11 +89,26 @@ export function ClientFormModal({ data, updateData, editingClient, open, onClose
           receivableId: '',
           taskId: '',
         }),
-        ...current.activityLogs,
+        ...data.activityLogs,
       ],
-    }));
-    
-    onClose();
+    };
+
+    setSaving(true);
+    setError('');
+    try {
+      if (persistClientData) {
+        await persistClientData(nextData, nextClient.id);
+      } else {
+        updateData(() => nextData);
+      }
+      onClientPersisted?.(nextClient.id);
+      setError('');
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar o cliente no banco.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -81,9 +116,14 @@ export function ClientFormModal({ data, updateData, editingClient, open, onClose
       title={editingClient ? 'Editar cliente' : 'Novo cliente'}
       description="Cadastre a empresa, estrutura trabalhada, investimento de mídia e dados operacionais."
       open={open}
-      onClose={onClose}
+      onClose={closeIfIdle}
     >
       <form key={editingClient?.id ?? 'new-client'} onSubmit={saveClient} className="space-y-5 p-5">
+        {error && (
+          <div role="alert" className="rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">
+            {error}
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Nome do responsável" name="name" defaultValue={editingClient?.name} required />
           <Field label="Empresa / marca" name="company" defaultValue={editingClient?.company} />
@@ -170,12 +210,15 @@ export function ClientFormModal({ data, updateData, editingClient, open, onClose
         <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft"
+            onClick={closeIfIdle}
+            disabled={saving}
+            className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft disabled:cursor-wait disabled:opacity-60"
           >
             Cancelar
           </button>
-          <button className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink">{editingClient ? 'Salvar alterações' : 'Salvar cliente'}</button>
+          <button disabled={saving} className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink disabled:cursor-wait disabled:opacity-60">
+            {saving ? 'Salvando no banco...' : editingClient ? 'Salvar alterações' : 'Salvar cliente'}
+          </button>
         </div>
       </form>
     </Modal>

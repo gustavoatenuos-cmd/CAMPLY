@@ -1,5 +1,5 @@
 import { CamplyData } from '../types';
-import { normalizeData } from './camplyStore';
+import { normalizeData, sanitizeWorkspaceData } from './camplyStore';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 type WorkspaceRow = {
@@ -8,6 +8,11 @@ type WorkspaceRow = {
 };
 
 let remoteVersion: number | null = null;
+let saveQueue: Promise<unknown> = Promise.resolve();
+
+export const resetRemoteWorkspaceState = (): void => {
+  remoteVersion = null;
+};
 
 const getUserId = async (): Promise<string | null> => {
   if (!supabase) return null;
@@ -36,12 +41,18 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
 };
 
 export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
+  const operation = saveQueue.then(() => saveRemoteDataNow(data));
+  saveQueue = operation.catch(() => undefined);
+  return operation;
+};
+
+const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
   if (!isSupabaseConfigured || !supabase) return false;
   const userId = await getUserId();
   if (!userId) return false;
 
-  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace', {
-    p_data: data,
+  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace_with_client_registry', {
+    p_data: sanitizeWorkspaceData(data),
     p_expected_version: remoteVersion,
   });
 
@@ -52,4 +63,40 @@ export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
 
   remoteVersion = Number(nextVersion);
   return true;
+};
+
+export const confirmClientIdentity = async (clientId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured || !supabase) return false;
+  const userId = await getUserId();
+  if (!userId) return false;
+
+  const { data, error } = await supabase
+    .from('client_identity')
+    .select('client_id')
+    .eq('user_id', userId)
+    .eq('client_id', clientId)
+    .is('archived_at', null)
+    .maybeSingle<{ client_id: string }>();
+
+  if (error) {
+    console.error('Camply client identity confirmation failed:', error.message);
+    return false;
+  }
+
+  return data?.client_id === clientId;
+};
+
+export const saveRemoteDataAndConfirmClient = async (
+  data: CamplyData,
+  clientId: string
+): Promise<void> => {
+  const saved = await saveRemoteData(data);
+  if (!saved) {
+    throw new Error('Não foi possível salvar o cliente no banco. Recarregue e tente novamente.');
+  }
+
+  const confirmed = await confirmClientIdentity(clientId);
+  if (!confirmed) {
+    throw new Error('O cliente foi salvo, mas ainda não apareceu no índice analítico. Tente novamente antes de vincular uma conta Meta.');
+  }
 };

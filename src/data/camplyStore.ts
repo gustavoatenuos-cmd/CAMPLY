@@ -1,6 +1,9 @@
-import { ActivityLog, CamplyData, CampaignStatus, Insight, PaymentStatus, ProjectStatus } from '../types';
+import { ActivityLog, CamplyData, Campaign, CampaignStatus, Insight, PaymentStatus, ProjectStatus } from '../types';
 
-const STORAGE_KEY = 'camply-data-v2';
+const STORAGE_KEY = 'camply-data-v3';
+const LEGACY_STORAGE_KEY = 'camply-data-v2';
+
+const storageKeyForUser = (userId: string) => `${STORAGE_KEY}:${userId}`;
 
 export const campaignStatusLabels: Record<CampaignStatus, string> = {
   setup: 'Setup',
@@ -38,12 +41,25 @@ export const initialData: CamplyData = {
   agentLogs: [],
 };
 
+const stripMetaAnalyticsFromCampaign = ({
+  metricsByPeriod: _metricsByPeriod,
+  normalizedMetricsByPeriod: _normalizedMetricsByPeriod,
+  globalMetricsByPeriod: _globalMetricsByPeriod,
+  attributionGroupsByPeriod: _attributionGroupsByPeriod,
+  completenessByPeriod: _completenessByPeriod,
+  trendAvailabilityByPeriod: _trendAvailabilityByPeriod,
+  activeAdSets: _activeAdSets,
+  syncRunId: _syncRunId,
+  partialSyncRunId: _partialSyncRunId,
+  ...campaign
+}: Campaign): Campaign => campaign;
+
 export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
   const parsed = { ...initialData, ...data } as CamplyData;
 
   return {
     ...parsed,
-    clients: parsed.clients.map((client) => ({
+    clients: parsed.clients.map(({ metaAdAccountId: _legacyId, metaAdAccountName: _legacyName, ...client }) => ({
       ...client,
       projectId: client.projectId ?? '',
       managementFeeType: client.managementFeeType ?? 'recurring',
@@ -53,6 +69,9 @@ export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
       adInvestmentYoutube: client.adInvestmentYoutube ?? 0,
       adInvestmentTikTok: client.adInvestmentTikTok ?? 0,
     })),
+    campaigns: parsed.campaigns
+      .filter((campaign) => !campaign.metaCampaignId)
+      .map(stripMetaAnalyticsFromCampaign),
     projects: parsed.projects.map((project) => ({
       ...project,
       projectType: project.projectType ?? (project.billingType === 'recurring' ? 'traffic' : 'site'),
@@ -91,8 +110,18 @@ export const inferProjectPaymentStatus = (amountCharged: number, amountReceived:
   return 'pending';
 };
 
-export const loadData = (): CamplyData => {
-  const stored = window.localStorage.getItem(STORAGE_KEY);
+export const sanitizeWorkspaceData = (data: CamplyData): CamplyData => ({
+  ...data,
+  clients: data.clients.map(({ metaAdAccountId: _legacyId, metaAdAccountName: _legacyName, ...client }) => client),
+  campaigns: data.campaigns
+    .filter((campaign) => !campaign.metaCampaignId)
+    .map(stripMetaAnalyticsFromCampaign),
+});
+
+export const loadData = (userId?: string | null): CamplyData => {
+  if (!userId) return initialData;
+  window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  const stored = window.localStorage.getItem(storageKeyForUser(userId));
   if (!stored) return initialData;
 
   try {
@@ -102,15 +131,39 @@ export const loadData = (): CamplyData => {
   }
 };
 
-export const saveData = (data: CamplyData) => {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+export const saveData = (data: CamplyData, userId?: string | null) => {
+  if (!userId) return;
+  window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(sanitizeWorkspaceData(data)));
 };
 
-export const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+export const clearUserData = (userId?: string | null) => {
+  if (!userId) return;
+  window.localStorage.removeItem(storageKeyForUser(userId));
+};
+
+let fallbackIdCounter = 0;
+
+export const makeId = (prefix: string) => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `${prefix}-${uuid}`;
+
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  const entropy = Array.from(bytes).some(Boolean)
+    ? Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    : `${Date.now()}-${fallbackIdCounter++}`;
+  return `${prefix}-${entropy}`;
+};
+
+let currentActivityActor = 'Usuário autenticado';
+
+export const setActivityActor = (actor?: string | null) => {
+  currentActivityActor = actor?.trim() || 'Usuário autenticado';
+};
 
 export const createActivityLog = (input: Omit<ActivityLog, 'id' | 'actor' | 'createdAt'>): ActivityLog => ({
   id: makeId('log'),
-  actor: 'Gustavo',
+  actor: currentActivityActor,
   createdAt: new Date().toISOString(),
   ...input,
 });
@@ -142,7 +195,9 @@ export const buildInsights = (data: CamplyData): Insight[] => {
 
   data.campaigns.forEach((campaign) => {
     const client = data.clients.find((item) => item.id === campaign.clientId);
-    const daysWithoutOptimization = Math.abs(daysUntil(campaign.lastOptimizedAt));
+    const daysWithoutOptimization = campaign.lastOptimizedAt
+      ? Math.abs(daysUntil(campaign.lastOptimizedAt))
+      : 0;
     const spentRate = campaign.budget ? campaign.spent / campaign.budget : 0;
 
     if (['live', 'optimize'].includes(campaign.status) && daysWithoutOptimization >= 4) {

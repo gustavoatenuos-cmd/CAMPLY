@@ -24,7 +24,7 @@ export function CreativeCriticView({ data }: Props) {
         const accounts = data.assets.filter((a: any) => a.asset_type === 'adaccount');
         setAdAccounts(accounts);
         if (accounts.length > 0) {
-          setActiveAccount(accounts[0].asset_id);
+          setActiveAccount(accounts[0].id || accounts[0].asset_id);
         }
       }
     }).catch((requestError) => setError(requestError.message));
@@ -98,7 +98,7 @@ export function CreativeCriticView({ data }: Props) {
               >
                 <option value="" disabled>Selecione a Conta...</option>
                 {adAccounts.map(acc => (
-                  <option key={acc.asset_id} value={acc.asset_id}>{acc.asset_name}</option>
+                  <option key={acc.id || acc.asset_id} value={acc.id || acc.asset_id}>{acc.asset_name}</option>
                 ))}
               </select>
 

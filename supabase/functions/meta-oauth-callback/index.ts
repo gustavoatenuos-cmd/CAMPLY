@@ -5,6 +5,22 @@ import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
 import { errorResponse, HttpError } from '../_shared/auth.ts'
 
+interface MetaOAuthStateData {
+  user_id: string;
+  redirect_uri: string;
+  scopes: string[] | null;
+}
+
+function isMetaOAuthStateData(value: unknown): value is MetaOAuthStateData {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Record<string, unknown>;
+  return (
+    typeof state.user_id === 'string' &&
+    typeof state.redirect_uri === 'string' &&
+    (state.scopes === null || (Array.isArray(state.scopes) && state.scopes.every((scope) => typeof scope === 'string')))
+  );
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -24,28 +40,25 @@ serve(async (req) => {
       throw new HttpError('Code or State missing in URL parameters', 400);
     }
 
-    // 1. Verify state hash in database
+    // 1. Hash the incoming state
+    const msgUint8 = new TextEncoder().encode(state);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+    const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Removed logs as requested by security constraints
+
+    // 2. Consume via Atomic RPC
     const { data: stateData, error: stateError } = await supabaseClient
-      .from('meta_oauth_states')
-      .select('*')
-      .eq('state_hash', state)
-      .is('used_at', null)
+      .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
       .single();
 
     if (stateError || !stateData) {
-      throw new HttpError('Invalid or expired state parameter', 400);
+      console.log('RPC Error:', stateError);
+      throw new HttpError('Invalid, expired, or already used state parameter', 400);
     }
-
-    // Verify expiration
-    if (new Date() > new Date(stateData.expires_at)) {
-      throw new HttpError('Invalid or expired state parameter', 400);
+    if (!isMetaOAuthStateData(stateData)) {
+      throw new HttpError('Invalid state payload returned by OAuth state store', 400);
     }
-
-    // Mark as used
-    await supabaseClient
-      .from('meta_oauth_states')
-      .update({ used_at: new Date().toISOString() })
-      .eq('id', stateData.id);
 
     // 2. Exchange code for user access token
     const appId = Deno.env.get('META_APP_ID');
@@ -60,9 +73,11 @@ serve(async (req) => {
     tokenUrl.searchParams.append('code', code);
 
     const tokenRes = await fetch(tokenUrl.toString());
-    const tokenData = await tokenRes.json();
+    let tokenData;
+    try { tokenData = await tokenRes.json(); } catch (e) { tokenData = {}; }
 
     if (!tokenRes.ok) {
+      console.error('Token fetch failed! Status:', tokenRes.status);
       throw new HttpError('Meta token exchange failed', 502);
     }
 
@@ -76,11 +91,18 @@ serve(async (req) => {
     longTokenUrl.searchParams.append('fb_exchange_token', accessToken);
 
     const longTokenRes = await fetch(longTokenUrl.toString());
-    const longTokenData = await longTokenRes.json();
+    let longTokenData;
+    try { longTokenData = await longTokenRes.json(); } catch (e) { longTokenData = {}; }
 
-    if (longTokenRes.ok && longTokenData.access_token) {
+    if (!longTokenRes.ok) {
+      console.error('Long token fetch failed! Status:', longTokenRes.status);
+      throw new HttpError('Meta long token exchange failed', 502);
+    }
+    
+    if (longTokenData.access_token) {
       accessToken = longTokenData.access_token;
     }
+    
     const expiresIn = longTokenData.expires_in || tokenData.expires_in;
     const tokenExpiresAt = expiresIn
       ? new Date(Date.now() + Number(expiresIn) * 1000).toISOString()
@@ -91,9 +113,13 @@ serve(async (req) => {
     meUrl.searchParams.append('access_token', accessToken);
     
     const meRes = await fetch(meUrl.toString());
-    const meData = await meRes.json();
+    let meData;
+    try { meData = await meRes.json(); } catch (e) { meData = {}; }
 
-    if (!meRes.ok) throw new HttpError('Failed to fetch Meta user profile', 502);
+    if (!meRes.ok) {
+      console.error('User profile fetch failed! Status:', meRes.status);
+      throw new HttpError('Failed to fetch Meta user profile', 502);
+    }
 
     // 5. Encrypt token
     const encryptedToken = await encryptToken(accessToken);
@@ -105,9 +131,14 @@ serve(async (req) => {
       .eq('user_id', stateData.user_id)
       .eq('meta_user_id', meData.id)
       .maybeSingle();
+      
+    if (searchError) {
+      console.error('Database search error for integration');
+      throw new HttpError('Database operation failed', 500);
+    }
 
     if (existingInt) {
-      await supabaseClient
+      const { error: updateError } = await supabaseClient
         .from('meta_integrations')
         .update({
           access_token_encrypted: encryptedToken,
@@ -118,8 +149,13 @@ serve(async (req) => {
           last_validated_at: new Date().toISOString(),
         })
         .eq('id', existingInt.id);
+        
+      if (updateError) {
+        console.error('Database update error for integration');
+        throw new HttpError('Database operation failed', 500);
+      }
     } else {
-      await supabaseClient
+      const { error: insertError } = await supabaseClient
         .from('meta_integrations')
         .insert({
           user_id: stateData.user_id,
@@ -131,6 +167,11 @@ serve(async (req) => {
           status: 'active',
           last_validated_at: new Date().toISOString(),
         });
+        
+      if (insertError) {
+        console.error('Database insert error for integration');
+        throw new HttpError('Database operation failed', 500);
+      }
     }
 
     // 7. Redirect back to frontend
@@ -145,6 +186,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    return errorResponse(error, corsHeaders)
+    return errorResponse(error, corsHeaders, null, 'META_OAUTH_FAILED');
   }
 })

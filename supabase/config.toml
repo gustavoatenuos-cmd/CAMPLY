@@ -29,3 +29,5 @@ verify_jwt = true
 
 [functions.meta-validate-token]
 verify_jwt = true
+
+

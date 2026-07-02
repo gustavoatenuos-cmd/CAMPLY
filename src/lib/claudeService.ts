@@ -58,33 +58,12 @@ function buildContext(data: CamplyData): ClaudeAgentContext {
   };
 }
 
-const SYSTEM_PROMPT = `Você é o agente operacional inteligente do CRM Camply.
-Seu papel é analisar os alertas e dados operacionais gerados pelo backend e produzir um resumo executivo claro e acionável.
-
-REGRAS:
-- Seja direto e objetivo, como um briefing militar.
-- Use linguagem profissional mas acessível.
-- Priorize os itens mais urgentes primeiro.
-- Sugira ações concretas e específicas.
-- NUNCA invente dados que não estejam no contexto.
-- Responda SEMPRE em português brasileiro.
-- Mantenha o resumo entre 2-4 frases curtas.
-- Se não houver alertas, diga que está tudo operacional.
-
-FORMATO DE RESPOSTA (JSON):
-{
-  "summary_title": "Título curto do resumo",
-  "summary_text": "Texto do resumo executivo em 2-4 frases",
-  "urgency_level": "critical|high|medium|low",
-  "recommended_actions": ["ação 1", "ação 2"]
-}`;
-
 export async function generateAgentSummary(data: CamplyData): Promise<ClaudeAgentResponse | null> {
   const context = buildContext(data);
 
   try {
     const responseData = await invokeFunction<any>('claude-proxy', {
-      systemPrompt: SYSTEM_PROMPT,
+      mode: 'operational_summary',
       userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
       maxTokens: 512,
     });
@@ -177,29 +156,17 @@ export async function processChatCommand(userInput: string, data: CamplyData): P
   const clientsCtx = data.clients.map(c => ({ id: c.id, name: c.name, status: c.status }));
   const campaignsCtx = data.campaigns.map(c => ({ id: c.id, name: c.name, status: c.status }));
 
-  const CHAT_SYSTEM_PROMPT = `Você é o assistente virtual do CRM Camply.
-Sua missão é interpretar a solicitação do usuário e transformá-la em uma ação estruturada no sistema.
-
-O usuário pode pedir para criar clientes, campanhas, projetos ou tarefas.
-Você tem acesso à lista atual de clientes: ${JSON.stringify(clientsCtx)}
-E campanhas: ${JSON.stringify(campaignsCtx)}
-
-REGRAS:
-1. Retorne SEMPRE um JSON válido, sem markdown antes ou depois.
-2. Formato esperado:
-{
-  "type": "create_client" | "create_campaign" | "create_task" | "create_project" | "none",
-  "payload": { ...dados necessários para a ação... },
-  "reply_text": "Mensagem curta em português confirmando o que foi feito ou pedindo mais detalhes."
-}
-3. Se não entender ou se faltar informação crítica, use type: "none" e pergunte amigavelmente.
-4. Para "create_campaign", exija pelo menos o nome e tente inferir o cliente (ou use o ID do cliente se reconhecer o nome). Se não souber o cliente, pergunte.
-5. Seja muito prestativo e pareça um assistente humano em "reply_text".`;
-
   try {
     const responseData = await invokeFunction<any>('claude-proxy', {
-      systemPrompt: CHAT_SYSTEM_PROMPT,
-      userMessage: userInput,
+      mode: 'chat_command',
+      userMessage: [
+        'Contexto atual do CRM:',
+        `Clientes: ${JSON.stringify(clientsCtx)}`,
+        `Campanhas: ${JSON.stringify(campaignsCtx)}`,
+        '',
+        'Solicitação do usuário:',
+        userInput,
+      ].join('\n'),
       maxTokens: 1024,
     });
 
