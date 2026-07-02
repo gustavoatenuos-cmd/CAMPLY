@@ -66,10 +66,11 @@ describe('operational dashboard reliability migration safety', () => {
 
   it('keeps operational hierarchy from showing partial or inactive child structures as active campaigns', () => {
     expect(hierarchyReliableActiveStructuresMigration).toContain('get_meta_performance_hierarchy');
-    expect(hierarchyReliableActiveStructuresMigration).toContain("AND r.status = ''success''");
+    expect(hierarchyReliableActiveStructuresMigration).toContain("AND r.status = 'success'");
     expect(hierarchyReliableActiveStructuresMigration).toContain('meta_adset_snapshots active_adset');
     expect(hierarchyReliableActiveStructuresMigration).toContain('NOT EXISTS');
-    expect(hierarchyReliableActiveStructuresMigration).toContain('Hierarchy function still accepts partial runs');
+    expect(hierarchyReliableActiveStructuresMigration).not.toMatch(/pg_get_functiondef/i);
+    expect(hierarchyReliableActiveStructuresMigration).not.toMatch(/\breplace\s*\(/i);
   });
 
   it('repairs client_identity from camply_workspace without archiving or deleting clients', () => {
