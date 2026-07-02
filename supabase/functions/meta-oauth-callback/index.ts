@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import postgres from 'https://esm.sh/postgres@3.4.5'
 import { corsHeaders } from '../_shared/cors.ts'
 import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
@@ -10,6 +11,20 @@ interface MetaOAuthStateData {
   redirect_uri: string;
   scopes: string[] | null;
 }
+
+interface MetaOAuthProfileData {
+  id: string;
+  name?: string;
+}
+
+type DatabaseFailure = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
+type SupabaseAdminClient = ReturnType<typeof createClient>
 
 function isMetaOAuthStateData(value: unknown): value is MetaOAuthStateData {
   if (!value || typeof value !== 'object') return false;
@@ -56,6 +71,208 @@ function databaseErrorMessage(stage: string, error: { code?: string; message?: s
     hint: error?.hint,
   })
   return new HttpError(`Não foi possível salvar a integração Meta no banco (${stage}): ${message}.${suffix}`, 500)
+}
+
+function isPostgrestPoolTimeout(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const record = error as Record<string, unknown>
+  const code = typeof record.code === 'string' ? record.code : ''
+  const message = typeof record.message === 'string' ? record.message.toLowerCase() : ''
+  return code === 'PGRST003'
+    || message.includes('connection pool')
+    || message.includes('timed out acquiring connection')
+}
+
+async function persistIntegrationViaPostgrest(
+  supabaseClient: SupabaseAdminClient,
+  stateData: MetaOAuthStateData,
+  meData: MetaOAuthProfileData,
+  encryptedToken: string,
+  tokenExpiresAt: string | null,
+): Promise<void> {
+  // Do not use maybeSingle(): existing legacy projects may already have
+  // duplicated rows for the same Meta user, and PostgREST treats that as an
+  // error. Pick the newest row and repair the active token there.
+  const { data: existingRows, error: searchError } = await supabaseClient
+    .from('meta_integrations')
+    .select('id')
+    .eq('user_id', stateData.user_id)
+    .eq('provider', 'meta')
+    .eq('meta_user_id', meData.id)
+    .order('updated_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false, nullsFirst: false })
+    .limit(1);
+
+  if (searchError) throw searchError
+
+  const existingInt = Array.isArray(existingRows) ? existingRows[0] : null
+
+  if (existingInt) {
+    const { error: updateError } = await supabaseClient
+      .from('meta_integrations')
+      .update({
+        provider: 'meta',
+        access_token_encrypted: encryptedToken,
+        meta_user_name: meData.name,
+        granted_scopes: stateData.scopes,
+        token_expires_at: tokenExpiresAt,
+        status: 'active',
+        last_validated_at: new Date().toISOString(),
+      })
+      .eq('id', existingInt.id);
+
+    if (updateError) throw updateError
+
+    // Best-effort cleanup: keep only the selected row active if duplicates
+    // exist. This is intentionally non-blocking to avoid breaking OAuth.
+    supabaseClient
+      .from('meta_integrations')
+      .update({ status: 'revoked' })
+      .eq('user_id', stateData.user_id)
+      .eq('provider', 'meta')
+      .eq('meta_user_id', meData.id)
+      .neq('id', existingInt.id)
+      .then(({ error }) => {
+        if (error) console.warn('Duplicate Meta integration cleanup skipped', error.message)
+      })
+    return
+  }
+
+  const { error: insertError } = await supabaseClient
+    .from('meta_integrations')
+    .insert({
+      id: crypto.randomUUID(),
+      user_id: stateData.user_id,
+      provider: 'meta',
+      meta_user_id: meData.id,
+      meta_user_name: meData.name,
+      access_token_encrypted: encryptedToken,
+      token_type: 'bearer',
+      granted_scopes: stateData.scopes,
+      token_expires_at: tokenExpiresAt,
+      status: 'active',
+      last_validated_at: new Date().toISOString(),
+    });
+
+  if (insertError) throw insertError
+}
+
+async function persistIntegrationViaDirectPostgres(
+  stateData: MetaOAuthStateData,
+  meData: MetaOAuthProfileData,
+  encryptedToken: string,
+  tokenExpiresAt: string | null,
+): Promise<void> {
+  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+  if (!dbUrl) {
+    throw new HttpError('SUPABASE_DB_URL não está configurado para fallback direto do OAuth Meta.', 500)
+  }
+
+  const sql = postgres(dbUrl, {
+    max: 1,
+    idle_timeout: 1,
+    connect_timeout: 8,
+    prepare: false,
+  })
+
+  try {
+    await sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext(${`meta-oauth:${stateData.user_id}:${meData.id}`}))`
+      const rows = await tx<{ id: string }[]>`
+        select id
+        from public.meta_integrations
+        where user_id = ${stateData.user_id}::uuid
+          and provider = 'meta'
+          and meta_user_id = ${meData.id}
+        order by updated_at desc nulls last, created_at desc nulls last
+        limit 1
+      `
+
+      const existingId = rows[0]?.id
+      if (existingId) {
+        await tx`
+          update public.meta_integrations
+          set provider = 'meta',
+              access_token_encrypted = ${encryptedToken},
+              meta_user_name = ${meData.name || null},
+              granted_scopes = ${stateData.scopes || []},
+              token_expires_at = ${tokenExpiresAt},
+              status = 'active',
+              last_validated_at = now(),
+              updated_at = now()
+          where id = ${existingId}::uuid
+        `
+        await tx`
+          update public.meta_integrations
+          set status = 'revoked',
+              updated_at = now()
+          where user_id = ${stateData.user_id}::uuid
+            and provider = 'meta'
+            and meta_user_id = ${meData.id}
+            and id <> ${existingId}::uuid
+        `
+      } else {
+        await tx`
+          insert into public.meta_integrations (
+            id,
+            user_id,
+            provider,
+            meta_user_id,
+            meta_user_name,
+            access_token_encrypted,
+            token_type,
+            granted_scopes,
+            token_expires_at,
+            status,
+            last_validated_at,
+            created_at,
+            updated_at
+          ) values (
+            ${crypto.randomUUID()}::uuid,
+            ${stateData.user_id}::uuid,
+            'meta',
+            ${meData.id},
+            ${meData.name || null},
+            ${encryptedToken},
+            'bearer',
+            ${stateData.scopes || []},
+            ${tokenExpiresAt},
+            'active',
+            now(),
+            now(),
+            now()
+          )
+        `
+      }
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('Meta OAuth direct Postgres persistence failed', { message })
+    throw new HttpError(`Não foi possível salvar a integração Meta no banco pelo fallback direto: ${message}`, 500)
+  } finally {
+    await sql.end({ timeout: 1 })
+  }
+}
+
+async function persistMetaIntegration(
+  supabaseClient: SupabaseAdminClient,
+  stateData: MetaOAuthStateData,
+  meData: MetaOAuthProfileData,
+  encryptedToken: string,
+  tokenExpiresAt: string | null,
+): Promise<void> {
+  try {
+    await persistIntegrationViaPostgrest(supabaseClient, stateData, meData, encryptedToken, tokenExpiresAt)
+  } catch (error) {
+    if (!isPostgrestPoolTimeout(error)) {
+      throw databaseErrorMessage('salvar integração via PostgREST', error as DatabaseFailure)
+    }
+    console.warn('PostgREST pool exhausted while saving Meta OAuth integration; using direct Postgres fallback.', {
+      code: (error as DatabaseFailure).code,
+      message: (error as DatabaseFailure).message,
+    })
+    await persistIntegrationViaDirectPostgres(stateData, meData, encryptedToken, tokenExpiresAt)
+  }
 }
 
 function redirectWithOAuthError(error: unknown): Response | null {
@@ -275,77 +492,12 @@ serve(async (req) => {
     // 5. Encrypt token
     const encryptedToken = await encryptToken(accessToken);
 
-    // 6. Save or Update Integration
-    // Do not use maybeSingle(): existing legacy projects may already have
-    // duplicated rows for the same Meta user, and PostgREST treats that as an
-    // error. Pick the newest row and repair the active token there.
-    const { data: existingRows, error: searchError } = await supabaseClient
-      .from('meta_integrations')
-      .select('id')
-      .eq('user_id', stateData.user_id)
-      .eq('provider', 'meta')
-      .eq('meta_user_id', meData.id)
-      .order('updated_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false, nullsFirst: false })
-      .limit(1);
-      
-    if (searchError) {
-      throw databaseErrorMessage('buscar integração existente', searchError);
-    }
-
-    const existingInt = Array.isArray(existingRows) ? existingRows[0] : null
-
-    if (existingInt) {
-      const { error: updateError } = await supabaseClient
-        .from('meta_integrations')
-        .update({
-          provider: 'meta',
-          access_token_encrypted: encryptedToken,
-          meta_user_name: meData.name,
-          granted_scopes: stateData.scopes,
-          token_expires_at: tokenExpiresAt,
-          status: 'active',
-          last_validated_at: new Date().toISOString(),
-        })
-        .eq('id', existingInt.id);
-        
-      if (updateError) {
-        throw databaseErrorMessage('atualizar integração existente', updateError);
-      }
-
-      // Best-effort cleanup: keep only the selected row active if duplicates
-      // exist. This is intentionally non-blocking to avoid breaking OAuth.
-      supabaseClient
-        .from('meta_integrations')
-        .update({ status: 'revoked' })
-        .eq('user_id', stateData.user_id)
-        .eq('provider', 'meta')
-        .eq('meta_user_id', meData.id)
-        .neq('id', existingInt.id)
-        .then(({ error }) => {
-          if (error) console.warn('Duplicate Meta integration cleanup skipped', error.message)
-        })
-    } else {
-      const { error: insertError } = await supabaseClient
-        .from('meta_integrations')
-        .insert({
-          id: crypto.randomUUID(),
-          user_id: stateData.user_id,
-          provider: 'meta',
-          meta_user_id: meData.id,
-          meta_user_name: meData.name,
-          access_token_encrypted: encryptedToken,
-          token_type: 'bearer',
-          granted_scopes: stateData.scopes,
-          token_expires_at: tokenExpiresAt,
-          status: 'active',
-          last_validated_at: new Date().toISOString(),
-        });
-        
-      if (insertError) {
-        throw databaseErrorMessage('criar integração', insertError);
-      }
-    }
+    // 6. Save or Update Integration. Prefer Supabase/PostgREST, but bypass its
+    // connection pool when it is exhausted (PGRST003) so OAuth can still finish.
+    await persistMetaIntegration(supabaseClient, stateData, {
+      id: String(meData.id),
+      name: typeof meData.name === 'string' ? meData.name : undefined,
+    }, encryptedToken, tokenExpiresAt)
 
     // 7. Redirect back to frontend
     const appBaseUrl = Deno.env.get('APP_BASE_URL');
