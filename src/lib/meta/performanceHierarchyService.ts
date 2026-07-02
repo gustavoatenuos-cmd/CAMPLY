@@ -49,10 +49,13 @@ export interface MetaHierarchyPage {
   run?: MetaRunSummary;
 }
 
+const isActiveMetaItem = (item: Pick<MetaHierarchyItem, 'effectiveStatus' | 'status'>) =>
+  (item.effectiveStatus || item.status || '').toUpperCase() === 'ACTIVE';
+
 function fixtureItems(level: MetaHierarchyLevel, parentId?: string): MetaHierarchyItem[] {
-  const campaignId = 'campaign-paused-e2e';
-  const adsetId = 'adset-paused-e2e';
-  const adId = 'ad-paused-e2e';
+  const campaignId = 'campaign-active-e2e';
+  const adsetId = 'adset-active-e2e';
+  const adId = 'ad-active-e2e';
   const common = (source: 'campaign' | 'adset' | 'ad', ids: { campaignId: string; adsetId?: string; adId?: string }) => ({
     spend: e2eMetric('spend', source === 'campaign' ? 350 : source === 'adset' ? 220 : 120, source, ids),
     impressions: e2eMetric('impressions', source === 'campaign' ? 12000 : 5000, source, ids),
@@ -69,19 +72,19 @@ function fixtureItems(level: MetaHierarchyLevel, parentId?: string): MetaHierarc
     purchase_value: e2eMetric('purchase_value', source === 'ad' ? 480 : 720, source, ids),
   });
   if (level === 'campaign') return [{
-    id: campaignId, name: 'Campanha histórica pausada', status: 'PAUSED', effectiveStatus: 'PAUSED',
+    id: campaignId, name: 'Campanha ativa mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
     objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
     attributionSetting: '7d_click_1d_view', metrics: common('campaign', { campaignId }),
   }];
   if (level === 'adset' && parentId === campaignId) return [{
-    id: adsetId, parentId: campaignId, name: 'Conjunto pausado com leads', status: 'PAUSED',
-    effectiveStatus: 'PAUSED', objective: 'LEAD_GENERATION', destinationType: 'WHATSAPP',
+    id: adsetId, parentId: campaignId, name: 'Conjunto ativo com leads', status: 'ACTIVE',
+    effectiveStatus: 'ACTIVE', objective: 'LEAD_GENERATION', destinationType: 'WHATSAPP',
     attributionSetting: '7d_click_1d_view', dailyBudget: 50, lifetimeBudget: null,
     metrics: common('adset', { campaignId, adsetId }),
   }];
   if (level === 'ad' && parentId === adsetId) return [{
-    id: adId, parentId: adsetId, campaignId, name: 'Anúncio pausado com compra', status: 'PAUSED',
-    effectiveStatus: 'PAUSED', creativeId: 'creative-e2e', metrics: common('ad', { campaignId, adsetId, adId }),
+    id: adId, parentId: adsetId, campaignId, name: 'Anúncio ativo com compra', status: 'ACTIVE',
+    effectiveStatus: 'ACTIVE', creativeId: 'creative-e2e', metrics: common('ad', { campaignId, adsetId, adId }),
   }];
   if (level === 'creative' && parentId === adId) return [{
     id: 'creative-e2e', parentId: adId, name: 'Criativo Mock', creativeId: 'creative-e2e',
@@ -95,14 +98,18 @@ function fixtureItems(level: MetaHierarchyLevel, parentId?: string): MetaHierarc
 
 function normalizePage(value: unknown): MetaHierarchyPage {
   const page = value as MetaHierarchyPage;
+  const items = Array.isArray(page.items) ? page.items.map((item) => ({
+    ...item,
+    metrics: Object.fromEntries(Object.entries(item.metrics || {}).map(([metricId, metric]) => (
+      [metricId, normalizeTraceableMetric(metricId, metric)]
+    ))),
+  })) : [];
+  const visibleItems = page.level === 'campaign' ? items.filter(isActiveMetaItem) : items;
   return {
     ...page,
-    items: Array.isArray(page.items) ? page.items.map((item) => ({
-      ...item,
-      metrics: Object.fromEntries(Object.entries(item.metrics || {}).map(([metricId, metric]) => (
-        [metricId, normalizeTraceableMetric(metricId, metric)]
-      ))),
-    })) : [],
+    total: page.level === 'campaign' ? visibleItems.length : page.total,
+    state: page.level === 'campaign' && page.state === 'ready' && visibleItems.length === 0 ? 'empty' : page.state,
+    items: visibleItems,
   };
 }
 

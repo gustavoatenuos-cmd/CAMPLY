@@ -65,22 +65,22 @@ assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'mock account wa
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
 
-"${BROWSER[@]}" find role button click --name "Abrir Campanha Campanha histórica pausada"
+"${BROWSER[@]}" find role button click --name "Abrir Campanha Campanha ativa mock"
 "${BROWSER[@]}" wait 100
-"${BROWSER[@]}" find role button click --name "Abrir Conjunto Conjunto pausado com leads"
+"${BROWSER[@]}" find role button click --name "Abrir Conjunto Conjunto ativo com leads"
 "${BROWSER[@]}" wait 100
-"${BROWSER[@]}" find role button click --name "Abrir Anúncio Anúncio pausado com compra"
+"${BROWSER[@]}" find role button click --name "Abrir Anúncio Anúncio ativo com compra"
 "${BROWSER[@]}" wait 100
 assert_js 'document.body.innerText.includes("Criativo Mock") && document.body.innerText.includes("Agende sua avaliação")' 'creative drill-down did not render'
 
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-paused-e2e]").click(); true' >/dev/null
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" fill 'input[name="targetValue"]' "15"
 "${BROWSER[@]}" find role button click --name "Salvar nova versão"
 "${BROWSER[@]}" wait 200
 assert_js 'document.body.innerText.includes("Na meta") && document.body.innerText.includes("Meta: 15")' 'target comparison was not rendered'
 "${BROWSER[@]}" find role button click --name "Fechar metas"
 
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-reconcile-campaign-campaign-paused-e2e]").click(); true' >/dev/null
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-reconcile-campaign-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" fill 'input[aria-label="Referência Investimento"]' "350"
 "${BROWSER[@]}" fill 'input[aria-label="Referência Impressões"]' "11800"
 assert_js 'document.body.innerText.includes("reconciled") && document.body.innerText.includes("divergent")' 'reconciliation states were not rendered'
@@ -91,7 +91,7 @@ assert_js 'document.body.innerText.includes("reconciled") && document.body.inner
 assert_js 'document.body.innerText.includes("Período ainda não sincronizado")' 'unsynchronized period state was not rendered'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 200
-assert_js 'document.body.innerText.includes("Campanha histórica pausada") && !document.body.innerText.includes("Período ainda não sincronizado")' 'period synchronization did not refresh hierarchy'
+assert_js 'document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Período ainda não sincronizado") && !document.body.innerText.includes("Campanha histórica pausada")' 'period synchronization did not refresh active-only hierarchy'
 
 "${BROWSER[@]}" find role button click --name "Clientes"
 "${BROWSER[@]}" wait 200

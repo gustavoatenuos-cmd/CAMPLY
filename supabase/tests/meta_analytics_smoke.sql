@@ -566,9 +566,14 @@ BEGIN
   INSERT INTO public.meta_campaign_snapshots (
     sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
     campaign_name, raw_objective, classified_objective, meta_status, effective_status
-  ) VALUES (
+  ) VALUES
+  (
     v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
     'Campanha pausada', 'OUTCOME_LEADS', 'LEADS', 'PAUSED', 'PAUSED'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active',
+    'Campanha ativa', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
   );
 
   INSERT INTO public.meta_adset_snapshots (
@@ -601,9 +606,15 @@ BEGIN
     user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
     metric_id, metric_value, date_start, date_stop, timezone,
     attribution_setting, source_level, completeness_status
-  ) VALUES (
+  ) VALUES
+  (
     v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused',
     'spend', 350, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  ),
+  (
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_active',
+    'spend', 125, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
     '7d_click_1d_view', 'campaign', 'complete'
   );
 
@@ -665,10 +676,18 @@ BEGIN
 
   v_hierarchy := public.get_meta_performance_hierarchy(v_link_id, 'this_month', 'campaign', NULL, 1, 25);
   IF v_hierarchy->>'state' <> 'ready'
-     OR v_hierarchy->'items'->0->>'effectiveStatus' <> 'PAUSED'
+     OR (v_hierarchy->>'total')::integer <> 1
+     OR v_hierarchy->'items'->0->>'id' <> 'campaign_active'
+     OR v_hierarchy->'items'->0->>'effectiveStatus' <> 'ACTIVE'
      OR COALESCE((v_hierarchy->'items'->0->'metrics'->'spend'->>'available')::boolean, false) IS NOT TRUE
-     OR (v_hierarchy->'items'->0->'metrics'->'spend'->>'value')::numeric <> 350 THEN
-    RAISE EXCEPTION 'Operational hierarchy did not preserve paused data and traceability: %', v_hierarchy;
+     OR (v_hierarchy->'items'->0->'metrics'->'spend'->>'value')::numeric <> 125
+     OR EXISTS (
+       SELECT 1
+       FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_paused'
+          OR item->>'effectiveStatus' = 'PAUSED'
+     ) THEN
+    RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
   END IF;
 
   v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);

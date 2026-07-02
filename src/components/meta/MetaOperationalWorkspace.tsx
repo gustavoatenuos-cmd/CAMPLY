@@ -156,7 +156,7 @@ export function MetaOperationalWorkspace({
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central Meta Ads</p>
           <h2 className="mt-1 text-xl font-black text-white">Performance oficial por cliente</h2>
-          <p className="mt-1 max-w-3xl text-sm text-brand-muted">Vínculo, coleta e leitura usam o banco analítico. Campanhas pausadas e históricas continuam disponíveis no período coletado.</p>
+          <p className="mt-1 max-w-3xl text-sm text-brand-muted">Vínculo, coleta e leitura usam o banco analítico. Esta visão operacional exibe somente campanhas ativas; campanhas pausadas seguem preservadas no histórico.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <label className="text-xs font-bold text-brand-soft">
