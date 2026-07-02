@@ -25,6 +25,17 @@ vi.mock('../../../supabase/functions/_shared/cors.ts', () => ({
   corsHeaders: {}
 }));
 
+vi.mock('../../../supabase/functions/_shared/direct-postgres.ts', () => ({
+  withDirectPostgres: vi.fn().mockResolvedValue({
+    id: 'act_123',
+    asset_id: 'act_mock_account',
+    integration_id: 'int_123',
+    integration_user_id: 'user_123',
+    integration_status: 'active',
+    access_token_encrypted: 'abc',
+  }),
+}));
+
 vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   fetchMetaGraph: vi.fn(),
   fetchMetaGraphPaginated: vi.fn(),

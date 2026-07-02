@@ -22,6 +22,7 @@ import {
   type TrendPeriodSignature,
 } from '../_shared/meta/aggregation.ts';
 import { insightHasDelivery } from '../_shared/meta/mixedAttributionDetector.ts';
+import { withDirectPostgres } from '../_shared/direct-postgres.ts';
 
 interface SyncRequestBody {
   metaAssetId?: string;
@@ -84,6 +85,15 @@ interface MetaAd {
   status?: string;
   effective_status?: string;
   creative?: MetaAdCreative;
+}
+
+interface OwnedMetaAsset {
+  id: string;
+  asset_id: string;
+  integration_id: string;
+  integration_user_id: string;
+  integration_status: string;
+  access_token_encrypted: string;
 }
 
 const METRIC_DEFINITION_VERSION = '2026-07-01.1';
@@ -494,34 +504,62 @@ export async function handleRequest(req: Request) {
 
     if (!metaAssetId && !legacyAdAccountId) throw new HttpError('metaAssetId is required', 400);
 
-    let assetQuery = supabaseClient
-      .from('meta_assets')
-      .select('*, meta_integrations!inner(*)')
-      .eq('asset_type', 'adaccount')
-      .eq('meta_integrations.user_id', userId);
+    const asset = await withDirectPostgres(async (sql) => {
+      const rows = metaAssetId
+        ? await sql<OwnedMetaAsset[]>`
+          select ma.id::text as id,
+                 ma.asset_id,
+                 mi.id::text as integration_id,
+                 mi.user_id::text as integration_user_id,
+                 mi.status as integration_status,
+                 mi.access_token_encrypted
+          from public.meta_assets ma
+          join public.meta_integrations mi on mi.id = ma.integration_id
+          where ma.asset_type = 'adaccount'
+            and mi.user_id::text = ${userId}
+            and ma.id::text = ${metaAssetId}
+          limit 1
+        `
+        : await sql<OwnedMetaAsset[]>`
+          select ma.id::text as id,
+                 ma.asset_id,
+                 mi.id::text as integration_id,
+                 mi.user_id::text as integration_user_id,
+                 mi.status as integration_status,
+                 mi.access_token_encrypted
+          from public.meta_assets ma
+          join public.meta_integrations mi on mi.id = ma.integration_id
+          where ma.asset_type = 'adaccount'
+            and mi.user_id::text = ${userId}
+            and ma.asset_id = ${legacyAdAccountId || ''}
+          limit 1
+        `;
+      return rows[0] || null;
+    });
 
-    if (metaAssetId) {
-      assetQuery = assetQuery.eq('id', metaAssetId);
-    } else if (legacyAdAccountId) {
-      assetQuery = assetQuery.eq('asset_id', legacyAdAccountId);
-    }
-
-    const { data: asset, error: assetError } = await assetQuery.single();
-
-    if (assetError || !asset) {
-      console.error('Failed to fetch asset:', assetError);
+    if (!asset) {
+      console.error('Owned Meta asset was not found', {
+        userId,
+        metaAssetId: metaAssetId || null,
+        adAccountId: legacyAdAccountId || null,
+      });
       throw new HttpError('Asset não localizado ou inválido para esta operação', 403);
     }
 
-    if (asset.meta_integrations.user_id !== userId) {
+    if (asset.integration_user_id !== userId) {
       throw new HttpError('Integração não pertence ao usuário', 403);
     }
 
-    if (asset.meta_integrations.status !== 'active') {
+    if (asset.integration_status !== 'active') {
       throw new HttpError('A integração não está ativa', 403);
     }
 
-    const integration = asset.meta_integrations;
+    const integration = {
+      id: asset.integration_id,
+      user_id: asset.integration_user_id,
+      status: asset.integration_status,
+      access_token_encrypted: asset.access_token_encrypted,
+    };
     const adAccountId = asset.asset_id;
     assertSafeMetaId(adAccountId, 'stored Meta ad account id', 500);
 

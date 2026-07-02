@@ -25,6 +25,10 @@ vi.mock('../../../supabase/functions/_shared/cors.ts', () => ({
   corsHeaders: {},
 }));
 
+vi.mock('../../../supabase/functions/_shared/direct-postgres.ts', () => ({
+  withDirectPostgres: vi.fn(),
+}));
+
 vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   fetchMetaGraph: vi.fn(),
   fetchMetaGraphPaginated: vi.fn(),
