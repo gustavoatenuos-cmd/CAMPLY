@@ -41,6 +41,9 @@ BEGIN
   IF to_regclass('public.meta_creative_entities') IS NULL THEN
     missing_tables := array_append(missing_tables, 'meta_creative_entities');
   END IF;
+  IF to_regclass('public.client_analysis_profiles') IS NULL THEN
+    missing_tables := array_append(missing_tables, 'client_analysis_profiles');
+  END IF;
 
   IF cardinality(missing_tables) > 0 THEN
     RAISE EXCEPTION 'Missing Meta analytics tables: %', array_to_string(missing_tables, ', ');
@@ -74,6 +77,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_normalized_metrics' AND column_name='creative_id') THEN
     RAISE EXCEPTION 'Missing creative_id in meta_normalized_metrics';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='client_analysis_profiles' AND column_name='minimum_evaluation_spend') THEN
+    RAISE EXCEPTION 'Missing minimum_evaluation_spend in client_analysis_profiles';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='client_analysis_profiles' AND column_name='attribution_delay_hours') THEN
+    RAISE EXCEPTION 'Missing attribution_delay_hours in client_analysis_profiles';
+  END IF;
   
   -- Check composite UNIQUE on meta_sync_runs
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'meta_sync_runs_cross_fk_unique') THEN
@@ -99,6 +108,9 @@ BEGIN
   END IF;
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = 'meta_creative_snapshots') THEN
     RAISE EXCEPTION 'RLS not enabled on meta_creative_snapshots';
+  END IF;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE relname = 'client_analysis_profiles') THEN
+    RAISE EXCEPTION 'RLS not enabled on client_analysis_profiles';
   END IF;
 
   -- Check RPC single signature
@@ -154,10 +166,10 @@ BEGIN
   );
 
   v_capabilities := public.get_analytics_capabilities();
-  IF (v_capabilities->>'contractVersion')::integer <> 4
+  IF (v_capabilities->>'contractVersion')::integer <> 5
      OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
      OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
-     OR NOT (v_capabilities->'supportedPeriods' @> '["this_month", "today", "last_7d", "last_30d"]'::jsonb)
+     OR NOT (v_capabilities->'supportedPeriods' @> '["this_month", "this_week", "today", "last_7d", "last_30d"]'::jsonb)
      OR NOT (v_capabilities->'supportedLevels' @> '["campaign", "adset", "ad"]'::jsonb)
      OR COALESCE((v_capabilities->>'traceableMetrics')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'Unexpected analytics capability contract: %', v_capabilities;
@@ -166,6 +178,11 @@ BEGIN
   v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
     RAISE EXCEPTION 'Traceable dashboard v2 must return an array';
+  END IF;
+
+  v_dashboard := public.get_global_performance_dashboard_v2('this_week', NULL, NULL);
+  IF jsonb_typeof(v_dashboard) <> 'array' THEN
+    RAISE EXCEPTION 'Traceable dashboard v2 must accept this_week';
   END IF;
 
   v_missing_metric := public.decorate_analytics_metric(
@@ -208,6 +225,12 @@ BEGIN
   END IF;
   IF has_function_privilege('anon', 'public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon must not execute get_global_performance_dashboard_v2';
+  END IF;
+  IF has_function_privilege('anon', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon must not execute upsert_client_analysis_profile';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated must execute upsert_client_analysis_profile';
   END IF;
 
   SELECT p.prosecdef, p.proconfig
