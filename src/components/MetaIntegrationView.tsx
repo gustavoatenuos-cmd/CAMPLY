@@ -90,6 +90,25 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     if (cachedAssets.length > 0) setConnectionStatus('active');
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const metaSync = params.get('meta_sync');
+    if (metaSync === 'success') {
+      setNotice('Integração Meta autorizada. Clique em verificar conexão ou descobrir ativos para carregar as contas.');
+      setConnectionStatus('unknown');
+    }
+    if (metaSync === 'error') {
+      setError(params.get('meta_error') || 'Não foi possível concluir a autorização Meta.');
+      setConnectionStatus('unknown');
+    }
+    if (metaSync) {
+      params.delete('meta_sync');
+      params.delete('meta_error');
+      const query = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    }
+  }, []);
+
   const connect = async () => {
     setLoading(true);
     setError(null);

@@ -21,6 +21,45 @@ function isMetaOAuthStateData(value: unknown): value is MetaOAuthStateData {
   );
 }
 
+function safeText(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
+}
+
+function metaErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback
+  const error = (payload as Record<string, unknown>).error
+  if (!error || typeof error !== 'object') return fallback
+  const record = error as Record<string, unknown>
+  const message = safeText(record.error_user_msg, safeText(record.message, fallback))
+  const code = typeof record.code === 'number' || typeof record.code === 'string' ? ` Código Meta: ${record.code}.` : ''
+  return `${message}${code}`
+}
+
+function callbackSafeMessage(error: unknown): string {
+  if (error instanceof HttpError) return error.message
+  if (error instanceof Error) {
+    if (/APP_BASE_URL/i.test(error.message)) return 'O retorno para o CAMPLY não está configurado.'
+    if (/META_TOKEN_ENCRYPTION_KEY/i.test(error.message)) return 'A criptografia do token Meta não está configurada.'
+    if (/Meta credentials/i.test(error.message)) return 'As credenciais do aplicativo Meta não estão configuradas.'
+  }
+  return 'Não foi possível concluir a autorização Meta.'
+}
+
+function redirectWithOAuthError(error: unknown): Response | null {
+  const appBaseUrl = Deno.env.get('APP_BASE_URL')
+  if (!appBaseUrl) return null
+  const target = new URL(appBaseUrl)
+  target.searchParams.set('meta_sync', 'error')
+  target.searchParams.set('meta_error', callbackSafeMessage(error))
+  return new Response(null, {
+    status: 302,
+    headers: {
+      ...corsHeaders,
+      Location: target.toString(),
+    },
+  })
+}
+
 function base64UrlDecode(value: string): Uint8Array {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
@@ -104,6 +143,12 @@ serve(async (req) => {
     const url = new URL(req.url);
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state');
+    const facebookError = url.searchParams.get('error') || url.searchParams.get('error_reason');
+    const facebookDescription = url.searchParams.get('error_description') || url.searchParams.get('error_message');
+
+    if (facebookError) {
+      throw new HttpError(`Facebook recusou a autorização: ${safeText(facebookDescription, facebookError)}`, 400)
+    }
 
     if (!code || !state) {
       throw new HttpError('Code or State missing in URL parameters', 400);
@@ -151,11 +196,19 @@ serve(async (req) => {
     try { tokenData = await tokenRes.json(); } catch (e) { tokenData = {}; }
 
     if (!tokenRes.ok) {
-      console.error('Token fetch failed! Status:', tokenRes.status);
-      throw new HttpError('Meta token exchange failed', 502);
+      console.error('Token fetch failed', {
+        status: tokenRes.status,
+        metaError: tokenData?.error?.message,
+        metaCode: tokenData?.error?.code,
+        metaSubcode: tokenData?.error?.error_subcode,
+      });
+      throw new HttpError(`Facebook recusou a troca do código de autorização. ${metaErrorMessage(tokenData, 'Verifique o Redirect URI e as permissões do aplicativo Meta.')}`, 400);
     }
 
     let accessToken = tokenData.access_token;
+    if (!accessToken || typeof accessToken !== 'string') {
+      throw new HttpError('Facebook não retornou um token de acesso válido.', 400)
+    }
 
     // 3. Exchange short-lived token for long-lived token
     const longTokenUrl = new URL(`${META_BASE_URL}/oauth/access_token`);
@@ -169,8 +222,13 @@ serve(async (req) => {
     try { longTokenData = await longTokenRes.json(); } catch (e) { longTokenData = {}; }
 
     if (!longTokenRes.ok) {
-      console.error('Long token fetch failed! Status:', longTokenRes.status);
-      throw new HttpError('Meta long token exchange failed', 502);
+      console.error('Long token fetch failed', {
+        status: longTokenRes.status,
+        metaError: longTokenData?.error?.message,
+        metaCode: longTokenData?.error?.code,
+        metaSubcode: longTokenData?.error?.error_subcode,
+      });
+      throw new HttpError(`Facebook recusou o token de longa duração. ${metaErrorMessage(longTokenData, 'Verifique as permissões do aplicativo Meta.')}`, 400);
     }
     
     if (longTokenData.access_token) {
@@ -191,9 +249,15 @@ serve(async (req) => {
     try { meData = await meRes.json(); } catch (e) { meData = {}; }
 
     if (!meRes.ok) {
-      console.error('User profile fetch failed! Status:', meRes.status);
-      throw new HttpError('Failed to fetch Meta user profile', 502);
+      console.error('User profile fetch failed', {
+        status: meRes.status,
+        metaError: meData?.error?.message,
+        metaCode: meData?.error?.code,
+        metaSubcode: meData?.error?.error_subcode,
+      });
+      throw new HttpError(`Facebook não liberou o perfil do usuário. ${metaErrorMessage(meData, 'Verifique as permissões do aplicativo Meta.')}`, 400);
     }
+    if (!meData.id) throw new HttpError('Facebook não retornou o ID do usuário Meta.', 400)
 
     // 5. Encrypt token
     const encryptedToken = await encryptToken(accessToken);
@@ -260,6 +324,8 @@ serve(async (req) => {
     })
 
   } catch (error) {
+    const redirect = redirectWithOAuthError(error)
+    if (redirect) return redirect
     return errorResponse(error, corsHeaders, null, 'META_OAUTH_FAILED');
   }
 })
