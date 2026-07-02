@@ -50,14 +50,25 @@ function metaErrorMessage(payload: unknown, fallback: string): string {
   return `${message}${code}`
 }
 
+function sanitizeCallbackErrorMessage(message: string): string {
+  return safeText(message, 'erro não informado')
+    .replace(/(access_token=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/(client_secret=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/(fb_exchange_token=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [redacted]')
+    .replace(/[A-Za-z0-9_-]{80,}/g, '[redacted]')
+    .slice(0, 500)
+}
+
 function callbackSafeMessage(error: unknown): string {
   if (error instanceof HttpError) return error.message
   if (error instanceof Error) {
     if (/APP_BASE_URL/i.test(error.message)) return 'O retorno para o CAMPLY não está configurado.'
     if (/META_TOKEN_ENCRYPTION_KEY/i.test(error.message)) return 'A criptografia do token Meta não está configurada.'
     if (/Meta credentials/i.test(error.message)) return 'As credenciais do aplicativo Meta não estão configuradas.'
+    return `Falha técnica no callback Meta: ${sanitizeCallbackErrorMessage(error.message)}`
   }
-  return 'Não foi possível concluir a autorização Meta.'
+  return `Falha técnica no callback Meta: ${sanitizeCallbackErrorMessage(String(error))}`
 }
 
 function databaseErrorMessage(stage: string, error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined): HttpError {
@@ -195,8 +206,8 @@ async function persistIntegrationViaDirectPostgres(
           set provider = 'meta',
               access_token_encrypted = ${encryptedToken},
               meta_user_name = ${meData.name || null},
-              granted_scopes = ${stateData.scopes || []},
-              token_expires_at = ${tokenExpiresAt},
+              granted_scopes = ${stateData.scopes || []}::text[],
+              token_expires_at = ${tokenExpiresAt}::timestamptz,
               status = 'active',
               last_validated_at = now(),
               updated_at = now()
@@ -235,8 +246,8 @@ async function persistIntegrationViaDirectPostgres(
             ${meData.name || null},
             ${encryptedToken},
             'bearer',
-            ${stateData.scopes || []},
-            ${tokenExpiresAt},
+            ${stateData.scopes || []}::text[],
+            ${tokenExpiresAt}::timestamptz,
             'active',
             now(),
             now(),
@@ -250,7 +261,13 @@ async function persistIntegrationViaDirectPostgres(
     console.error('Meta OAuth direct Postgres persistence failed', { message })
     throw new HttpError(`Não foi possível salvar a integração Meta no banco pelo fallback direto: ${message}`, 500)
   } finally {
-    await sql.end({ timeout: 1 })
+    try {
+      await sql.end({ timeout: 1 })
+    } catch (endError) {
+      console.warn('Meta OAuth direct Postgres connection close skipped', {
+        message: endError instanceof Error ? endError.message : String(endError),
+      })
+    }
   }
 }
 
