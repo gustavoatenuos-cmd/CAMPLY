@@ -14,6 +14,7 @@ import {
 import { loadClientAnalysisProfile, mapClientProfileRow, type ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import { exactPeriodRange } from '../meta/periodRange';
 import { withTimeout } from '../withTimeout';
+import { invokeFunction } from '../invokeFunction';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -696,37 +697,43 @@ export async function loadGlobalPerformanceDashboard(options: {
   }
   if (!isSupabaseConfigured || !supabaseData) return [];
 
-  const { data, error } = await withTimeout(
-    supabaseData.rpc(
-      options.dashboardRpc,
-      {
-        p_period: options.period,
-        p_client_ids: options.clientIds?.length ? options.clientIds : null,
-        p_asset_ids: options.assetIds?.length ? options.assetIds : null,
-      }
-    ),
-    15_000,
-    'A leitura do último snapshot salvo demorou mais que o esperado.'
+  const response = await invokeFunction<{ dashboard: unknown }>(
+    'analytics-dashboard',
+    {
+      action: 'dashboard',
+      period: options.period,
+      clientIds: options.clientIds?.length ? options.clientIds : null,
+      assetIds: options.assetIds?.length ? options.assetIds : null,
+    },
+    30_000
   );
 
-  if (error) {
-    throw new Error(`Failed to load global performance dashboard: ${error.message}`);
-  }
-
-  const rows = Array.isArray(data) ? data as GlobalClientPerformance[] : [];
+  const rows = Array.isArray(response.dashboard)
+    ? response.dashboard as GlobalClientPerformance[]
+    : [];
   const clientIds = rows.map((row) => row.clientId).filter(Boolean);
   if (clientIds.length > 0) {
-    const { data: profileRows } = await supabaseData
-      .from('client_analysis_profiles')
-      .select('*')
-      .in('client_id', clientIds);
-    const profiles = new Map((profileRows || []).map((row) => {
-      const profile = mapClientProfileRow(row as Record<string, unknown>);
-      return [profile.clientId, profile];
-    }));
-    rows.forEach((row) => {
-      row.analysisProfile = profiles.get(row.clientId) ?? null;
-    });
+    try {
+      const { data: profileRows, error: profileError } = await withTimeout(
+        supabaseData
+          .from('client_analysis_profiles')
+          .select('*')
+          .in('client_id', clientIds),
+        6_000,
+        'A leitura dos perfis analíticos demorou mais que o esperado.'
+      );
+      if (!profileError) {
+        const profiles = new Map((profileRows || []).map((row) => {
+          const profile = mapClientProfileRow(row as Record<string, unknown>);
+          return [profile.clientId, profile];
+        }));
+        rows.forEach((row) => {
+          row.analysisProfile = profiles.get(row.clientId) ?? null;
+        });
+      }
+    } catch (error) {
+      console.warn('Client analysis profiles skipped:', error instanceof Error ? error.message : String(error));
+    }
   }
   return enrichGlobalPerformanceDashboard(rows, options.period);
 }

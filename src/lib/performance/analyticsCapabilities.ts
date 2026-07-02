@@ -1,6 +1,7 @@
-import { isSupabaseConfigured, supabaseData } from '../supabase';
+import { isSupabaseConfigured } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 import { withTimeout } from '../withTimeout';
+import { invokeFunction } from '../invokeFunction';
 
 export const ANALYTICS_CONTRACT_VERSION = 5;
 
@@ -96,12 +97,27 @@ function isMissingCapabilityRpc(error: { code?: string; message?: string }): boo
 
 export async function loadAnalyticsCapabilities(
   rpc: CapabilityRpc = async () => {
-    if (!isSupabaseConfigured || !supabaseData) {
+    if (!isSupabaseConfigured) {
       return { data: null, error: { code: 'SUPABASE_NOT_CONFIGURED' } };
     }
-    return supabaseData.rpc('get_analytics_capabilities');
+    try {
+      const response = await invokeFunction<{ capabilities: unknown }>(
+        'analytics-dashboard',
+        { action: 'capabilities' },
+        12_000
+      );
+      return { data: response.capabilities, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: {
+          code: 'ANALYTICS_EDGE_UNAVAILABLE',
+          message: error instanceof Error ? error.message : 'Analytics Edge unavailable',
+        },
+      };
+    }
   },
-  timeoutMs = 10_000
+  timeoutMs = 15_000
 ): Promise<AnalyticsCapabilityState> {
   if (isMetaE2EMode) {
     return parseAnalyticsCapabilities({
