@@ -46,16 +46,62 @@ type E2EState = {
   targets: Array<Record<string, unknown>>;
 };
 
+const E2E_STATE_KEY = 'camply:meta-e2e:runtime';
+
+function initialMetaE2EState(): E2EState {
+  return {
+    linked: false,
+    syncedPeriods: new Set<DashboardPeriod>(['this_month']),
+    targets: [],
+  };
+}
+
+function storedMetaE2EState(): E2EState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(E2E_STATE_KEY) || 'null') as {
+      linked?: boolean;
+      syncedPeriods?: DashboardPeriod[];
+      targets?: Array<Record<string, unknown>>;
+    } | null;
+    if (!stored) return null;
+    return {
+      linked: stored.linked === true,
+      syncedPeriods: new Set(stored.syncedPeriods?.length ? stored.syncedPeriods : ['this_month']),
+      targets: Array.isArray(stored.targets) ? stored.targets : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const metaE2EState: E2EState = {
-  linked: false,
-  syncedPeriods: new Set<DashboardPeriod>(['this_month']),
-  targets: [],
+  ...(storedMetaE2EState() ?? initialMetaE2EState()),
 };
 
 export function resetMetaE2EState() {
-  metaE2EState.linked = false;
-  metaE2EState.syncedPeriods = new Set<DashboardPeriod>(['this_month']);
-  metaE2EState.targets = [];
+  const initial = initialMetaE2EState();
+  metaE2EState.linked = initial.linked;
+  metaE2EState.syncedPeriods = initial.syncedPeriods;
+  metaE2EState.targets = initial.targets;
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem(E2E_STATE_KEY);
+}
+
+export function restoreMetaE2EState() {
+  const stored = storedMetaE2EState();
+  if (!stored) return;
+  metaE2EState.linked = stored.linked;
+  metaE2EState.syncedPeriods = stored.syncedPeriods;
+  metaE2EState.targets = stored.targets;
+}
+
+export function persistMetaE2EState() {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(E2E_STATE_KEY, JSON.stringify({
+    linked: metaE2EState.linked,
+    syncedPeriods: Array.from(metaE2EState.syncedPeriods),
+    targets: metaE2EState.targets,
+  }));
 }
 
 export function e2eMetric(

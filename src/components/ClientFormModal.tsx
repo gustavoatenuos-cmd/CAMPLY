@@ -174,7 +174,9 @@ export function ClientFormModal({
       } else {
         updateData(() => nextData);
       }
-      await upsertClientAnalysisProfile(analysisProfile);
+      const persistedProfile = await upsertClientAnalysisProfile(analysisProfile);
+      const confirmedProfile = await loadClientAnalysisProfile(nextClient.id) ?? persistedProfile;
+      setProfileDraft(confirmedProfile);
       onClientPersisted?.(nextClient.id);
       setError('');
       onClose();

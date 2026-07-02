@@ -246,6 +246,84 @@ BEGIN
   DELETE FROM auth.users WHERE id = v_user_id;
 END $$;
 
+-- Client analysis profile persistence and ownership
+DO $$
+DECLARE
+  v_user_id UUID := gen_random_uuid();
+  v_profile public.client_analysis_profiles;
+BEGIN
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (v_user_id, 'analysis-profile@camply.test', '{}');
+
+  INSERT INTO public.client_identity (user_id, client_id, display_name)
+  VALUES (v_user_id, 'client-profile-smoke', 'Clínica Perfil Smoke');
+
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', v_user_id::text, 'role', 'authenticated')::text,
+    true
+  );
+
+  v_profile := public.upsert_client_analysis_profile(
+    'client-profile-smoke',
+    'Saúde',
+    'Odontologia',
+    'geração de leads',
+    'messaging_conversations_started_total',
+    '["cost_per_messaging_conversation", "cpm"]'::jsonb,
+    'WhatsApp',
+    'weekly',
+    700,
+    true,
+    NULL,
+    NULL,
+    100,
+    1000,
+    5,
+    24
+  );
+
+  IF v_profile.planned_budget <> 700
+     OR v_profile.budget_period <> 'weekly'
+     OR v_profile.minimum_evaluation_spend <> 100
+     OR v_profile.minimum_impressions <> 1000
+     OR v_profile.minimum_results <> 5 THEN
+    RAISE EXCEPTION 'Client analysis profile was not persisted correctly: %', row_to_json(v_profile);
+  END IF;
+
+  v_profile := public.upsert_client_analysis_profile(
+    'client-profile-smoke',
+    'Saúde',
+    'Odontologia',
+    'geração de leads',
+    'messaging_conversations_started_total',
+    '["cost_per_messaging_conversation", "frequency"]'::jsonb,
+    'WhatsApp',
+    'weekly',
+    840,
+    true,
+    NULL,
+    NULL,
+    120,
+    1500,
+    6,
+    48
+  );
+
+  SELECT p.* INTO v_profile
+  FROM public.client_analysis_profiles p
+  WHERE p.user_id = v_user_id AND p.client_id = 'client-profile-smoke';
+
+  IF v_profile.planned_budget <> 840
+     OR v_profile.attribution_delay_hours <> 48
+     OR NOT (v_profile.secondary_metrics @> '["frequency"]'::jsonb) THEN
+    RAISE EXCEPTION 'Client analysis profile did not survive a reload query: %', row_to_json(v_profile);
+  END IF;
+
+  DELETE FROM auth.users WHERE id = v_user_id;
+END $$;
+
 -- Meta sync collection contract checks
 DO $$
 DECLARE

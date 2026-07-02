@@ -10,7 +10,8 @@ import { supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
-import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState } from './lib/meta/metaE2ERuntime';
+import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState, restoreMetaE2EState } from './lib/meta/metaE2ERuntime';
+import { resetE2EAnalysisProfiles } from './lib/analysis/clientAnalysisProfile';
 
 const ActivityView = React.lazy(() => import('./components/ActivityView').then(m => ({ default: m.ActivityView })));
 const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
@@ -39,7 +40,13 @@ export default function App() {
 
   useEffect(() => {
     if (isMetaE2EMode) {
-      resetMetaE2EState();
+      if (new URLSearchParams(window.location.search).get('e2eReset') === '1') {
+        resetMetaE2EState();
+        resetE2EAnalysisProfiles();
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        restoreMetaE2EState();
+      }
       setSession(null);
       setAuthReady(true);
       setRemoteLoaded(true);
@@ -225,6 +232,7 @@ export default function App() {
           setData(initialData);
           if (isMetaE2EMode) {
             resetMetaE2EState();
+            resetE2EAnalysisProfiles();
             setSession(null);
             return;
           }

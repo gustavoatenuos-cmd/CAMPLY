@@ -31,6 +31,7 @@ function buildEvaluation(
     targetMin: target.targetMin ?? null,
     targetMax: target.targetMax ?? null,
     priorityWeight: target.priorityWeight ?? null,
+    effectiveFrom: target.effectiveFrom,
     differenceValue,
     differencePercent,
     status,
@@ -60,7 +61,7 @@ function thresholdStatus(overTargetPercent: number, target: PerformanceTarget): 
 export function evaluatePerformanceTarget(
   target: PerformanceTarget,
   metric: MetricDatum | undefined,
-  context: { spend?: number | null } = {}
+  context: { spend?: number | null; periodProgressPercent?: number | null } = {}
 ): PerformanceEvaluation {
   if (!target || target.targetValue <= 0 || !Number.isFinite(target.targetValue)) {
     return buildEvaluation(target, null, 'unavailable', 'invalid_target', 0);
@@ -76,7 +77,7 @@ export function evaluatePerformanceTarget(
   }
 
   if (metric.completenessStatus && PARTIAL_COMPLETENESS.has(metric.completenessStatus)) {
-    return buildEvaluation(target, metricValue, 'partial_data', metric.completenessStatus, 0.55);
+    return buildEvaluation(target, metricValue, 'partial_data', metric.completenessStatus, 55);
   }
 
   if (target.targetKind === 'cost_per_result') {
@@ -87,27 +88,34 @@ export function evaluatePerformanceTarget(
 
     if (metricValue <= 0) {
       if (spend < target.targetValue * 0.5) {
-        return buildEvaluation(target, null, 'insufficient_data', 'zero_results_before_half_target_spend', 0.35);
+        return buildEvaluation(target, null, 'insufficient_data', 'zero_results_before_half_target_spend', 35);
       }
       if (spend <= target.targetValue) {
-        return buildEvaluation(target, null, 'attention', 'zero_results_before_target_spend', 0.65);
+        return buildEvaluation(target, null, 'attention', 'zero_results_before_target_spend', 65);
       }
-      return buildEvaluation(target, null, 'critical', 'zero_results_after_target_spend', 0.85);
+      return buildEvaluation(target, null, 'critical', 'zero_results_after_target_spend', 85);
     }
 
     const actualCost = spend / metricValue;
     if (actualCost <= target.targetValue) {
-      return buildEvaluation(target, actualCost, 'on_track', 'cost_at_or_below_target', 0.9);
+      return buildEvaluation(target, actualCost, 'on_track', 'cost_at_or_below_target', 90);
     }
 
     const overspendPercent = ((actualCost - target.targetValue) / target.targetValue) * 100;
     const status = thresholdStatus(overspendPercent, target);
-    return buildEvaluation(target, actualCost, status, status === 'attention' ? 'cost_above_warning_tolerance' : 'cost_above_critical_tolerance', 0.85);
+    return buildEvaluation(target, actualCost, status, status === 'attention' ? 'cost_above_warning_tolerance' : 'cost_above_critical_tolerance', 85);
   }
 
   if (target.targetKind === 'minimum_results' || target.targetKind === 'minimum_metric') {
+    if (
+      context.periodProgressPercent != null
+      && context.periodProgressPercent < 20
+      && metricValue < target.targetValue
+    ) {
+      return buildEvaluation(target, metricValue, 'insufficient_data', 'evaluation_period_too_early', 40);
+    }
     if (metricValue >= target.targetValue) {
-      return buildEvaluation(target, metricValue, 'on_track', 'minimum_reached', 0.9);
+      return buildEvaluation(target, metricValue, 'on_track', 'minimum_reached', 90);
     }
 
     const shortfallPercent = ((target.targetValue - metricValue) / target.targetValue) * 100;
@@ -117,17 +125,17 @@ export function evaluatePerformanceTarget(
       metricValue,
       status,
       status === 'attention' ? 'metric_below_warning_tolerance' : 'metric_below_critical_tolerance',
-      0.8
+      80
     );
   }
 
   if (target.targetKind === 'maximum_metric') {
     if (metricValue <= target.targetValue) {
-      return buildEvaluation(target, metricValue, 'on_track', 'metric_at_or_below_maximum', 0.9);
+      return buildEvaluation(target, metricValue, 'on_track', 'metric_at_or_below_maximum', 90);
     }
     const excessPercent = ((metricValue - target.targetValue) / target.targetValue) * 100;
     const status = thresholdStatus(excessPercent, target);
-    return buildEvaluation(target, metricValue, status, status === 'attention' ? 'metric_above_warning_tolerance' : 'metric_above_critical_tolerance', 0.85);
+    return buildEvaluation(target, metricValue, status, status === 'attention' ? 'metric_above_warning_tolerance' : 'metric_above_critical_tolerance', 85);
   }
 
   if (target.targetKind === 'target_range') {
@@ -137,12 +145,12 @@ export function evaluatePerformanceTarget(
       return buildEvaluation(target, metricValue, 'unavailable', 'invalid_target_range', 0);
     }
     if (metricValue >= min && metricValue <= max) {
-      return buildEvaluation(target, metricValue, 'on_track', 'metric_inside_target_range', 0.9);
+      return buildEvaluation(target, metricValue, 'on_track', 'metric_inside_target_range', 90);
     }
     const reference = metricValue < min ? min : max;
     const deviationPercent = Math.abs(((metricValue - reference) / reference) * 100);
     const status = deviationPercent <= warningTolerance(target) ? 'attention' : deviationPercent <= criticalTolerance(target) ? 'attention' : 'critical';
-    return buildEvaluation(target, metricValue, status, status === 'attention' ? 'range_deviation_warning_tolerance' : 'range_deviation_critical_tolerance', 0.8);
+    return buildEvaluation(target, metricValue, status, status === 'attention' ? 'range_deviation_warning_tolerance' : 'range_deviation_critical_tolerance', 80);
   }
 
   if (target.targetKind === 'daily_budget' || target.targetKind === 'weekly_budget' || target.targetKind === 'monthly_budget') {

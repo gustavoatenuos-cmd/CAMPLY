@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
+import { isMetaE2EMode, metaE2EState, persistMetaE2EState } from './metaE2ERuntime';
 
 export type PerformanceTargetKind =
   | 'cost_per_result'
@@ -56,6 +56,26 @@ export async function setPerformanceTarget(input: {
   priorityWeight?: number | null;
   evaluationPeriod?: string | null;
 }): Promise<string> {
+  const budgetKind = ['daily_budget', 'weekly_budget', 'monthly_budget'].includes(input.targetKind);
+  if ((budgetKind && input.metricId !== 'spend') || (!budgetKind && input.metricId === 'spend')) {
+    throw new Error('A métrica selecionada não é compatível com este tipo de meta.');
+  }
+  if (!Number.isFinite(input.targetValue) || input.targetValue <= 0) {
+    throw new Error('O valor da meta deve ser maior que zero.');
+  }
+  if (input.targetKind === 'target_range' && (
+    input.targetMin == null
+    || input.targetMax == null
+    || input.targetMin <= 0
+    || input.targetMax <= input.targetMin
+  )) {
+    throw new Error('A faixa da meta precisa ter mínimo maior que zero e máximo maior que o mínimo.');
+  }
+  if ((input.priorityWeight ?? 1) <= 0) throw new Error('O peso da meta deve ser maior que zero.');
+  if (input.warningTolerancePercent != null && input.warningTolerancePercent < 0) throw new Error('A tolerância de atenção não pode ser negativa.');
+  if (input.criticalTolerancePercent != null && input.criticalTolerancePercent < (input.warningTolerancePercent ?? 0)) {
+    throw new Error('A tolerância crítica deve ser maior ou igual à tolerância de atenção.');
+  }
   if (isMetaE2EMode) {
     const now = new Date().toISOString();
     metaE2EState.targets.forEach((target) => {
@@ -81,6 +101,7 @@ export async function setPerformanceTarget(input: {
       evaluationPeriod: input.evaluationPeriod ?? null,
       effectiveFrom: now, effectiveTo: null, active: true,
     });
+    persistMetaE2EState();
     return id;
   }
   if (!supabase) throw new Error('Backend analítico não configurado.');
@@ -108,6 +129,7 @@ export async function closePerformanceTarget(targetId: string): Promise<void> {
     if (target) {
       target.active = false;
       target.effectiveTo = new Date().toISOString();
+      persistMetaE2EState();
     }
     return;
   }

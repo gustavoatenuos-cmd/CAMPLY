@@ -25,7 +25,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
-import { SegmentDecisionOverview, buildSegmentSummaries } from './performance/SegmentDecisionOverview';
+import { SegmentDecisionOverview, buildSegmentSummaries, clientSeverity } from './performance/SegmentDecisionOverview';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
 
@@ -44,17 +44,6 @@ const periodLabels: Record<DashboardPeriod, string> = {
   last_30d: 'Últimos 30 dias',
 };
 
-const statusLabels: Record<GlobalClientPerformance['clientStatus'], string> = {
-  not_connected: 'Conta não conectada',
-  never_synced: 'Nunca sincronizado',
-  syncing: 'Sincronizando',
-  no_delivery: 'Sem entrega',
-  available: 'Atualizado',
-  stale: 'Desatualizado',
-  partial: 'Parcial',
-  failed: 'Falhou',
-};
-
 const evaluationSeverity: Record<PerformanceStatus, number> = {
   critical: 6,
   attention: 5,
@@ -63,6 +52,27 @@ const evaluationSeverity: Record<PerformanceStatus, number> = {
   unavailable: 2,
   on_track: 1,
 };
+
+type DecisionFilter = 'all' | 'healthy' | 'attention' | 'critical' | 'no_data';
+
+interface StoredDashboardFilters {
+  period?: DashboardPeriod;
+  search?: string;
+  decision?: DecisionFilter;
+  segment?: string;
+  subsegment?: string;
+}
+
+const DASHBOARD_FILTERS_KEY = 'camply:performance-dashboard-filters';
+
+function loadStoredFilters(): StoredDashboardFilters {
+  try {
+    const stored = window.sessionStorage.getItem(DASHBOARD_FILTERS_KEY);
+    return stored ? JSON.parse(stored) as StoredDashboardFilters : {};
+  } catch {
+    return {};
+  }
+}
 
 function formatCurrency(value: number, currency = 'BRL'): string {
   try {
@@ -154,6 +164,28 @@ function evaluationDescription(client: GlobalClientPerformance, evaluation: Perf
   return `${scope}: ${metricLabel(evaluation.metricId)} realizado em ${actual}; esperado ${target}. ${statusEvidence(evaluation)}`;
 }
 
+function recommendationFor(evaluation: PerformanceEvaluation): string {
+  if (evaluation.status === 'partial_data') return 'Conclua uma sincronização completa antes de otimizar.';
+  if (evaluation.metricId === 'link_ctr') return 'Revise criativo, oferta e aderência da mensagem ao público.';
+  if (evaluation.metricId === 'cpm') return 'Revise público, posicionamentos e pressão do leilão.';
+  if (evaluation.metricId === 'frequency') return 'Renove criativos ou amplie o público para controlar a frequência.';
+  if (evaluation.metricId.startsWith('cost_per_')) return 'Abra campanhas e conjuntos com maior consumo e revise criativo, público e conversão.';
+  if (evaluation.metricId === 'purchase_roas') return 'Revise valor de compra, custo de aquisição e campanhas que concentram o investimento.';
+  return 'Abra a conta e identifique a campanha responsável pelo maior desvio antes de alterar orçamento.';
+}
+
+function financialImpact(client: GlobalClientPerformance, evaluation: PerformanceEvaluation): number {
+  const account = client.accounts.find((item) => item.clientMetaAssetId === evaluation.clientMetaAssetId);
+  const spend = account?.metrics.spend;
+  return spend?.available && typeof spend.value === 'number' ? spend.value : 0;
+}
+
+function targetAge(evaluation: PerformanceEvaluation): number {
+  if (!evaluation.effectiveFrom) return 0;
+  const value = new Date(evaluation.effectiveFrom).getTime();
+  return Number.isFinite(value) ? Date.now() - value : 0;
+}
+
 function DashboardUnavailable({
   message,
   retrying,
@@ -183,16 +215,28 @@ function DashboardUnavailable({
 }
 
 export function OverviewView({ data, setActiveView }: OverviewViewProps) {
-  const [period, setPeriod] = useState<DashboardPeriod>('this_month');
+  const storedFilters = useMemo(loadStoredFilters, []);
+  const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'this_month');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
   const [capabilityState, setCapabilityState] = useState<AnalyticsCapabilityState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | GlobalClientPerformance['clientStatus']>('all');
-  const [segmentFilter, setSegmentFilter] = useState('all');
+  const [search, setSearch] = useState(storedFilters.search || '');
+  const [statusFilter, setStatusFilter] = useState<DecisionFilter>(storedFilters.decision || 'all');
+  const [segmentFilter, setSegmentFilter] = useState(storedFilters.segment || 'all');
+  const [subsegmentFilter, setSubsegmentFilter] = useState(storedFilters.subsegment || 'all');
+
+  useEffect(() => {
+    window.sessionStorage.setItem(DASHBOARD_FILTERS_KEY, JSON.stringify({
+      period,
+      search,
+      decision: statusFilter,
+      segment: segmentFilter,
+      subsegment: subsegmentFilter,
+    } satisfies StoredDashboardFilters));
+  }, [period, search, segmentFilter, statusFilter, subsegmentFilter]);
 
   const loadCapabilities = useCallback(async () => {
     setCapabilitiesLoading(true);
@@ -239,25 +283,32 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
     const { summaries, pending } = buildSegmentSummaries(clients, data.clients);
+    const selectedSummary = summaries.find((summary) => summary.key === segmentFilter);
     const segmentClientIds = segmentFilter === 'all'
       ? null
       : segmentFilter === '__pending__'
         ? new Set(pending.map((client) => client.clientId))
-        : new Set((summaries.find((summary) => summary.key === segmentFilter)?.clients || []).map((client) => client.clientId));
+        : subsegmentFilter !== 'all'
+          ? new Set((selectedSummary?.clientsBySubsegment.get(subsegmentFilter) || []).map((client) => client.clientId))
+          : new Set((selectedSummary?.clients || []).map((client) => client.clientId));
     return clients.filter((client) => {
       if (segmentClientIds && !segmentClientIds.has(client.clientId)) return false;
-      if (statusFilter !== 'all' && client.clientStatus !== statusFilter) return false;
+      if (statusFilter !== 'all' && clientSeverity(client) !== statusFilter) return false;
       if (!normalizedSearch) return true;
       return client.clientName.toLocaleLowerCase('pt-BR').includes(normalizedSearch)
         || client.accounts.some((account) => account.accountName.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
     });
-  }, [clients, data.clients, search, segmentFilter, statusFilter]);
+  }, [clients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
 
-  const priorities = useMemo(() => clients
+  const priorities = useMemo(() => filteredClients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
     .filter(({ evaluation }) => ['critical', 'attention', 'partial_data'].includes(evaluation.status))
-    .sort((a, b) => evaluationSeverity[b.evaluation.status] - evaluationSeverity[a.evaluation.status])
-    .slice(0, 6), [clients]);
+    .sort((a, b) => evaluationSeverity[b.evaluation.status] - evaluationSeverity[a.evaluation.status]
+      || b.evaluation.confidence - a.evaluation.confidence
+      || (b.evaluation.priorityWeight ?? 1) - (a.evaluation.priorityWeight ?? 1)
+      || financialImpact(b.client, b.evaluation) - financialImpact(a.client, a.evaluation)
+      || targetAge(b.evaluation) - targetAge(a.evaluation))
+    .slice(0, 6), [filteredClients]);
 
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
   const openTasks = data.tasks.filter((task) => !task.done).length;
@@ -321,11 +372,13 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
+                  aria-label="Buscar cliente ou conta"
                   placeholder="Buscar cliente ou conta"
                   className="w-full rounded-xl border border-brand-line bg-brand-ink py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-brand-muted focus:border-brand-green"
                 />
               </label>
               <select
+                aria-label="Período do Dashboard"
                 value={period}
                 onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
                 className="rounded-xl border border-brand-line bg-brand-ink px-3 py-2.5 text-sm text-white outline-none focus:border-brand-green"
@@ -378,7 +431,9 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               clients={clients}
               workspaceClients={data.clients}
               selectedSegment={segmentFilter}
+              selectedSubsegment={subsegmentFilter}
               onSelectSegment={setSegmentFilter}
+              onSelectSubsegment={setSubsegmentFilter}
             />
 
             <GlobalSummaryCards clients={filteredClients} />
@@ -386,15 +441,19 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
             <div className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-bold text-white">Filtrar a central</p>
-                <p className="text-xs text-brand-muted">O filtro altera a tabela e os indicadores mensais acima para manter a leitura por cliente ou conta.</p>
+                <p className="text-xs text-brand-muted">Situação, segmento e subsegmento permanecem selecionados ao atualizar ou recarregar o Dashboard.</p>
               </div>
               <select
+                aria-label="Filtrar por situação"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
                 className="rounded-xl border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white outline-none focus:border-brand-green"
               >
-                <option value="all">Todos os estados</option>
-                {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                <option value="all">Todas as situações</option>
+                <option value="healthy">Saudáveis</option>
+                <option value="attention">Atenção</option>
+                <option value="critical">Críticos</option>
+                <option value="no_data">Sem dados</option>
               </select>
             </div>
 
@@ -412,8 +471,8 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Prioridades</p>
-                    <h2 className="mt-1 text-xl font-black text-white">Clientes que exigem decisão</h2>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Desvios de metas</p>
+                    <h2 className="mt-1 text-xl font-black text-white">Comparações que sustentam as decisões</h2>
                   </div>
                   <AlertTriangle className="text-amber-300" size={22} />
                 </div>
@@ -423,10 +482,12 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-bold text-white">{index + 1}. {client.clientName}</p>
+                          <p className="mt-1 text-xs font-bold uppercase tracking-wider text-brand-green">{client.analysisProfile?.customVertical || client.analysisProfile?.vertical || 'Segmento não configurado'} · {metricLabel(evaluation.metricId)}</p>
                           <p className="mt-1 text-sm text-brand-muted">{evaluationDescription(client, evaluation)}</p>
                           <p className="mt-2 text-xs text-brand-soft">
                             Confiança: {evaluation.confidence.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}% · Investigar {evaluation.campaignId ? 'a campanha e seus conjuntos' : 'a conta e as campanhas responsáveis'}.
                           </p>
+                          <p className="mt-2 text-sm font-semibold text-white">Ação recomendada: {recommendationFor(evaluation)}</p>
                         </div>
                         <PerformanceStatusBadge status={evaluation.status} />
                       </div>

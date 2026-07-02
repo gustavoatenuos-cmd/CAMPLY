@@ -5,6 +5,7 @@ import {
   E2E_LINK_ID,
   isMetaE2EMode,
   metaE2EState,
+  persistMetaE2EState,
 } from './metaE2ERuntime';
 
 export interface MetaRunSummary {
@@ -107,6 +108,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
 export async function linkClientMetaAsset(clientId: string, metaAssetId: string): Promise<string> {
   if (isMetaE2EMode) {
     metaE2EState.linked = true;
+    persistMetaE2EState();
     return E2E_LINK_ID;
   }
   if (!supabase) throw new Error('Backend analítico não configurado.');
@@ -121,6 +123,7 @@ export async function linkClientMetaAsset(clientId: string, metaAssetId: string)
 export async function unlinkClientMetaAsset(clientMetaAssetId: string): Promise<void> {
   if (isMetaE2EMode) {
     metaE2EState.linked = false;
+    persistMetaE2EState();
     return;
   }
   if (!supabase) throw new Error('Backend analítico não configurado.');

@@ -45,6 +45,21 @@ const kindOptions: Array<[PerformanceTargetKind, string]> = [
   ['target_range', 'Faixa ideal'],
 ];
 
+function targetKindLabel(kind: PerformanceTargetKind): string {
+  return kindOptions.find(([value]) => value === kind)?.[1] || 'Meta personalizada';
+}
+
+function targetMetricLabel(metricId: string): string {
+  return metricOptions.find(([value]) => value === metricId)?.[1] || metricId.split('_').join(' ');
+}
+
+const resultMetricIds = new Set([
+  'messaging_conversations_started_total',
+  'leads',
+  'purchases',
+  'landing_page_views',
+]);
+
 export function TargetSettingsDrawer(props: TargetSettingsDrawerProps) {
   const [history, setHistory] = useState<PerformanceTargetHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -118,21 +133,28 @@ export function TargetForm({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [targetKind, setTargetKind] = useState<PerformanceTargetKind>('cost_per_result');
+  const budgetTarget = ['daily_budget', 'weekly_budget', 'monthly_budget'].includes(targetKind);
+  const visibleMetricOptions = budgetTarget
+    ? metricOptions.filter(([metricId]) => metricId === 'spend')
+    : ['cost_per_result', 'minimum_results'].includes(targetKind)
+      ? metricOptions.filter(([metricId]) => resultMetricIds.has(metricId))
+      : metricOptions.filter(([metricId]) => metricId !== 'spend');
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const targetKind = String(form.get('targetKind')) as PerformanceTargetKind;
-    const metricId = targetKind === 'daily_budget' || targetKind === 'weekly_budget' || targetKind === 'monthly_budget'
+    const submittedKind = String(form.get('targetKind')) as PerformanceTargetKind;
+    const metricId = submittedKind === 'daily_budget' || submittedKind === 'weekly_budget' || submittedKind === 'monthly_budget'
       ? 'spend'
       : String(form.get('metricId'));
     const targetMin = form.get('targetMin') === '' ? null : Number(form.get('targetMin'));
     const targetMax = form.get('targetMax') === '' ? null : Number(form.get('targetMax'));
-    const targetValue = targetKind === 'target_range'
+    const targetValue = submittedKind === 'target_range'
       ? Number.isFinite(targetMax) && targetMax! > 0 ? targetMax! : Number(targetMin)
       : Number(form.get('targetValue'));
-    if (targetKind === 'target_range' && (
+    if (submittedKind === 'target_range' && (
       !Number.isFinite(targetMin) || !Number.isFinite(targetMax) || targetMin! <= 0 || targetMax! <= 0 || targetMin! >= targetMax!
     )) {
       setError('Informe uma faixa válida, com mínimo menor que o máximo.');
@@ -149,7 +171,7 @@ export function TargetForm({
         clientMetaAssetId,
         campaignId,
         metricId,
-        targetKind,
+        targetKind: submittedKind,
         targetValue,
         targetMin: Number.isFinite(targetMin) ? targetMin : null,
         targetMax: Number.isFinite(targetMax) ? targetMax : null,
@@ -159,6 +181,7 @@ export function TargetForm({
         evaluationPeriod: String(form.get('evaluationPeriod') || ''),
       });
       formElement.reset();
+      setTargetKind('cost_per_result');
       await onSaved();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar a meta.');
@@ -172,14 +195,14 @@ export function TargetForm({
       <div className="flex items-center gap-2"><Target className="text-brand-green" size={18} /><h3 className="font-black text-white">Nova versão de meta</h3></div>
       <label className="block text-sm text-brand-soft">
         Tipo
-        <select name="targetKind" defaultValue="cost_per_result" className="mt-2 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">
+        <select name="targetKind" value={targetKind} onChange={(event) => setTargetKind(event.target.value as PerformanceTargetKind)} className="mt-2 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">
           {kindOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       <label className="block text-sm text-brand-soft">
-        Métrica de resultado
-        <select name="metricId" defaultValue="messaging_conversations_started_total" className="mt-2 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">
-          {metricOptions.filter(([id]) => id !== 'spend').map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        {budgetTarget ? 'Métrica de orçamento' : 'Métrica de resultado'}
+        <select key={targetKind} name="metricId" defaultValue={visibleMetricOptions[0]?.[0]} className="mt-2 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">
+          {visibleMetricOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       <label className="block text-sm text-brand-soft">
@@ -246,7 +269,7 @@ export function TargetHistory({
           <article key={target.id} className="rounded-xl border border-brand-line bg-brand-surface p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-bold text-white">{target.targetKind} · {target.metricId}</p>
+                <p className="font-bold text-white">{targetKindLabel(target.targetKind)} · {targetMetricLabel(target.metricId)}</p>
                 <p className="mt-1 text-sm text-brand-muted">
                   Meta: {target.targetKind === 'target_range' && target.targetMin != null && target.targetMax != null
                     ? `${target.targetMin.toLocaleString('pt-BR')} a ${target.targetMax.toLocaleString('pt-BR')}`

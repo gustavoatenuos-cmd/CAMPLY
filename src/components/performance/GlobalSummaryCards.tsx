@@ -48,6 +48,46 @@ function signalStyle(signal: DecisionSignal): string {
   return 'border-sky-400/30 bg-sky-400/10';
 }
 
+function signalMetricLabel(signal: DecisionSignal): string {
+  if (signal.kind === 'pacing') return 'Ritmo de investimento';
+  if (signal.targetKind === 'cost_per_result') {
+    if (signal.metricId === 'messaging_conversations_started_total') return 'Custo por conversa';
+    if (signal.metricId === 'leads') return 'Custo por lead';
+    if (signal.metricId === 'purchases') return 'Custo por compra';
+  }
+  const labels: Record<string, string> = {
+    cpm: 'CPM',
+    link_ctr: 'CTR de link',
+    frequency: 'Frequência',
+    purchases: 'Compras',
+    leads: 'Leads',
+    messaging_conversations_started_total: 'Conversas iniciadas',
+    purchase_roas: 'ROAS',
+    purchase_value: 'Valor de compras',
+    spend: 'Investimento',
+  };
+  return signal.metricId ? labels[signal.metricId] || signal.metricId.split('_').join(' ') : 'Qualidade dos dados';
+}
+
+function signalValue(value: number | null | undefined, signal: DecisionSignal, currency: string | null): string {
+  if (value == null) return 'Indisponível';
+  if (signal.kind === 'pacing' || signal.targetKind === 'cost_per_result' || ['cpm', 'purchase_value'].includes(signal.metricId || '')) {
+    return formatCurrency(value, currency);
+  }
+  if ((signal.metricId || '').includes('ctr')) return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+function clientFinancialImpact(client: GlobalClientPerformance): number {
+  return client.accounts.reduce((total, account) => total + (metricValue(account.metrics.spend) ?? 0), 0);
+}
+
+function signalAge(signal: DecisionSignal): number {
+  if (!signal.effectiveFrom) return 0;
+  const timestamp = new Date(signal.effectiveFrom).getTime();
+  return Number.isFinite(timestamp) ? Date.now() - timestamp : 0;
+}
+
 const signalWeight: Record<DecisionSignal['severity'], number> = {
   critical: 3,
   warning: 2,
@@ -171,7 +211,10 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         && client.accounts.some((account) => account.dataQuality.status !== 'unavailable');
     })
     .sort((a, b) => signalWeight[b.signal.severity] - signalWeight[a.signal.severity]
-      || b.signal.confidence - a.signal.confidence)
+      || b.signal.confidence - a.signal.confidence
+      || (b.signal.priorityWeight ?? 1) - (a.signal.priorityWeight ?? 1)
+      || clientFinancialImpact(b.client) - clientFinancialImpact(a.client)
+      || signalAge(b.signal) - signalAge(a.signal))
     .slice(0, 6);
 
   return (
@@ -289,30 +332,44 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Leitura executiva</p>
-            <h2 className="mt-1 text-xl font-black text-white">O que precisa ser analisado agora</h2>
+            <h2 className="mt-1 text-xl font-black text-white">O que exige ação agora</h2>
             <p className="mt-1 text-sm text-brand-muted">Prioridades ordenadas por gravidade e confiança. Falta de dados fica na qualidade da sincronização, não como sugestão de otimização.</p>
           </div>
           <p className="text-xs text-brand-muted">{priorities.length} sinais prioritários</p>
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-          {priorities.length > 0 ? priorities.map(({ client, signal }, index) => (
-            <div key={`${client.clientId}:${signal.kind}:${signal.metricId || 'general'}:${index}`} className={`rounded-xl border p-4 ${signalStyle(signal)}`}>
+          {priorities.length > 0 ? priorities.map(({ client, signal }, index) => {
+            const account = signal.campaignId
+              ? client.accounts.find((item) => client.metricGroups.some((group) => group.clientMetaAssetId === item.clientMetaAssetId && group.campaignId === signal.campaignId))
+              : client.accounts[0];
+            const difference = signal.differencePercent == null
+              ? 'Indisponível'
+              : `${signal.differencePercent > 0 ? '+' : ''}${signal.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+            return <div key={`${client.clientId}:${signal.kind}:${signal.metricId || 'general'}:${index}`} className={`rounded-xl border p-4 ${signalStyle(signal)}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-muted">{client.clientName}</p>
                   <p className="mt-1 font-black text-white">{signal.title}</p>
+                  <p className="mt-1 text-xs text-brand-muted">{client.analysisProfile?.customVertical || client.analysisProfile?.vertical || 'Segmento não configurado'} · {signalMetricLabel(signal)}</p>
                 </div>
                 <PerformanceScoreBadge score={client.score} compact />
               </div>
+              {(signal.expectedValue != null || signal.actualValue != null) && (
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[9px] uppercase text-brand-muted">Esperado</p><p className="mt-1 font-black text-white">{signalValue(signal.expectedValue, signal, account?.currency || null)}</p></div>
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[9px] uppercase text-brand-muted">Realizado</p><p className="mt-1 font-black text-white">{signalValue(signal.actualValue, signal, account?.currency || null)}</p></div>
+                  <div className="rounded-lg bg-black/20 p-2"><p className="text-[9px] uppercase text-brand-muted">Diferença</p><p className="mt-1 font-black text-white">{difference}</p></div>
+                </div>
+              )}
               <p className="mt-3 text-sm leading-6 text-brand-soft">{signal.evidence}</p>
               <div className="mt-4 border-t border-white/10 pt-3">
-                <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-brand-muted"><ArrowRight size={12} /> Próxima análise</p>
+                <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-brand-muted"><ArrowRight size={12} /> Investigar em {signal.campaignId ? 'campanha, conjuntos e criativos' : signal.kind === 'pacing' ? 'orçamento e entrega da conta' : 'conta e campanhas'}</p>
                 <p className="mt-1 text-sm leading-6 text-white">{signal.nextAction}</p>
               </div>
               <p className="mt-3 text-[10px] text-brand-muted">Confiança da leitura: {signal.confidence}%</p>
-            </div>
-          )) : (
+            </div>;
+          }) : (
             <div className="rounded-xl border border-dashed border-brand-line p-8 text-center text-sm text-brand-muted lg:col-span-2 xl:col-span-3">
               Nenhum sinal conclusivo está disponível. Configure metas e sincronize o período para liberar a leitura operacional.
             </div>

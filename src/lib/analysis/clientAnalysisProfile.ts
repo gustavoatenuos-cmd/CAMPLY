@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
 export const analysisVerticals = [
   'Saúde',
@@ -224,6 +225,14 @@ export function mapClientProfileRow(row: Record<string, unknown>): ClientAnalysi
 }
 
 export async function loadClientAnalysisProfile(clientId: string): Promise<ClientAnalysisProfile | null> {
+  if (isMetaE2EMode && typeof window !== 'undefined') {
+    try {
+      const profiles = JSON.parse(window.sessionStorage.getItem('camply:meta-e2e:analysis-profiles') || '{}') as Record<string, ClientAnalysisProfile>;
+      return profiles[clientId] ?? null;
+    } catch {
+      return null;
+    }
+  }
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('client_analysis_profiles')
@@ -235,6 +244,17 @@ export async function loadClientAnalysisProfile(clientId: string): Promise<Clien
 }
 
 export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile): Promise<ClientAnalysisProfile> {
+  if (isMetaE2EMode && typeof window !== 'undefined') {
+    let profiles: Record<string, ClientAnalysisProfile> = {};
+    try {
+      profiles = JSON.parse(window.sessionStorage.getItem('camply:meta-e2e:analysis-profiles') || '{}') as Record<string, ClientAnalysisProfile>;
+    } catch {
+      profiles = {};
+    }
+    const persisted = { ...profile, updatedAt: new Date().toISOString() };
+    window.sessionStorage.setItem('camply:meta-e2e:analysis-profiles', JSON.stringify({ ...profiles, [profile.clientId]: persisted }));
+    return persisted;
+  }
   if (!supabase) return profile;
   const { data, error } = await supabase.rpc('upsert_client_analysis_profile', {
     p_client_id: profile.clientId,
@@ -256,4 +276,8 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
   });
   if (error) throw new Error('Não foi possível salvar o perfil de análise no banco.');
   return mapClientProfileRow(data as Record<string, unknown>);
+}
+
+export function resetE2EAnalysisProfiles(): void {
+  if (typeof window !== 'undefined') window.sessionStorage.removeItem('camply:meta-e2e:analysis-profiles');
 }

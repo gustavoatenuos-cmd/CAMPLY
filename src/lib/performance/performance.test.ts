@@ -36,6 +36,7 @@ describe('evaluatePerformanceTarget', () => {
       actualValue: 18,
       differenceValue: -2,
       differencePercent: -10,
+      confidence: 90,
     });
   });
 
@@ -107,6 +108,14 @@ describe('evaluatePerformanceTarget', () => {
     expect(evaluatePerformanceTarget(target, { value: 1.3, available: true }).status).toBe('on_track');
     expect(evaluatePerformanceTarget(target, { value: 1, available: true }).status).toBe('attention');
     expect(evaluatePerformanceTarget(target, { value: 0.7, available: true }).status).toBe('critical');
+  });
+
+  it('does not create an early false alert before enough of the evaluation period elapsed', () => {
+    expect(evaluatePerformanceTarget(
+      { metricId: 'leads', targetKind: 'minimum_results', targetValue: 40 },
+      { value: 5, available: true, completenessStatus: 'complete' },
+      { periodProgressPercent: 10 }
+    )).toMatchObject({ status: 'insufficient_data', reason: 'evaluation_period_too_early', confidence: 40 });
   });
 
   it('evaluates target ranges without collapsing the range into one fake average', () => {
@@ -282,6 +291,13 @@ describe('enrichGlobalPerformanceDashboard', () => {
           targetKind: 'daily_budget',
           targetValue: 30,
         },
+        {
+          clientMetaAssetId: 'link_1',
+          metricId: 'cpm',
+          targetKind: 'maximum_metric',
+          targetValue: 25,
+          evaluationPeriod: 'today',
+        },
       ],
       evaluations: [],
       budgetPacing: null,
@@ -356,5 +372,56 @@ describe('enrichGlobalPerformanceDashboard', () => {
     });
     expect(insufficient.score.value).toBeNull();
     expect(insufficient.score.summary).toContain('dados conclusivos suficientes');
+
+    const [profileWeeklyPacing] = enrichGlobalPerformanceDashboard(
+      [{
+        ...raw,
+        accounts: raw.accounts.map((account) => ({
+          ...account,
+          metrics: { ...account.metrics, spend: traceMetric('spend', 60) },
+        })),
+        metrics: { ...raw.metrics, spend: traceMetric('spend', 60) },
+        resolvedTargets: raw.resolvedTargets.filter((target) => target.targetKind !== 'daily_budget'),
+        analysisProfile: {
+          ...raw.analysisProfile!,
+          plannedBudget: 210,
+          minimumEvaluationSpend: 0,
+        },
+      }],
+      'this_week',
+      new Date('2026-07-02T15:00:00Z')
+    );
+    expect(profileWeeklyPacing.accounts[0].budgetPacing).toMatchObject({
+      actualSpend: 60,
+      targetDailyBudget: 30,
+      expectedSpendUntilNow: 120,
+      projectedMonthlySpend: 105,
+      totalDays: 7,
+    });
+
+    const [profileMonthlyAtTimezoneBoundary] = enrichGlobalPerformanceDashboard(
+      [{
+        ...raw,
+        accounts: raw.accounts.map((account) => ({
+          ...account,
+          metrics: { ...account.metrics, spend: traceMetric('spend', 3000) },
+        })),
+        metrics: { ...raw.metrics, spend: traceMetric('spend', 3000) },
+        resolvedTargets: [],
+        analysisProfile: {
+          ...raw.analysisProfile!,
+          budgetPeriod: 'monthly',
+          plannedBudget: 3000,
+          minimumEvaluationSpend: 0,
+        },
+      }],
+      'this_month',
+      new Date('2026-07-01T01:30:00Z')
+    );
+    expect(profileMonthlyAtTimezoneBoundary.accounts[0].budgetPacing).toMatchObject({
+      expectedSpendUntilNow: 3000,
+      totalDays: 30,
+      elapsedDays: 30,
+    });
   });
 });

@@ -1,7 +1,7 @@
 import type { Campaign, Client } from '../../types';
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { invokeFunction } from '../invokeFunction';
-import { isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
+import { isMetaE2EMode, metaE2EState, persistMetaE2EState } from './metaE2ERuntime';
 import type { MetaSyncResponse } from './metaSyncTypes';
 
 export type MetaSyncPeriod = DashboardPeriod;
@@ -58,6 +58,7 @@ async function syncOperationalMetaAsset(
 ): Promise<OperationalMetaSyncResult> {
   if (isMetaE2EMode) {
     metaE2EState.syncedPeriods.add(input.period);
+    persistMetaE2EState();
     return {
       success: true,
       status: 'success',

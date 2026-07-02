@@ -58,7 +58,20 @@ describe('buildSegmentSummaries', () => {
           dateStart: '2026-07-01',
           dateStop: '2026-07-02',
           metrics: { spend: spendMetric(100, 'BRL') },
-          budgetPacing: null,
+          budgetPacing: {
+            clientMetaAssetId: 'link-brl',
+            actualSpend: 100,
+            targetDailyBudget: 100,
+            expectedSpendUntilNow: 400,
+            actualDailyAverage: 25,
+            projectedMonthlySpend: 175,
+            differenceValue: -300,
+            differencePercent: -75,
+            status: 'critical',
+            currency: 'BRL',
+            elapsedDays: 4,
+            totalDays: 7,
+          },
           dataQuality: { status: 'complete', reason: null },
           lastSuccessfulRun: null,
           lastAttempt: null,
@@ -138,9 +151,29 @@ describe('buildSegmentSummaries', () => {
           analysisEnabled: true,
         },
       }),
+      client('custom-segment', {
+        analysisProfile: {
+          clientId: 'custom-segment',
+          vertical: 'Outros',
+          subsegment: 'Outros',
+          customVertical: 'Turismo',
+          customSubsegment: 'Agência de viagens',
+          businessModel: 'geração de leads',
+          primaryConversionMetric: 'leads',
+          secondaryMetrics: ['cost_per_lead'],
+          primaryChannel: 'Site',
+          budgetPeriod: 'monthly',
+          plannedBudget: 2000,
+          minimumEvaluationSpend: 0,
+          minimumImpressions: 0,
+          minimumResults: 0,
+          attributionDelayHours: 24,
+          analysisEnabled: true,
+        },
+      }),
     ];
 
-    const { summaries, pending } = buildSegmentSummaries(clients, [] as Client[]);
+    const { summaries, pending, pendingByClient } = buildSegmentSummaries(clients, [] as Client[]);
     const saude = summaries.find((summary) => summary.vertical === 'Saúde');
 
     expect(saude?.clients).toHaveLength(2);
@@ -149,7 +182,12 @@ describe('buildSegmentSummaries', () => {
     expect(saude?.plannedBudgetByCurrency.get('USD')).toBe(1000);
     expect(saude?.spendByCurrency.get('BRL')).toBe(100);
     expect(saude?.spendByCurrency.get('USD')).toBe(50);
+    expect(saude?.expectedSpendByCurrency.get('BRL')).toBe(400);
+    expect(saude?.projectedSpendByCurrency.get('BRL')).toBe(175);
     expect(saude?.primaryMetrics).toEqual(new Set(['messaging_conversations_started_total', 'leads']));
-    expect(pending.map((item) => item.clientId)).toEqual(['sem-config']);
+    expect(summaries.find((summary) => summary.vertical === 'Turismo')?.subsegments).toEqual(new Set(['Agência de viagens']));
+    expect(pending.map((item) => item.clientId)).toEqual(['clinica-a', 'clinica-b', 'sem-config', 'custom-segment']);
+    expect(pendingByClient.get('clinica-a')).toContain('Sem metas');
+    expect(pendingByClient.get('sem-config')).toEqual(expect.arrayContaining(['Sem subsegmento', 'Sem orçamento planejado', 'Sem conta Meta']));
   });
 });

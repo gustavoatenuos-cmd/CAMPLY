@@ -52,6 +52,7 @@ export interface PerformanceEvaluation {
   targetMin?: number | null;
   targetMax?: number | null;
   priorityWeight?: number | null;
+  effectiveFrom?: string | Date;
   differenceValue: number | null;
   differencePercent: number | null;
   status: PerformanceStatus;

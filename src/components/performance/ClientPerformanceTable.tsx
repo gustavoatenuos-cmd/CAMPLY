@@ -10,6 +10,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/perform
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
+import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -132,15 +133,18 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
         {rows.map(({ client, account }) => {
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric = account?.metrics.spend;
-          const primaryMetric = account?.metrics.messaging_conversations_started_total
-            || account?.metrics.purchases
-            || account?.metrics.leads;
+          const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
+          const primaryMetric = account?.metrics[primaryMetricId];
           const spend = metricValue(spendMetric);
           const primaryValue = metricValue(primaryMetric);
           const evaluations = account
             ? client.evaluations.filter((evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId)
             : [];
           const performanceStatus = worstEvaluation(evaluations);
+          const groups = account
+            ? client.metricGroups.filter((group) => group.clientMetaAssetId === account.clientMetaAssetId)
+            : [];
+          const isExpanded = expanded === key;
 
           return (
             <article key={key} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4">
@@ -154,11 +158,38 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <MetricCell label="Investimento" value={formatCurrency(spend, account?.currency || null)} metric={spendMetric} />
-                <MetricCell label="KPI principal" value={formatNumber(primaryValue)} metric={primaryMetric} />
+                <MetricCell label={metricLabels[primaryMetricId] || 'KPI principal'} value={formatNumber(primaryValue)} metric={primaryMetric} />
                 <MetricCell label="Orçamento" value={client.analysisProfile?.plannedBudget ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null) : '—'} />
                 <MetricCell label="Pacing" value={account?.budgetPacing ? `${account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'} />
               </div>
               <p className="mt-3 text-xs text-brand-muted">{statusLabel(client.clientStatus)} · {account?.lastSuccessfulRun?.finishedAt ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'Sem sync confiável'}</p>
+              <button
+                type="button"
+                data-testid="client-performance-details-toggle"
+                aria-expanded={isExpanded}
+                onClick={() => setExpanded(isExpanded ? null : key)}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"
+              >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+              </button>
+              {isExpanded && (
+                <div data-testid="client-performance-details" className="mt-3 space-y-3 border-t border-brand-line pt-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Metas e realizado</p>
+                    {evaluations.length === 0 ? <p className="mt-1 text-xs text-brand-muted">Nenhuma meta comparável neste período.</p> : evaluations.map((evaluation) => (
+                      <div key={`${evaluation.metricId}:${evaluation.campaignId || 'account'}`} className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-black/20 p-2 text-xs">
+                        <div><p className="font-bold text-white">{metricLabels[evaluation.metricId] || evaluation.metricId.split('_').join(' ')}</p><p className="text-brand-muted">Esperado {formatNumber(evaluation.targetValue)} · realizado {formatNumber(evaluation.actualValue)}</p></div>
+                        <PerformanceStatusBadge status={evaluation.status} />
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Campanhas da conta</p>
+                    <p className="mt-1 text-xs text-brand-soft">{groups.length > 0 ? groups.map((group) => group.campaignName).join(' · ') : 'Nenhuma campanha confiável neste recorte.'}</p>
+                  </div>
+                  <p className="text-xs text-brand-muted">Qualidade: {account?.dataQuality.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}</p>
+                </div>
+              )}
             </article>
           );
         })}

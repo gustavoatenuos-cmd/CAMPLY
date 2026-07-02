@@ -12,6 +12,12 @@ export interface DecisionSignal {
   confidence: number;
   metricId?: string;
   campaignId?: string | null;
+  targetKind?: PerformanceEvaluation['targetKind'];
+  expectedValue?: number | null;
+  actualValue?: number | null;
+  differencePercent?: number | null;
+  priorityWeight?: number | null;
+  effectiveFrom?: string | Date;
 }
 
 export interface PerformanceScore {
@@ -46,8 +52,8 @@ export interface PerformanceScoreInput {
 }
 
 const evaluationPoints: Record<PerformanceStatus, number | null> = {
-  on_track: 45,
-  attention: 25,
+  on_track: 55,
+  attention: 30,
   critical: 5,
   insufficient_data: null,
   partial_data: null,
@@ -55,8 +61,8 @@ const evaluationPoints: Record<PerformanceStatus, number | null> = {
 };
 
 const pacingPoints: Record<PerformanceStatus, number | null> = {
-  on_track: 15,
-  attention: 8,
+  on_track: 20,
+  attention: 10,
   critical: 2,
   insufficient_data: null,
   partial_data: null,
@@ -64,19 +70,19 @@ const pacingPoints: Record<PerformanceStatus, number | null> = {
 };
 
 const syncPoints: Record<PerformanceScoreInput['clientStatus'], number> = {
-  available: 15,
-  syncing: 8,
-  stale: 7,
-  partial: 5,
-  no_delivery: 4,
+  available: 10,
+  syncing: 6,
+  stale: 5,
+  partial: 3,
+  no_delivery: 2,
   never_synced: 1,
   not_connected: 0,
   failed: 0,
 };
 
 const qualityPoints: Record<PerformanceScoreInput['dataQuality']['status'], number> = {
-  complete: 25,
-  partial: 12,
+  complete: 15,
+  partial: 7,
   unavailable: 0,
 };
 
@@ -91,6 +97,26 @@ function scoreStatus(value: number): Exclude<PerformanceScoreStatus, 'unavailabl
   return 'critical';
 }
 
+function evaluationMetricLabel(evaluation: PerformanceEvaluation): string {
+  if (evaluation.targetKind === 'cost_per_result') {
+    if (evaluation.metricId === 'messaging_conversations_started_total') return 'Custo por conversa';
+    if (evaluation.metricId === 'leads') return 'Custo por lead';
+    if (evaluation.metricId === 'purchases') return 'Custo por compra';
+    return 'Custo por resultado';
+  }
+  const labels: Record<string, string> = {
+    messaging_conversations_started_total: 'Conversas iniciadas',
+    leads: 'Leads',
+    purchases: 'Compras',
+    cpm: 'CPM',
+    link_ctr: 'CTR de link',
+    frequency: 'Frequência',
+    purchase_roas: 'ROAS',
+    purchase_value: 'Valor de compras',
+  };
+  return labels[evaluation.metricId] || evaluation.metricId.split('_').join(' ');
+}
+
 function evaluationSignal(evaluation: PerformanceEvaluation): DecisionSignal | null {
   const evidenceLabels: Record<string, string> = {
     cost_above_warning_tolerance: 'O custo está acima da faixa de atenção configurada.',
@@ -103,18 +129,28 @@ function evaluationSignal(evaluation: PerformanceEvaluation): DecisionSignal | n
     range_deviation_critical_tolerance: 'A métrica está muito distante da faixa esperada.',
   };
   const evidence = evidenceLabels[evaluation.reason] || 'O resultado observado está fora da expectativa configurada.';
+  const metricLabel = evaluationMetricLabel(evaluation);
+  const trace = {
+    metricId: evaluation.metricId,
+    campaignId: evaluation.campaignId,
+    targetKind: evaluation.targetKind,
+    expectedValue: evaluation.targetValue,
+    actualValue: evaluation.actualValue,
+    differencePercent: evaluation.differencePercent,
+    priorityWeight: evaluation.priorityWeight,
+    effectiveFrom: evaluation.effectiveFrom,
+  };
   if (evaluation.status === 'critical') {
     return {
       kind: 'performance',
       severity: 'critical',
-      title: `${evaluation.metricId} fora da meta`,
+      title: `${metricLabel} fora da meta`,
       evidence,
       nextAction: evaluation.campaignId
         ? 'Abrir a campanha, validar o grupo responsável e revisar a distribuição de verba antes de escalar.'
         : 'Abrir a conta, identificar as campanhas responsáveis e revisar a meta configurada.',
       confidence: evaluation.confidence,
-      metricId: evaluation.metricId,
-      campaignId: evaluation.campaignId,
+      ...trace,
     };
   }
 
@@ -122,12 +158,11 @@ function evaluationSignal(evaluation: PerformanceEvaluation): DecisionSignal | n
     return {
       kind: 'performance',
       severity: 'warning',
-      title: `${evaluation.metricId} exige acompanhamento`,
+      title: `${metricLabel} exige acompanhamento`,
       evidence,
       nextAction: 'Acompanhar a próxima janela de dados e revisar criativo, público ou oferta se a diferença aumentar.',
       confidence: evaluation.confidence,
-      metricId: evaluation.metricId,
-      campaignId: evaluation.campaignId,
+      ...trace,
     };
   }
 
@@ -139,8 +174,7 @@ function evaluationSignal(evaluation: PerformanceEvaluation): DecisionSignal | n
       evidence: 'A sincronização ainda não possui completude suficiente para uma decisão definitiva.',
       nextAction: 'Concluir uma sincronização completa antes de tomar uma decisão de otimização.',
       confidence: evaluation.confidence,
-      metricId: evaluation.metricId,
-      campaignId: evaluation.campaignId,
+      ...trace,
     };
   }
 
@@ -148,23 +182,24 @@ function evaluationSignal(evaluation: PerformanceEvaluation): DecisionSignal | n
 }
 
 function metricProfileWeight(evaluation: PerformanceEvaluation, input: PerformanceScoreInput): number {
-  const configuredWeight = evaluation.priorityWeight;
-  if (typeof configuredWeight === 'number' && Number.isFinite(configuredWeight) && configuredWeight > 0) {
-    return configuredWeight;
-  }
-
+  const configuredWeight = typeof evaluation.priorityWeight === 'number'
+    && Number.isFinite(evaluation.priorityWeight)
+    && evaluation.priorityWeight > 0
+    ? evaluation.priorityWeight
+    : 1;
   const primary = input.profile?.primaryConversionMetric;
   const secondary = new Set(input.profile?.secondaryMetrics ?? []);
-  if (primary && evaluation.metricId === primary) return 2.5;
-  if (primary === 'messaging_conversations_started_total' && evaluation.metricId === 'cost_per_messaging_conversation') return 2.5;
-  if (primary === 'leads' && evaluation.metricId === 'cost_per_lead') return 2.5;
-  if (primary === 'purchases' && ['cost_per_purchase', 'purchase_roas', 'purchase_value'].includes(evaluation.metricId)) return 2.5;
-  if (secondary.has(evaluation.metricId)) return 1.35;
-  return input.profile ? 0.75 : 1;
+  if (primary && evaluation.metricId === primary) return 2.5 * configuredWeight;
+  if (primary === 'messaging_conversations_started_total' && evaluation.metricId === 'cost_per_messaging_conversation') return 2.5 * configuredWeight;
+  if (primary === 'leads' && evaluation.metricId === 'cost_per_lead') return 2.5 * configuredWeight;
+  if (primary === 'purchases' && ['cost_per_purchase', 'purchase_roas', 'purchase_value'].includes(evaluation.metricId)) return 2.5 * configuredWeight;
+  if (secondary.has(evaluation.metricId)) return 1.35 * configuredWeight;
+  return input.profile ? 0 : configuredWeight;
 }
 
 function buildSignals(input: PerformanceScoreInput): DecisionSignal[] {
   const signals = input.evaluations
+    .filter((evaluation) => metricProfileWeight(evaluation, input) > 0)
     .map(evaluationSignal)
     .filter((signal): signal is DecisionSignal => signal !== null);
 
@@ -178,6 +213,11 @@ function buildSignals(input: PerformanceScoreInput): DecisionSignal[] {
         ? 'Revisar limite, entrega, público e programação para evitar subinvestimento.'
         : 'Revisar orçamento e distribuição para evitar ultrapassar o planejamento.',
       confidence: 95,
+      metricId: 'spend',
+      expectedValue: input.budgetPacing.expectedSpendUntilNow,
+      actualValue: input.budgetPacing.actualSpend,
+      differencePercent: input.budgetPacing.differencePercent,
+      priorityWeight: 1,
     });
   }
 
@@ -219,7 +259,9 @@ function buildSignals(input: PerformanceScoreInput): DecisionSignal[] {
 }
 
 export function calculatePerformanceScore(input: PerformanceScoreInput): PerformanceScore {
-  const conclusiveEvaluations = input.evaluations.filter((evaluation) => evaluationPoints[evaluation.status] !== null);
+  const conclusiveEvaluations = input.evaluations.filter((evaluation) => (
+    evaluationPoints[evaluation.status] !== null && metricProfileWeight(evaluation, input) > 0
+  ));
   const averageEvaluationPoints = conclusiveEvaluations.length > 0
     ? conclusiveEvaluations.reduce((total, evaluation) => {
         const base = evaluationPoints[evaluation.status] ?? 0;
@@ -228,7 +270,7 @@ export function calculatePerformanceScore(input: PerformanceScoreInput): Perform
     : null;
 
   const pacing = input.budgetPacing ? pacingPoints[input.budgetPacing.status] : null;
-  const availableWeight = 25 + 15 + (averageEvaluationPoints === null ? 0 : 45) + (pacing === null ? 0 : 15);
+  const availableWeight = 15 + 10 + (averageEvaluationPoints === null ? 0 : 55) + (pacing === null ? 0 : 20);
   const hasDecisionBasis = averageEvaluationPoints !== null || pacing !== null;
   const coveragePercent = Math.round(availableWeight);
   const signals = buildSignals(input);

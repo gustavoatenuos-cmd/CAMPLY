@@ -69,12 +69,26 @@ describe('calculatePerformanceScore', () => {
     });
 
     expect(result.value).not.toBeNull();
-    expect(result.status).toBe('attention');
+    expect(result.status).toBe('critical');
     expect(result.signals[0]).toMatchObject({
       kind: 'performance',
       severity: 'critical',
       metricId: 'leads',
     });
+  });
+
+  it('ignores unrelated metrics when a client profile defines the decision scope', () => {
+    const unrelated = { ...evaluation('critical'), metricId: 'purchases' };
+    const result = calculatePerformanceScore({
+      clientStatus: 'available',
+      dataQuality: { status: 'complete', reason: null },
+      evaluations: [evaluation('on_track'), unrelated],
+      budgetPacing: null,
+      profile: { primaryConversionMetric: 'leads', secondaryMetrics: ['cost_per_lead'] },
+    });
+
+    expect(result.status).toBe('excellent');
+    expect(result.signals.some((signal) => signal.metricId === 'purchases')).toBe(false);
   });
 
   it('surfaces synchronization and data-quality failures before optimization advice', () => {
