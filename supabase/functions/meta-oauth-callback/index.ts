@@ -21,6 +21,75 @@ function isMetaOAuthStateData(value: unknown): value is MetaOAuthStateData {
   );
 }
 
+function base64UrlDecode(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
+  const binary = atob(padded)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false
+  let diff = 0
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  }
+  return diff === 0
+}
+
+async function verifySignedState(state: string): Promise<MetaOAuthStateData | null> {
+  const [payloadSegment, signatureSegment] = state.split('.')
+  if (!payloadSegment || !signatureSegment) return null
+
+  const secret = Deno.env.get('META_TOKEN_ENCRYPTION_KEY') || Deno.env.get('META_APP_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!secret) throw new HttpError('OAuth state signing is not configured', 500)
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const expectedSignature = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadSegment)))
+  if (!constantTimeEqual(signatureSegment, base64UrlEncode(expectedSignature))) {
+    throw new HttpError('Invalid state signature', 400)
+  }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadSegment)))
+  } catch {
+    throw new HttpError('Invalid state payload', 400)
+  }
+
+  const expiresAt = typeof payload.exp === 'number' ? payload.exp : 0
+  if (!expiresAt || expiresAt < Math.floor(Date.now() / 1000)) {
+    throw new HttpError('Expired state parameter', 400)
+  }
+
+  const stateData = {
+    user_id: payload.user_id,
+    redirect_uri: payload.redirect_uri,
+    scopes: payload.scopes,
+  }
+  if (!isMetaOAuthStateData(stateData)) {
+    throw new HttpError('Invalid state payload', 400)
+  }
+
+  return stateData
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -40,24 +109,29 @@ serve(async (req) => {
       throw new HttpError('Code or State missing in URL parameters', 400);
     }
 
-    // 1. Hash the incoming state
-    const msgUint8 = new TextEncoder().encode(state);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-    const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    // Removed logs as requested by security constraints
+    // New authorizations use a signed stateless state so the OAuth start
+    // endpoint does not depend on database writes before redirecting to Meta.
+    // Legacy authorizations in flight still fall back to the atomic DB state.
+    let stateData = await verifySignedState(state);
+    if (!stateData) {
+      // 1. Hash the incoming state
+      const msgUint8 = new TextEncoder().encode(state);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+      const stateHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // 2. Consume via Atomic RPC
-    const { data: stateData, error: stateError } = await supabaseClient
-      .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
-      .single();
+      // 2. Consume via Atomic RPC
+      const { data: legacyStateData, error: stateError } = await supabaseClient
+        .rpc('consume_meta_oauth_state', { p_state_hash: stateHash })
+        .single();
 
-    if (stateError || !stateData) {
-      console.log('RPC Error:', stateError);
-      throw new HttpError('Invalid, expired, or already used state parameter', 400);
-    }
-    if (!isMetaOAuthStateData(stateData)) {
-      throw new HttpError('Invalid state payload returned by OAuth state store', 400);
+      if (stateError || !legacyStateData) {
+        console.log('RPC Error:', stateError);
+        throw new HttpError('Invalid, expired, or already used state parameter', 400);
+      }
+      if (!isMetaOAuthStateData(legacyStateData)) {
+        throw new HttpError('Invalid state payload returned by OAuth state store', 400);
+      }
+      stateData = legacyStateData
     }
 
     // 2. Exchange code for user access token
