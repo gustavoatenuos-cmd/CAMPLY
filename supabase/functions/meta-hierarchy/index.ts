@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { corsHeaders } from '../_shared/cors.ts'
-import { errorResponse, HttpError, requireAuthenticatedUser } from '../_shared/auth.ts'
+import { HttpError, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { withDirectPostgres } from '../_shared/direct-postgres.ts'
 
 type HierarchyBody = {
@@ -48,13 +48,13 @@ serve(async (req) => {
     if (!VALID_LEVELS.has(level)) throw new HttpError('Nível de hierarquia inválido.', 400)
     if (level !== 'campaign' && !parentId) throw new HttpError('parentId é obrigatório para este nível.', 400)
 
-    const result = await withDirectPostgres(async (sql) => {
-      await sql`select set_config('request.jwt.claims', ${JSON.stringify({
+    const result = await withDirectPostgres(async (sql) => sql.begin(async (tx) => {
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({
         sub: user.id,
         is_anonymous: false,
       })}, true)`
 
-      const rows = await sql<{ hierarchy: unknown }[]>`
+      const rows = await tx<{ hierarchy: unknown }[]>`
         select public.get_meta_performance_hierarchy(
           ${clientMetaAssetId}::uuid,
           ${period},
@@ -66,7 +66,7 @@ serve(async (req) => {
       `
 
       return rows[0]?.hierarchy
-    })
+    }))
 
     if (!result || typeof result !== 'object') {
       throw new HttpError('A hierarquia Meta não retornou dados válidos.', 503)
@@ -81,6 +81,11 @@ serve(async (req) => {
         error: { code: 'META_HIERARCHY_FAILED', message: error.message },
       }, error.status)
     }
-    return errorResponse(error, corsHeaders, null, 'META_HIERARCHY_FAILED')
+    console.error('[meta-hierarchy] Failed to load saved hierarchy:', error)
+    return jsonResponse({
+      success: false,
+      status: 'failed',
+      error: { code: 'META_HIERARCHY_FAILED', message: 'Não foi possível carregar a hierarquia salva.' },
+    }, 500)
   }
 })
