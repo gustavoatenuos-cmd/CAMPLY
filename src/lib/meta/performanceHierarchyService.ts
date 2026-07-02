@@ -1,6 +1,6 @@
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { normalizeTraceableMetric, type TraceableMetric } from '../performance/traceableMetrics';
-import { supabaseData } from '../supabase';
+import { invokeFunction } from '../invokeFunction';
 import { e2eMetric, isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 import type { MetaRunSummary } from './clientMetaAssetService';
 
@@ -143,15 +143,13 @@ export async function loadMetaHierarchy(input: {
       dateStart: '2026-07-01', dateStop: '2026-07-01',
     };
   }
-  if (!supabaseData) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabaseData.rpc('get_meta_performance_hierarchy', {
-    p_client_meta_asset_id: input.clientMetaAssetId,
-    p_period: input.period,
-    p_level: input.level,
-    p_parent_id: input.parentId || null,
-    p_page: input.page || 1,
-    p_page_size: input.pageSize || 25,
-  });
-  if (error) throw new Error('Não foi possível carregar este nível da hierarquia.');
+  const data = await invokeFunction<MetaHierarchyPage>('meta-hierarchy', {
+    clientMetaAssetId: input.clientMetaAssetId,
+    period: input.period,
+    level: input.level,
+    parentId: input.parentId || null,
+    page: input.page || 1,
+    pageSize: input.pageSize || 25,
+  }, 20_000);
   return normalizePage(data);
 }

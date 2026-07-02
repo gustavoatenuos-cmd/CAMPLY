@@ -76,7 +76,7 @@ async function syncOperationalMetaAsset(
       ad_ids: input.adIds || [],
       creative_ids: input.creativeIds || [],
     },
-  });
+  }, input.requestedLevel === 'creative' ? 120_000 : 90_000);
 
   return {
     success: response.success,
@@ -105,7 +105,7 @@ export async function syncClientMeta(
     selectedAdSets: options.selectedAdSets,
     selectedAds: options.selectedAds,
     selectedCreatives: options.selectedCreatives,
-  });
+  }, options.requestedLevel === 'creative' ? 120_000 : 90_000);
 
   if (!response.runId || !Array.isArray(response.campaigns)) {
     throw new Error('Meta sync returned an invalid response contract');
