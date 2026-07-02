@@ -26,10 +26,18 @@ const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m
 const OverviewView = React.lazy(() => import('./components/OverviewView').then(m => ({ default: m.OverviewView })));
 const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 
+function initialActiveView(): ViewId {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('meta_sync') || params.has('meta_error')) return 'metaIntegration';
+  }
+  return 'today';
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [activeView, setActiveView] = useState<ViewId>('today');
+  const [activeView, setActiveView] = useState<ViewId>(() => initialActiveView());
   const [data, setData] = useState<CamplyData>(() => isMetaE2EMode ? metaE2EWorkspace : initialData);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
