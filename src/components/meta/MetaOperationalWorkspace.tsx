@@ -10,6 +10,7 @@ import {
   type ClientMetaAssetCatalog,
 } from '../../lib/meta/clientMetaAssetService';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
+import { OperationTimedOutError } from '../../lib/withTimeout';
 import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -182,6 +183,13 @@ export function MetaOperationalWorkspace({
       setRefreshToken((current) => current + 1);
       onDataChanged?.();
     } catch (syncError) {
+      if (syncError instanceof OperationTimedOutError) {
+        setWarning('A sincronização demorou mais que o esperado. O último snapshot confiável continua em uso; recarreguei os dados salvos para manter a tela operacional.');
+        await refresh();
+        setRefreshToken((current) => current + 1);
+        onDataChanged?.();
+        return;
+      }
       setError(syncError instanceof Error ? syncError.message : 'Não foi possível sincronizar esta conta.');
     } finally {
       setLoading(false);
