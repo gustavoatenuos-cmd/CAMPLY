@@ -1,6 +1,7 @@
 import { CamplyData } from '../types';
 import { normalizeData, sanitizeWorkspaceData } from './camplyStore';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { getSupabaseSessionUserId, isSupabaseConfigured, supabaseData } from '../lib/supabase';
+import { withTimeout } from '../lib/withTimeout';
 
 type WorkspaceRow = {
   data: CamplyData;
@@ -14,22 +15,27 @@ export const resetRemoteWorkspaceState = (): void => {
   remoteVersion = null;
 };
 
-const getUserId = async (): Promise<string | null> => {
-  if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
-  return data.session?.user.id || null;
-};
-
 export const loadRemoteData = async (): Promise<CamplyData | null> => {
-  if (!isSupabaseConfigured || !supabase) return null;
-  const userId = await getUserId();
+  if (!isSupabaseConfigured || !supabaseData) return null;
+  const userId = getSupabaseSessionUserId();
   if (!userId) return null;
 
-  const { data, error } = await supabase
-    .from('camply_workspace')
-    .select('data, version')
-    .eq('id', userId)
-    .maybeSingle<WorkspaceRow>();
+  let response;
+  try {
+    response = await withTimeout(
+      supabaseData
+        .from('camply_workspace')
+        .select('data, version')
+        .eq('id', userId)
+        .maybeSingle<WorkspaceRow>(),
+      12_000,
+      'A leitura do workspace demorou mais que o esperado.'
+    );
+  } catch (error) {
+    console.warn('Camply Supabase load skipped:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
+  const { data, error } = response;
 
   if (error) {
     console.warn('Camply Supabase load skipped:', error.message);
@@ -47,14 +53,25 @@ export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
 };
 
 const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
-  if (!isSupabaseConfigured || !supabase) return false;
-  const userId = await getUserId();
+  if (!isSupabaseConfigured || !supabaseData) return false;
+  const userId = getSupabaseSessionUserId();
   if (!userId) return false;
 
-  const { data: nextVersion, error } = await supabase.rpc('save_camply_workspace_with_client_registry', {
-    p_data: sanitizeWorkspaceData(data),
-    p_expected_version: remoteVersion,
-  });
+  let response;
+  try {
+    response = await withTimeout(
+      supabaseData.rpc('save_camply_workspace_with_client_registry', {
+        p_data: sanitizeWorkspaceData(data),
+        p_expected_version: remoteVersion,
+      }),
+      15_000,
+      'A gravação do workspace demorou mais que o esperado.'
+    );
+  } catch (error) {
+    console.error('Camply Supabase save failed:', error instanceof Error ? error.message : String(error));
+    return false;
+  }
+  const { data: nextVersion, error } = response;
 
   if (error) {
     console.error('Camply Supabase save failed:', error.message);
@@ -66,17 +83,28 @@ const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
 };
 
 export const confirmClientIdentity = async (clientId: string): Promise<boolean> => {
-  if (!isSupabaseConfigured || !supabase) return false;
-  const userId = await getUserId();
+  if (!isSupabaseConfigured || !supabaseData) return false;
+  const userId = getSupabaseSessionUserId();
   if (!userId) return false;
 
-  const { data, error } = await supabase
-    .from('client_identity')
-    .select('client_id')
-    .eq('user_id', userId)
-    .eq('client_id', clientId)
-    .is('archived_at', null)
-    .maybeSingle<{ client_id: string }>();
+  let response;
+  try {
+    response = await withTimeout(
+      supabaseData
+        .from('client_identity')
+        .select('client_id')
+        .eq('user_id', userId)
+        .eq('client_id', clientId)
+        .is('archived_at', null)
+        .maybeSingle<{ client_id: string }>(),
+      10_000,
+      'A confirmação do cliente demorou mais que o esperado.'
+    );
+  } catch (error) {
+    console.error('Camply client identity confirmation failed:', error instanceof Error ? error.message : String(error));
+    return false;
+  }
+  const { data, error } = response;
 
   if (error) {
     console.error('Camply client identity confirmation failed:', error.message);

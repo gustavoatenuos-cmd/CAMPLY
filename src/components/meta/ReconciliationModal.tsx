@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabaseData } from '../../lib/supabase';
 import {
   reconcileNormalizedMetric,
   type AdSetEntityRecord,
@@ -54,9 +54,9 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
       setLoading(true);
       setError(null);
       try {
-        if (!supabase) throw new Error('Supabase not connected');
+        if (!supabaseData) throw new Error('Supabase not connected');
 
-        const { data: run, error: runError } = await supabase
+        const { data: run, error: runError } = await supabaseData
           .from('meta_sync_runs')
           .select('*')
           .eq('id', syncRunId)
@@ -66,10 +66,10 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
         setRunInfo(typedRun);
 
         const [metricsResult, snapshotsResult, campaignsResult, adsetsResult] = await Promise.all([
-          supabase.from('meta_normalized_metrics').select('*').eq('sync_run_id', syncRunId),
-          supabase.from('meta_raw_snapshots').select('*').eq('sync_run_id', syncRunId),
-          supabase.from('meta_campaign_entities').select('campaign_id,campaign_name,classified_objective').eq('ad_account_id', typedRun.ad_account_id),
-          supabase.from('meta_adset_entities').select('adset_id,campaign_id,attribution_setting').eq('ad_account_id', typedRun.ad_account_id),
+          supabaseData.from('meta_normalized_metrics').select('*').eq('sync_run_id', syncRunId),
+          supabaseData.from('meta_raw_snapshots').select('*').eq('sync_run_id', syncRunId),
+          supabaseData.from('meta_campaign_entities').select('campaign_id,campaign_name,classified_objective').eq('ad_account_id', typedRun.ad_account_id),
+          supabaseData.from('meta_adset_entities').select('adset_id,campaign_id,attribution_setting').eq('ad_account_id', typedRun.ad_account_id),
         ]);
 
         if (metricsResult.error) throw metricsResult.error;

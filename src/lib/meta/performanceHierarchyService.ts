@@ -1,6 +1,6 @@
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { normalizeTraceableMetric, type TraceableMetric } from '../performance/traceableMetrics';
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import { e2eMetric, isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 import type { MetaRunSummary } from './clientMetaAssetService';
 
@@ -143,8 +143,8 @@ export async function loadMetaHierarchy(input: {
       dateStart: '2026-07-01', dateStop: '2026-07-01',
     };
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('get_meta_performance_hierarchy', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { data, error } = await supabaseData.rpc('get_meta_performance_hierarchy', {
     p_client_meta_asset_id: input.clientMetaAssetId,
     p_period: input.period,
     p_level: input.level,

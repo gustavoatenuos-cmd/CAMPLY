@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import { isMetaE2EMode, metaE2EState, persistMetaE2EState } from './metaE2ERuntime';
 
 export type PerformanceTargetKind =
@@ -34,8 +34,8 @@ export async function loadTargetHistory(clientMetaAssetId: string, campaignId?: 
     target.clientMetaAssetId === clientMetaAssetId
     && target.campaignId === (campaignId || null)
   ));
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('get_client_performance_target_history', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { data, error } = await supabaseData.rpc('get_client_performance_target_history', {
     p_client_meta_asset_id: clientMetaAssetId,
     p_campaign_id: campaignId || null,
   });
@@ -104,8 +104,8 @@ export async function setPerformanceTarget(input: {
     persistMetaE2EState();
     return id;
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('set_client_performance_target_v2', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { data, error } = await supabaseData.rpc('set_client_performance_target_v2', {
     p_client_meta_asset_id: input.clientMetaAssetId,
     p_metric_id: input.metricId,
     p_target_kind: input.targetKind,
@@ -133,8 +133,8 @@ export async function closePerformanceTarget(targetId: string): Promise<void> {
     }
     return;
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { error } = await supabase.rpc('close_client_performance_target', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { error } = await supabaseData.rpc('close_client_performance_target', {
     p_target_id: targetId,
     p_effective_to: new Date().toISOString(),
   });

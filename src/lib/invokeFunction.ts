@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { supabaseData } from './supabase';
+import { withTimeout } from './withTimeout';
 
 type FunctionEnvelope = {
   error?: string;
@@ -41,12 +42,20 @@ async function functionErrorMessage(error: unknown): Promise<string | null> {
   return null;
 }
 
-export async function invokeFunction<T>(name: string, body?: Record<string, unknown>): Promise<T> {
-  if (!supabase) {
+export async function invokeFunction<T>(
+  name: string,
+  body?: Record<string, unknown>,
+  timeoutMs = 60_000
+): Promise<T> {
+  if (!supabaseData) {
     throw new Error('Supabase não está configurado.');
   }
 
-  const { data, error } = await supabase.functions.invoke<T & FunctionEnvelope>(name, body === undefined ? undefined : { body });
+  const { data, error } = await withTimeout(
+    supabaseData.functions.invoke<T & FunctionEnvelope>(name, body === undefined ? undefined : { body }),
+    timeoutMs,
+    `A função ${name} demorou mais que o esperado.`
+  );
 
   if (error) {
     const detailedMessage = await functionErrorMessage(error);

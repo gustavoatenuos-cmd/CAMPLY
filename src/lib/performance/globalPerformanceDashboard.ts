@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../supabase';
+import { isSupabaseConfigured, supabaseData } from '../supabase';
 import type { AnalyticsCapabilities, DashboardPeriod } from './analyticsCapabilities';
 import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPacing';
 import { evaluatePerformanceTarget } from './evaluatePerformance';
@@ -694,10 +694,10 @@ export async function loadGlobalPerformanceDashboard(options: {
     ];
     return enrichGlobalPerformanceDashboard(rows, options.period, new Date('2026-07-01T18:00:00Z'));
   }
-  if (!isSupabaseConfigured || !supabase) return [];
+  if (!isSupabaseConfigured || !supabaseData) return [];
 
   const { data, error } = await withTimeout(
-    supabase.rpc(
+    supabaseData.rpc(
       options.dashboardRpc,
       {
         p_period: options.period,
@@ -716,7 +716,7 @@ export async function loadGlobalPerformanceDashboard(options: {
   const rows = Array.isArray(data) ? data as GlobalClientPerformance[] : [];
   const clientIds = rows.map((row) => row.clientId).filter(Boolean);
   if (clientIds.length > 0) {
-    const { data: profileRows } = await supabase
+    const { data: profileRows } = await supabaseData
       .from('client_analysis_profiles')
       .select('*')
       .in('client_id', clientIds);

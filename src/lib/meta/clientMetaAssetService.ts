@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import { withTimeout } from '../withTimeout';
 import {
   E2E_ASSET_ID,
@@ -98,9 +98,9 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       }],
     };
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
   const { data, error } = await withTimeout(
-    supabase.rpc('get_client_meta_asset_catalog', {
+    supabaseData.rpc('get_client_meta_asset_catalog', {
       p_client_id: clientId || null,
     }),
     10_000,
@@ -116,8 +116,8 @@ export async function linkClientMetaAsset(clientId: string, metaAssetId: string)
     persistMetaE2EState();
     return E2E_LINK_ID;
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('link_client_meta_asset', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { data, error } = await supabaseData.rpc('link_client_meta_asset', {
     p_client_id: clientId,
     p_meta_asset_id: metaAssetId,
   });
@@ -131,8 +131,8 @@ export async function unlinkClientMetaAsset(clientMetaAssetId: string): Promise<
     persistMetaE2EState();
     return;
   }
-  if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { error } = await supabase.rpc('unlink_client_meta_asset', {
+  if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  const { error } = await supabaseData.rpc('unlink_client_meta_asset', {
     p_client_meta_asset_id: clientMetaAssetId,
   });
   if (error) throw new Error('Não foi possível desvincular esta conta.');

@@ -6,7 +6,7 @@ import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
 import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
-import { supabase } from './lib/supabase';
+import { setSupabaseSession, supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
@@ -48,16 +48,19 @@ export default function App() {
         restoreMetaE2EState();
       }
       setSession(null);
+      setSupabaseSession(null);
       setAuthReady(true);
       setRemoteLoaded(true);
       return;
     }
     if (!supabase) {
+      setSupabaseSession(null);
       setAuthReady(true);
       return;
     }
 
     void supabase.auth.getSession().then(({ data }) => {
+      setSupabaseSession(data.session);
       sessionUserIdRef.current = data.session?.user.id || null;
       resetRemoteWorkspaceState();
       setRemoteLoaded(false);
@@ -69,6 +72,7 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSupabaseSession(nextSession);
       const nextUserId = nextSession?.user.id || null;
       if (sessionUserIdRef.current !== nextUserId) {
         resetRemoteWorkspaceState();
@@ -226,6 +230,7 @@ export default function App() {
         alertCount={agentAlertCount}
         onSignOut={() => {
           const userId = session?.user.id;
+          setSupabaseSession(null);
           clearUserData(userId);
           resetRemoteWorkspaceState();
           setRemoteLoaded(false);

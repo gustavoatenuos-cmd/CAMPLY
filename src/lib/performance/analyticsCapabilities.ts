@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../supabase';
+import { isSupabaseConfigured, supabaseData } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 import { withTimeout } from '../withTimeout';
 
@@ -96,10 +96,10 @@ function isMissingCapabilityRpc(error: { code?: string; message?: string }): boo
 
 export async function loadAnalyticsCapabilities(
   rpc: CapabilityRpc = async () => {
-    if (!isSupabaseConfigured || !supabase) {
+    if (!isSupabaseConfigured || !supabaseData) {
       return { data: null, error: { code: 'SUPABASE_NOT_CONFIGURED' } };
     }
-    return supabase.rpc('get_analytics_capabilities');
+    return supabaseData.rpc('get_analytics_capabilities');
   },
   timeoutMs = 10_000
 ): Promise<AnalyticsCapabilityState> {

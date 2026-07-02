@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
 export const analysisVerticals = [
@@ -233,8 +233,8 @@ export async function loadClientAnalysisProfile(clientId: string): Promise<Clien
       return null;
     }
   }
-  if (!supabase) return null;
-  const { data, error } = await supabase
+  if (!supabaseData) return null;
+  const { data, error } = await supabaseData
     .from('client_analysis_profiles')
     .select('*')
     .eq('client_id', clientId)
@@ -255,8 +255,8 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
     window.sessionStorage.setItem('camply:meta-e2e:analysis-profiles', JSON.stringify({ ...profiles, [profile.clientId]: persisted }));
     return persisted;
   }
-  if (!supabase) return profile;
-  const { data, error } = await supabase.rpc('upsert_client_analysis_profile', {
+  if (!supabaseData) return profile;
+  const { data, error } = await supabaseData.rpc('upsert_client_analysis_profile', {
     p_client_id: profile.clientId,
     p_vertical: profile.vertical,
     p_subsegment: profile.subsegment,

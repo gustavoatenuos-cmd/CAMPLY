@@ -46,7 +46,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     setError(null);
     setNotice(null);
     try {
-      const response = await invokeFunction<IntegrationStatus>('meta-validate-token', { verifyRemote });
+      const response = await invokeFunction<IntegrationStatus>('meta-validate-token', { verifyRemote }, 12_000);
       if (response.status === 'active') {
         setIntegration(response.integration);
         setAssets(response.assets || []);
@@ -143,9 +143,10 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
             <p className="mt-3 text-sm text-brand-muted">Ao abrir a página, o CAMPLY lê o estado persistido no banco e não consulta o Facebook. A validação remota e a descoberta só acontecem quando você solicitar.</p>
             {integration?.last_validated_at && <p className="mt-2 text-xs text-brand-soft">Última validação solicitada: {new Date(integration.last_validated_at).toLocaleString('pt-BR')}</p>}
             <div className="mt-5 flex flex-wrap gap-2">
-              {!connected ? <>
+              {connectionStatus === 'unavailable' ? (
+                <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Tentar leitura novamente</button>
+              ) : !connected ? <>
                 <button type="button" onClick={() => void connect()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-black text-white disabled:opacity-60"><Facebook size={16} /> {loading ? 'Carregando...' : connectionStatus === 'expired' ? 'Reautorizar Facebook' : 'Conectar com Facebook'}</button>
-                {connectionStatus === 'unavailable' && <button type="button" onClick={() => void checkStatus(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Tentar leitura novamente</button>}
               </> : <>
                 <button type="button" onClick={() => void checkStatus(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 font-bold text-brand-soft disabled:opacity-60"><ShieldCheck size={16} className={loading ? 'animate-pulse' : ''} /> Validar acesso</button>
                 <button type="button" onClick={() => void discoverAssets()} disabled={syncing} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 font-black text-brand-ink disabled:opacity-60"><RefreshCw size={16} className={syncing ? 'animate-spin' : ''} /> Descobrir ativos</button>

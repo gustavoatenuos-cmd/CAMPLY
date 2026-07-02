@@ -5,7 +5,7 @@ const { invokeMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('../lib/supabase', () => ({
-  supabase: {
+  supabaseData: {
     functions: {
       invoke: invokeMock,
     },
