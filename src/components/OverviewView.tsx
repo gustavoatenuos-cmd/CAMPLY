@@ -289,11 +289,11 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-brand-line pt-4 text-xs text-brand-muted">
             <span>Período: <strong className="text-white">{periodLabels[period]}</strong></span>
             <span>•</span>
-            <span>Intervalo exato: <strong className="text-white">{exactRangeLabel(clients)}</strong></span>
+            <span>Intervalo exato: <strong className="text-white">{exactRangeLabel(filteredClients)}</strong></span>
             <span>•</span>
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
-            <span>Clientes retornados: <strong className="text-white">{clients.length}</strong></span>
+            <span>Clientes exibidos: <strong className="text-white">{filteredClients.length}</strong> de <strong className="text-white">{clients.length}</strong></span>
             <span>•</span>
             <span>Contrato: <strong className="text-white">v{capabilityState.capabilities.contractVersion} rastreável</strong></span>
           </div>
@@ -314,12 +314,12 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </div>
         ) : (
           <>
-            <GlobalSummaryCards clients={clients} />
+            <GlobalSummaryCards clients={filteredClients} />
 
             <div className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-bold text-white">Filtrar a central</p>
-                <p className="text-xs text-brand-muted">O filtro altera a tabela, sem modificar os totais consolidados acima.</p>
+                <p className="text-xs text-brand-muted">O filtro altera a tabela e os indicadores mensais acima para manter a leitura por cliente ou conta.</p>
               </div>
               <select
                 value={statusFilter}

@@ -12,6 +12,16 @@ const operationalReliabilityMigration = readFileSync(
   'utf8'
 );
 
+const fullAccountDrilldownDashboardMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260701000024_dashboard_accepts_full_account_drilldown_runs.sql', import.meta.url),
+  'utf8'
+);
+
+const hierarchyReliableActiveStructuresMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260701000025_hierarchy_uses_successful_active_structures.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -39,13 +49,27 @@ describe('operational dashboard reliability migration safety', () => {
     expect(operationalReliabilityMigration).toContain('CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2');
   });
 
-  it('qualifies dashboard data only from full successful account-level campaign syncs', () => {
+  it('starts from full successful account-level campaign syncs before later drill-down support', () => {
     expect(operationalReliabilityMigration).toContain("r.status = 'success'");
     expect(operationalReliabilityMigration).toContain("r.run_scope = 'full_account'");
     expect(operationalReliabilityMigration).toContain("r.requested_level = 'campaign'");
     expect(operationalReliabilityMigration).toContain("r.requested_period = p_period");
     expect(operationalReliabilityMigration).toContain("m.source_level = 'account'");
     expect(operationalReliabilityMigration).toContain("m.source_level = 'campaign'");
+  });
+
+  it('keeps complete account syncs visible when deeper drill-down levels were requested', () => {
+    expect(fullAccountDrilldownDashboardMigration).toContain("requested_level IN (''campaign'', ''adset'', ''ad'', ''creative'')");
+    expect(fullAccountDrilldownDashboardMigration).toContain('source_level');
+    expect(fullAccountDrilldownDashboardMigration).toContain('get_global_performance_dashboard_v2');
+  });
+
+  it('keeps operational hierarchy from showing partial or inactive child structures as active campaigns', () => {
+    expect(hierarchyReliableActiveStructuresMigration).toContain('get_meta_performance_hierarchy');
+    expect(hierarchyReliableActiveStructuresMigration).toContain("AND r.status = ''success''");
+    expect(hierarchyReliableActiveStructuresMigration).toContain('meta_adset_snapshots active_adset');
+    expect(hierarchyReliableActiveStructuresMigration).toContain('NOT EXISTS');
+    expect(hierarchyReliableActiveStructuresMigration).toContain('Hierarchy function still accepts partial runs');
   });
 
   it('repairs client_identity from camply_workspace without archiving or deleting clients', () => {

@@ -104,6 +104,14 @@ function normalizePage(value: unknown): MetaHierarchyPage {
       [metricId, normalizeTraceableMetric(metricId, metric)]
     ))),
   })) : [];
+  if (page.level === 'campaign' && page.run?.status && page.run.status !== 'success') {
+    return {
+      ...page,
+      state: 'period_not_synced',
+      total: 0,
+      items: [],
+    };
+  }
   const visibleItems = page.level === 'campaign' ? items.filter(isActiveMetaItem) : items;
   return {
     ...page,

@@ -580,10 +580,16 @@ BEGIN
     sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
     adset_id, adset_name, optimization_goal, destination_type,
     attribution_setting, meta_status, effective_status
-  ) VALUES (
+  ) VALUES
+  (
     v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
     'adset_paused', 'Conjunto pausado', 'LEAD_GENERATION', 'WHATSAPP',
     '7d_click_1d_view', 'PAUSED', 'PAUSED'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active',
+    'adset_active', 'Conjunto ativo', 'LEAD_GENERATION', 'WHATSAPP',
+    '7d_click_1d_view', 'ACTIVE', 'ACTIVE'
   );
 
   INSERT INTO public.meta_ad_snapshots (

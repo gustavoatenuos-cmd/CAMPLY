@@ -164,6 +164,12 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
 
   const priorities = clients
     .flatMap((client) => client.score.signals.map((signal) => ({ client, signal })))
+    .filter(({ client, signal }) => {
+      if (signal.kind === 'performance' || signal.kind === 'pacing') return true;
+      if (signal.kind !== 'data_quality') return false;
+      return client.dataQuality.status === 'partial'
+        && client.accounts.some((account) => account.dataQuality.status !== 'unavailable');
+    })
     .sort((a, b) => signalWeight[b.signal.severity] - signalWeight[a.signal.severity]
       || b.signal.confidence - a.signal.confidence)
     .slice(0, 6);
@@ -174,9 +180,9 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Métricas mensais oficiais</p>
-            <h2 className="mt-1 text-xl font-black text-white">Leitura consolidada do período</h2>
+            <h2 className="mt-1 text-xl font-black text-white">Leitura oficial do recorte</h2>
           </div>
-          <p className="text-xs text-brand-muted">{completenessLabel(primaryMetrics)} · métricas derivadas permanecem por conta</p>
+          <p className="text-xs text-brand-muted">{completenessLabel(primaryMetrics)} · custos médios só aparecem quando o recorte tem uma conta confiável</p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <CurrencyMetric label="Investimento" values={currencyTotals} />
@@ -284,7 +290,7 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Leitura executiva</p>
             <h2 className="mt-1 text-xl font-black text-white">O que precisa ser analisado agora</h2>
-            <p className="mt-1 text-sm text-brand-muted">Prioridades ordenadas por gravidade e confiança. Nenhuma recomendação é criada sem evidência rastreável.</p>
+            <p className="mt-1 text-sm text-brand-muted">Prioridades ordenadas por gravidade e confiança. Falta de dados fica na qualidade da sincronização, não como sugestão de otimização.</p>
           </div>
           <p className="text-xs text-brand-muted">{priorities.length} sinais prioritários</p>
         </div>

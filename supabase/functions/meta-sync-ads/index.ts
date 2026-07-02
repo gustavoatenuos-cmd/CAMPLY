@@ -347,6 +347,8 @@ interface PersistedSyncVerification {
   dashboardQualified: boolean;
 }
 
+const DASHBOARD_QUALIFIED_REQUESTED_LEVELS = new Set(['campaign', 'adset', 'ad', 'creative']);
+
 const countPersistedMetrics = async (
   supabaseClient: SupabaseAdminClient,
   runId: string,
@@ -399,7 +401,7 @@ const verifyPersistedSyncRun = async (
     campaignMetricsCount,
     dashboardQualified: run.status === 'success'
       && run.run_scope === 'full_account'
-      && run.requested_level === 'campaign'
+      && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(run.requested_level || '')
       && run.requested_period === requestedPeriod
       && accountMetricsCount > 0,
   };
@@ -1339,7 +1341,7 @@ export async function handleRequest(req: Request) {
     }
 
     const dashboardQualificationRequired = runScope === 'full_account'
-      && requestedLevel === 'campaign';
+      && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(requestedLevel);
 
     const persisted = syncStatus === 'success'
       ? await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0])
