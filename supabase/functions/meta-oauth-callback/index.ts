@@ -192,7 +192,7 @@ async function persistIntegrationViaDirectPostgres(
       const rows = await tx<{ id: string }[]>`
         select id
         from public.meta_integrations
-        where user_id = ${stateData.user_id}::uuid
+        where user_id::text = ${stateData.user_id}
           and provider = 'meta'
           and meta_user_id = ${meData.id}
         order by updated_at desc nulls last, created_at desc nulls last
@@ -217,7 +217,7 @@ async function persistIntegrationViaDirectPostgres(
           update public.meta_integrations
           set status = 'revoked',
               updated_at = now()
-          where user_id = ${stateData.user_id}::uuid
+          where user_id::text = ${stateData.user_id}
             and provider = 'meta'
             and meta_user_id = ${meData.id}
             and id <> ${existingId}::uuid
@@ -240,7 +240,7 @@ async function persistIntegrationViaDirectPostgres(
             updated_at
           ) values (
             ${crypto.randomUUID()}::uuid,
-            ${stateData.user_id}::uuid,
+            ${stateData.user_id},
             'meta',
             ${meData.id},
             ${meData.name || null},
