@@ -402,12 +402,12 @@ export async function linkClientMetaAsset(clientId: string, metaAssetId: string)
     return E2E_LINK_ID;
   }
   if (!supabaseData) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabaseData.rpc('link_client_meta_asset', {
-    p_client_id: clientId,
-    p_meta_asset_id: metaAssetId,
-  });
-  if (error) throw new Error('Não foi possível vincular esta conta ao cliente.');
-  return String(data);
+  const result = await invokeFunction<{ success: true; clientMetaAssetId: string }>('meta-client-assets', {
+    action: 'link',
+    clientId,
+    metaAssetId,
+  }, 15_000);
+  return result.clientMetaAssetId;
 }
 
 export async function unlinkClientMetaAsset(clientMetaAssetId: string): Promise<void> {
@@ -417,8 +417,8 @@ export async function unlinkClientMetaAsset(clientMetaAssetId: string): Promise<
     return;
   }
   if (!supabaseData) throw new Error('Backend analítico não configurado.');
-  const { error } = await supabaseData.rpc('unlink_client_meta_asset', {
-    p_client_meta_asset_id: clientMetaAssetId,
-  });
-  if (error) throw new Error('Não foi possível desvincular esta conta.');
+  await invokeFunction<{ success: true }>('meta-client-assets', {
+    action: 'unlink',
+    clientMetaAssetId,
+  }, 15_000);
 }
