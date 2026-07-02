@@ -128,7 +128,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
         <p className="text-xs text-brand-muted">Clique em uma linha para abrir as campanhas.</p>
       </div>
 
-      <div className="space-y-3 p-4 lg:hidden">
+      <div data-testid="client-performance-mobile" className="space-y-3 p-4 lg:hidden">
         {rows.map(({ client, account }) => {
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric = account?.metrics.spend;
@@ -164,7 +164,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
         })}
       </div>
 
-      <div className="hidden overflow-x-auto lg:block">
+      <div data-testid="client-performance-desktop" className="hidden overflow-x-auto lg:block">
         <table className="min-w-[1180px] w-full text-left text-sm">
           <thead className="border-b border-brand-line bg-brand-ink/60 text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>

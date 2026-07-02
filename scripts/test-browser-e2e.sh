@@ -62,6 +62,27 @@ assert_js 'document.body.innerText.includes("Dashboard") && document.body.innerT
 assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("métricas mensais oficiais") && text.includes("conversas iniciadas") && text.includes("custo por conversa") && text.includes("valor de compras") && text.includes("visualizações da página de destino"); })()' 'required monthly metrics did not render'
 assert_js 'document.body.innerText.includes("2026-07-01 a 2026-07-01")' 'exact monthly interval did not render'
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'mock account was not linked'
+
+"${BROWSER[@]}" set viewport 1440 900
+"${BROWSER[@]}" wait 100
+assert_js 'document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1' 'desktop has structural horizontal overflow'
+assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performance-desktop]")).display !== "none" && getComputedStyle(document.querySelector("[data-testid=client-performance-mobile]")).display === "none"' 'desktop performance table/card breakpoint is incorrect'
+"${BROWSER[@]}" screenshot /tmp/camply-segment-desktop.png --full
+
+"${BROWSER[@]}" set viewport 768 1024
+"${BROWSER[@]}" wait 100
+assert_js 'document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1' 'tablet has structural horizontal overflow'
+assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performance-mobile]")).display !== "none" && getComputedStyle(document.querySelector("[data-testid=client-performance-desktop]")).display === "none"' 'tablet must use performance cards'
+"${BROWSER[@]}" screenshot /tmp/camply-segment-tablet.png --full
+
+"${BROWSER[@]}" set viewport 390 844
+"${BROWSER[@]}" wait 100
+assert_js 'document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1' 'mobile has structural horizontal overflow'
+assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performance-mobile]")).display !== "none" && getComputedStyle(document.querySelector("[data-testid=client-performance-desktop]")).display === "none"' 'mobile must use performance cards'
+"${BROWSER[@]}" screenshot /tmp/camply-segment-mobile.png --full
+
+"${BROWSER[@]}" set viewport 1440 900
+"${BROWSER[@]}" wait 100
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
 
