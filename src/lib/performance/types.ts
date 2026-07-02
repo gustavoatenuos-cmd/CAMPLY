@@ -6,7 +6,15 @@ export type PerformanceStatus =
   | 'partial_data'
   | 'unavailable';
 
-export type TargetKind = 'cost_per_result' | 'daily_budget' | 'monthly_budget' | 'minimum_results';
+export type TargetKind =
+  | 'cost_per_result'
+  | 'daily_budget'
+  | 'weekly_budget'
+  | 'monthly_budget'
+  | 'minimum_results'
+  | 'maximum_metric'
+  | 'minimum_metric'
+  | 'target_range';
 
 export interface MetricDatum {
   value: number | null;
@@ -21,6 +29,12 @@ export interface PerformanceTarget {
   metricId: string;
   targetKind: TargetKind;
   targetValue: number;
+  targetMin?: number | null;
+  targetMax?: number | null;
+  warningTolerancePercent?: number | null;
+  criticalTolerancePercent?: number | null;
+  priorityWeight?: number | null;
+  evaluationPeriod?: string | null;
   effectiveFrom?: string | Date;
   effectiveTo?: string | Date | null;
 }
@@ -35,6 +49,9 @@ export interface PerformanceEvaluation {
   targetKind: TargetKind;
   actualValue: number | null;
   targetValue: number;
+  targetMin?: number | null;
+  targetMax?: number | null;
+  priorityWeight?: number | null;
   differenceValue: number | null;
   differencePercent: number | null;
   status: PerformanceStatus;

@@ -128,7 +128,43 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
         <p className="text-xs text-brand-muted">Clique em uma linha para abrir as campanhas.</p>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="space-y-3 p-4 lg:hidden">
+        {rows.map(({ client, account }) => {
+          const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
+          const spendMetric = account?.metrics.spend;
+          const primaryMetric = account?.metrics.messaging_conversations_started_total
+            || account?.metrics.purchases
+            || account?.metrics.leads;
+          const spend = metricValue(spendMetric);
+          const primaryValue = metricValue(primaryMetric);
+          const evaluations = account
+            ? client.evaluations.filter((evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId)
+            : [];
+          const performanceStatus = worstEvaluation(evaluations);
+
+          return (
+            <article key={key} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold uppercase tracking-wider text-brand-green">{client.analysisProfile?.vertical || 'Sem segmento'}</p>
+                  <h3 className="mt-1 truncate font-black text-white">{client.clientName}</h3>
+                  <p className="mt-1 truncate text-xs text-brand-muted">{account?.accountName || 'Nenhuma conta vinculada'}</p>
+                </div>
+                <PerformanceStatusBadge status={performanceStatus} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <MetricCell label="Investimento" value={formatCurrency(spend, account?.currency || null)} metric={spendMetric} />
+                <MetricCell label="KPI principal" value={formatNumber(primaryValue)} metric={primaryMetric} />
+                <MetricCell label="Orçamento" value={client.analysisProfile?.plannedBudget ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null) : '—'} />
+                <MetricCell label="Pacing" value={account?.budgetPacing ? `${account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'} />
+              </div>
+              <p className="mt-3 text-xs text-brand-muted">{statusLabel(client.clientStatus)} · {account?.lastSuccessfulRun?.finishedAt ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'Sem sync confiável'}</p>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-[1180px] w-full text-left text-sm">
           <thead className="border-b border-brand-line bg-brand-ink/60 text-[11px] uppercase tracking-wider text-brand-muted">
             <tr>

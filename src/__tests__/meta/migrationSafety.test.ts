@@ -22,6 +22,11 @@ const hierarchyReliableActiveStructuresMigration = readFileSync(
   'utf8'
 );
 
+const analysisProfilesMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260702000026_analysis_profiles_weekly_targets.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -85,5 +90,26 @@ describe('operational dashboard reliability migration safety', () => {
     expect(operationalReliabilityMigration).not.toMatch(/\bmin\s*\(\s*(ls\.id|a\.client_meta_asset_id)\s*\)/i);
     expect(operationalReliabilityMigration).toContain('min(ls.id::text)');
     expect(operationalReliabilityMigration).toContain('min(a.client_meta_asset_id::text)::uuid');
+  });
+
+  it('adds analysis profiles, weekly period and advanced targets additively', () => {
+    expect(analysisProfilesMigration).toContain('CREATE TABLE IF NOT EXISTS public.client_analysis_profiles');
+    expect(analysisProfilesMigration).toContain('REFERENCES public.client_identity(user_id, client_id)');
+    expect(analysisProfilesMigration).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(analysisProfilesMigration).toContain('upsert_client_analysis_profile');
+    expect(analysisProfilesMigration).toContain('weekly_budget');
+    expect(analysisProfilesMigration).toContain('maximum_metric');
+    expect(analysisProfilesMigration).toContain('minimum_metric');
+    expect(analysisProfilesMigration).toContain('target_range');
+    expect(analysisProfilesMigration).toContain("jsonb_build_array('this_month', 'this_week', 'today', 'last_7d', 'last_30d')");
+    expect(analysisProfilesMigration).toContain('custom_vertical TEXT');
+    expect(analysisProfilesMigration).toContain('minimum_evaluation_spend NUMERIC');
+    expect(analysisProfilesMigration).toContain('attribution_delay_hours INTEGER');
+    expect(analysisProfilesMigration).toContain('CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2');
+    expect(analysisProfilesMigration).toContain('CREATE OR REPLACE FUNCTION public.get_meta_performance_hierarchy');
+    expect(analysisProfilesMigration).toContain('CREATE OR REPLACE FUNCTION public.get_client_meta_asset_catalog');
+    expect(analysisProfilesMigration).not.toMatch(/pg_get_functiondef/i);
+    expect(analysisProfilesMigration).not.toMatch(/regexp_replace/i);
+    expect(analysisProfilesMigration).not.toMatch(/v_definition\s*:=\s*replace/i);
   });
 });

@@ -47,11 +47,11 @@ describe('evaluatePerformanceTarget', () => {
     ).status).toBe('attention');
   });
 
-  it('marks costs more than 10 percent above target as critical', () => {
+  it('marks costs above the default critical tolerance as critical', () => {
     expect(evaluatePerformanceTarget(
       { metricId: 'leads', targetKind: 'cost_per_result', targetValue: 20 },
       { value: 10, available: true, completenessStatus: 'complete' },
-      { spend: 230 }
+      { spend: 260 }
     ).status).toBe('critical');
   });
 
@@ -79,6 +79,54 @@ describe('evaluatePerformanceTarget', () => {
       { metricId: 'leads', targetKind: 'minimum_results', targetValue: 10 },
       { value: 3, available: true, completenessStatus: 'partial_page' }
     ).status).toBe('partial_data');
+  });
+
+  it('evaluates maximum metric targets with configurable tolerances', () => {
+    const target = {
+      metricId: 'cpm',
+      targetKind: 'maximum_metric' as const,
+      targetValue: 25,
+      warningTolerancePercent: 20,
+      criticalTolerancePercent: 40,
+    };
+
+    expect(evaluatePerformanceTarget(target, { value: 24, available: true }).status).toBe('on_track');
+    expect(evaluatePerformanceTarget(target, { value: 30, available: true }).status).toBe('attention');
+    expect(evaluatePerformanceTarget(target, { value: 36, available: true }).status).toBe('critical');
+  });
+
+  it('evaluates minimum metric targets with configurable tolerances', () => {
+    const target = {
+      metricId: 'link_ctr',
+      targetKind: 'minimum_metric' as const,
+      targetValue: 1.2,
+      warningTolerancePercent: 25,
+      criticalTolerancePercent: 35,
+    };
+
+    expect(evaluatePerformanceTarget(target, { value: 1.3, available: true }).status).toBe('on_track');
+    expect(evaluatePerformanceTarget(target, { value: 1, available: true }).status).toBe('attention');
+    expect(evaluatePerformanceTarget(target, { value: 0.7, available: true }).status).toBe('critical');
+  });
+
+  it('evaluates target ranges without collapsing the range into one fake average', () => {
+    const target = {
+      metricId: 'frequency',
+      targetKind: 'target_range' as const,
+      targetValue: 3,
+      targetMin: 1.5,
+      targetMax: 3,
+      warningTolerancePercent: 20,
+      criticalTolerancePercent: 40,
+    };
+
+    expect(evaluatePerformanceTarget(target, { value: 2.2, available: true })).toMatchObject({
+      status: 'on_track',
+      targetMin: 1.5,
+      targetMax: 3,
+    });
+    expect(evaluatePerformanceTarget(target, { value: 3.4, available: true }).status).toBe('attention');
+    expect(evaluatePerformanceTarget(target, { value: 4.5, available: true }).status).toBe('critical');
   });
 });
 
@@ -151,6 +199,24 @@ describe('calculateBudgetPacing', () => {
     const usd = { ...brl, currency: 'USD' };
 
     expect(combineBudgetPacingByCurrency([brl, usd])).toBeNull();
+  });
+
+  it('calculates weekly budget pacing from the full calendar week', () => {
+    const pacing = calculateBudgetPacing({
+      actualSpend: 280,
+      targetMonthlyBudget: 700,
+      periodStart: '2026-06-29',
+      periodEnd: '2026-07-05',
+      currentDate: '2026-07-02T15:00:00Z',
+      timezone: 'America/Sao_Paulo',
+      currency: 'BRL',
+    });
+
+    expect(pacing.totalDays).toBe(7);
+    expect(pacing.elapsedDays).toBe(4);
+    expect(pacing.expectedSpendUntilNow).toBe(400);
+    expect(pacing.projectedMonthlySpend).toBe(490);
+    expect(pacing.status).toBe('critical');
   });
 });
 
@@ -232,6 +298,24 @@ describe('enrichGlobalPerformanceDashboard', () => {
       lastAttempt: null,
       hasNewerPartial: false,
       hasNewerFailure: false,
+      analysisProfile: {
+        clientId: 'client_1',
+        vertical: 'Saúde',
+        subsegment: 'Odontologia',
+        customVertical: null,
+        customSubsegment: null,
+        businessModel: 'geração de leads',
+        primaryConversionMetric: 'leads',
+        secondaryMetrics: ['cost_per_lead'],
+        primaryChannel: 'Site',
+        budgetPeriod: 'weekly',
+        plannedBudget: 210,
+        minimumEvaluationSpend: 100,
+        minimumImpressions: 0,
+        minimumResults: 5,
+        attributionDelayHours: 24,
+        analysisEnabled: true,
+      },
     };
 
     const [result] = enrichGlobalPerformanceDashboard(
@@ -254,5 +338,23 @@ describe('enrichGlobalPerformanceDashboard', () => {
     });
     expect(result.budgetPacing?.actualSpend).toBe(180);
     expect(result.score.value).not.toBeNull();
+
+    const [insufficient] = enrichGlobalPerformanceDashboard(
+      [{
+        ...raw,
+        analysisProfile: {
+          ...raw.analysisProfile!,
+          minimumEvaluationSpend: 200,
+        },
+      }],
+      'last_7d',
+      new Date('2026-06-07T15:00:00Z')
+    );
+    expect(insufficient.evaluations[0]).toMatchObject({
+      status: 'insufficient_data',
+      reason: 'minimum_evaluation_spend_not_reached',
+    });
+    expect(insufficient.score.value).toBeNull();
+    expect(insufficient.score.summary).toContain('dados conclusivos suficientes');
   });
 });

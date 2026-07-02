@@ -122,6 +122,21 @@ const shiftIsoDate = (value: string, days: number): string => {
   return date.toISOString().slice(0, 10);
 };
 
+const weekMondayIsoDate = (value: string): string => {
+  const date = new Date(`${value}T12:00:00Z`);
+  const daysFromMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysFromMonday);
+  return date.toISOString().slice(0, 10);
+};
+
+const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
+  if (period !== 'this_week') return { date_preset: period };
+  if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today' };
+  const until = localIsoDate(now, timezone);
+  const since = weekMondayIsoDate(until);
+  return { time_range: JSON.stringify({ since, until }) };
+};
+
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -152,6 +167,7 @@ export const validateReturnedPeriodRange = (
   const dateStop = row?.date_stop ?? null;
   const today = timezone !== 'UNKNOWN' ? localIsoDate(now, timezone) : null;
   const expectedThisMonthStart = today ? `${today.slice(0, 8)}01` : null;
+  const expectedThisWeekStart = today ? weekMondayIsoDate(today) : null;
 
   const metadata: Record<string, unknown> = {
     period,
@@ -160,6 +176,7 @@ export const validateReturnedPeriodRange = (
     returnedDateStop: dateStop,
     expectedLocalToday: today,
     expectedThisMonthStart,
+    expectedThisWeekStart,
   };
 
   if (timezone === 'UNKNOWN') {
@@ -196,6 +213,17 @@ export const validateReturnedPeriodRange = (
     metadata.expectedDateStop = today;
     if (today && (dateStart !== today || dateStop !== today)) {
       errors.push('Meta today range does not match the account local date.');
+    }
+  } else if (period === 'this_week') {
+    metadata.expectedDateStart = expectedThisWeekStart;
+    metadata.expectedDateStop = today;
+    if (expectedThisWeekStart && today && (dateStart !== expectedThisWeekStart || dateStop !== today)) {
+      const validRelatedRange = dateStart >= expectedThisWeekStart && dateStart <= dateStop && dateStop <= today;
+      if (validRelatedRange) {
+        warnings.push('Meta this_week range differs from local expectation; using returned range.');
+      } else {
+        errors.push('Meta this_week range is not related to the requested calendar week.');
+      }
     }
   } else if (period === 'last_7d') {
     const expectedStart = today ? shiftIsoDate(today, -6) : null;
@@ -437,7 +465,7 @@ export async function handleRequest(req: Request) {
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
       
-    const validPeriods = ['today', 'yesterday', 'this_month', 'last_month', 'this_quarter', 'maximum', 'last_3d', 'last_7d', 'last_14d', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year'];
+    const validPeriods = ['today', 'yesterday', 'this_week', 'this_month', 'last_month', 'this_quarter', 'maximum', 'last_3d', 'last_7d', 'last_14d', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year'];
     for (const p of periods) {
       if (!validPeriods.includes(p)) {
         throw new HttpError(`Invalid period: ${p}`, 400);
@@ -826,7 +854,7 @@ export async function handleRequest(req: Request) {
         params: {
           level: 'account',
           fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-          date_preset: period,
+          ...insightPeriodParams(period, timezone),
           limit: '100',
         },
       });
@@ -862,7 +890,7 @@ export async function handleRequest(req: Request) {
         params: {
           level: 'campaign',
           fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-          date_preset: period,
+          ...insightPeriodParams(period, timezone),
           limit: '100',
         },
       });
@@ -887,7 +915,7 @@ export async function handleRequest(req: Request) {
           params: {
             level: 'adset',
             fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-            date_preset: period,
+            ...insightPeriodParams(period, timezone),
             limit: '100',
           },
         });
@@ -913,7 +941,7 @@ export async function handleRequest(req: Request) {
           params: {
             level: 'ad',
             fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-            date_preset: period,
+            ...insightPeriodParams(period, timezone),
             limit: '100',
           },
         });

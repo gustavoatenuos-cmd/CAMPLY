@@ -92,4 +92,18 @@ describe('Meta sync returned period range validation', () => {
     expect(result.status).toBe('validation_error');
     expect(result.errors.join(' ')).toContain('Timezone unavailable');
   });
+
+  it('accepts this_week when Meta returns Monday through local today', () => {
+    const result = validateReturnedPeriodRange(
+      'this_week',
+      { date_start: '2026-07-13', date_stop: '2026-07-15' },
+      'America/Sao_Paulo',
+      now
+    );
+
+    expect(result.status).toBe('complete');
+    expect(result.errors).toEqual([]);
+    expect(result.metadata.expectedDateStart).toBe('2026-07-13');
+    expect(result.metadata.expectedDateStop).toBe('2026-07-15');
+  });
 });

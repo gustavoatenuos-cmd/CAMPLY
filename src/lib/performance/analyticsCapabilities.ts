@@ -1,9 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
-export const ANALYTICS_CONTRACT_VERSION = 4;
+export const ANALYTICS_CONTRACT_VERSION = 5;
 
-export const dashboardPeriods = ['this_month', 'today', 'last_7d', 'last_30d'] as const;
+export const dashboardPeriods = ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'] as const;
 export type DashboardPeriod = typeof dashboardPeriods[number];
 
 export const analyticsLevels = ['campaign', 'adset', 'ad'] as const;

@@ -21,6 +21,13 @@ export function exactPeriodRange(
   if (period === 'this_month') {
     return { dateStart: `${current.year}-${current.month}-01`, dateStop };
   }
+  if (period === 'this_week') {
+    const localNoon = new Date(`${dateStop}T12:00:00.000Z`);
+    const day = localNoon.getUTCDay();
+    const daysFromMonday = (day + 6) % 7;
+    localNoon.setUTCDate(localNoon.getUTCDate() - daysFromMonday);
+    return { dateStart: localNoon.toISOString().slice(0, 10), dateStop };
+  }
   if (period === 'today') return { dateStart: dateStop, dateStop };
 
   const days = period === 'last_7d' ? 7 : 30;

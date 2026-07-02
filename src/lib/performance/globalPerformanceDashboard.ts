@@ -11,6 +11,7 @@ import {
   isMetaE2EMode,
   metaE2EState,
 } from '../meta/metaE2ERuntime';
+import { mapClientProfileRow, type ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -93,6 +94,7 @@ export interface GlobalClientPerformance {
   lastAttempt: RunSummary | null;
   hasNewerPartial: boolean;
   hasNewerFailure: boolean;
+  analysisProfile?: ClientAnalysisProfile | null;
 }
 
 function asFiniteNumber(value: unknown): number | null {
@@ -118,10 +120,47 @@ function normalizeMetricMap(metrics: Record<string, MetricContract> | undefined)
   return result;
 }
 
+function availableMetricValue(metrics: Record<string, MetricContract>, metricId: string): number | null {
+  const metric = metrics[metricId];
+  return metric?.available && typeof metric.value === 'number' && Number.isFinite(metric.value) ? metric.value : null;
+}
+
+function profileDataGateReason(client: GlobalClientPerformance): string | null {
+  const profile = client.analysisProfile;
+  if (!profile?.analysisEnabled) return null;
+  const spend = availableMetricValue(client.metrics, 'spend') ?? 0;
+  if (profile.minimumEvaluationSpend > 0 && spend < profile.minimumEvaluationSpend) return 'minimum_evaluation_spend_not_reached';
+  const impressions = availableMetricValue(client.metrics, 'impressions') ?? 0;
+  if (profile.minimumImpressions > 0 && impressions < profile.minimumImpressions) return 'minimum_impressions_not_reached';
+  const results = availableMetricValue(client.metrics, profile.primaryConversionMetric) ?? 0;
+  if (profile.minimumResults > 0 && results < profile.minimumResults) return 'minimum_results_not_reached';
+  return null;
+}
+
+function applyProfileDataGate(
+  evaluations: PerformanceEvaluation[],
+  reason: string | null
+): PerformanceEvaluation[] {
+  if (!reason) return evaluations;
+  return evaluations.map((evaluation) => ({
+    ...evaluation,
+    status: 'insufficient_data',
+    reason,
+    confidence: Math.min(evaluation.confidence, 0.35),
+  }));
+}
+
 function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Date; end: Date } {
   const end = new Date(currentDate);
   const start = new Date(currentDate);
   if (period === 'this_month') start.setUTCDate(1);
+  if (period === 'this_week') {
+    const day = start.getUTCDay();
+    const daysFromMonday = (day + 6) % 7;
+    start.setUTCDate(start.getUTCDate() - daysFromMonday);
+    end.setTime(start.getTime());
+    end.setUTCDate(end.getUTCDate() + 6);
+  }
   if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
   if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
   return { start, end };
@@ -229,16 +268,20 @@ function calculateAccountPacing(
     (target) => target.clientMetaAssetId === account.clientMetaAssetId && !target.campaignId
   );
   const daily = accountTargets.find((target) => target.targetKind === 'daily_budget');
+  const weekly = accountTargets.find((target) => target.targetKind === 'weekly_budget');
   const monthly = accountTargets.find((target) => target.targetKind === 'monthly_budget');
-  if (!daily && !monthly) return null;
+  if (!daily && !weekly && !monthly) return null;
 
   const fallback = fallbackRange(period, currentDate);
+  const targetMonthlyBudget = period === 'this_week'
+    ? weekly?.targetValue ?? monthly?.targetValue ?? null
+    : monthly?.targetValue ?? null;
   const result = calculateBudgetPacing({
     actualSpend: spend.value,
     targetDailyBudget: daily?.targetValue ?? null,
-    targetMonthlyBudget: monthly?.targetValue ?? null,
+    targetMonthlyBudget,
     periodStart: account.dateStart ?? fallback.start,
-    periodEnd: account.dateStop ?? fallback.end,
+    periodEnd: period === 'this_week' ? fallback.end : account.dateStop ?? fallback.end,
     currentDate,
     timezone: account.timezone,
     currency: account.currency,
@@ -256,6 +299,11 @@ export function enrichGlobalPerformanceDashboard(
     const targets = (row.resolvedTargets ?? []).map((target) => ({
       ...target,
       targetValue: asFiniteNumber(target.targetValue) ?? 0,
+      targetMin: asFiniteNumber(target.targetMin),
+      targetMax: asFiniteNumber(target.targetMax),
+      warningTolerancePercent: asFiniteNumber(target.warningTolerancePercent),
+      criticalTolerancePercent: asFiniteNumber(target.criticalTolerancePercent),
+      priorityWeight: asFiniteNumber(target.priorityWeight),
     }));
 
     const accounts = (row.accounts ?? []).map((account) => {
@@ -295,9 +343,11 @@ export function enrichGlobalPerformanceDashboard(
       },
     };
 
-    const evaluations = targets
-      .filter((target) => !['daily_budget', 'monthly_budget'].includes(target.targetKind))
+    const rawEvaluations = targets
+      .filter((target) => !['daily_budget', 'weekly_budget', 'monthly_budget'].includes(target.targetKind))
       .map((target) => evaluateTarget(normalizedRow, target));
+    const dataGateReason = profileDataGateReason(normalizedRow);
+    const evaluations = applyProfileDataGate(rawEvaluations, dataGateReason);
 
     const scoredAccounts = accounts.map((account) => {
       const accountEvaluations = evaluations.filter(
@@ -309,7 +359,8 @@ export function enrichGlobalPerformanceDashboard(
           clientStatus: normalizedRow.clientStatus,
           dataQuality: account.dataQuality,
           evaluations: accountEvaluations,
-          budgetPacing: account.budgetPacing,
+          budgetPacing: dataGateReason ? null : account.budgetPacing,
+          profile: normalizedRow.analysisProfile,
         }),
       };
     });
@@ -322,7 +373,8 @@ export function enrichGlobalPerformanceDashboard(
       clientStatus: normalizedRow.clientStatus,
       dataQuality: normalizedRow.dataQuality,
       evaluations,
-      budgetPacing,
+      budgetPacing: dataGateReason ? null : budgetPacing,
+      profile: normalizedRow.analysisProfile,
     });
 
     return {
@@ -424,6 +476,24 @@ export async function loadGlobalPerformanceDashboard(options: {
       lastAttempt: null,
       hasNewerPartial: false,
       hasNewerFailure: false,
+      analysisProfile: {
+        clientId: E2E_CLIENT_ID,
+        vertical: 'Saúde',
+        subsegment: 'Odontologia',
+        customVertical: null,
+        customSubsegment: null,
+        businessModel: 'negócio local',
+        primaryConversionMetric: 'messaging_conversations_started_total',
+        secondaryMetrics: ['cost_per_messaging_conversation', 'cpm', 'link_ctr', 'frequency'],
+        primaryChannel: 'WhatsApp',
+        budgetPeriod: 'monthly',
+        plannedBudget: 1500,
+        minimumEvaluationSpend: 0,
+        minimumImpressions: 0,
+        minimumResults: 0,
+        attributionDelayHours: 24,
+        analysisEnabled: true,
+      },
     }];
     return enrichGlobalPerformanceDashboard(rows, options.period, new Date('2026-07-01T18:00:00Z'));
   }
@@ -443,5 +513,19 @@ export async function loadGlobalPerformanceDashboard(options: {
   }
 
   const rows = Array.isArray(data) ? data as GlobalClientPerformance[] : [];
+  const clientIds = rows.map((row) => row.clientId).filter(Boolean);
+  if (clientIds.length > 0) {
+    const { data: profileRows } = await supabase
+      .from('client_analysis_profiles')
+      .select('*')
+      .in('client_id', clientIds);
+    const profiles = new Map((profileRows || []).map((row) => {
+      const profile = mapClientProfileRow(row as Record<string, unknown>);
+      return [profile.clientId, profile];
+    }));
+    rows.forEach((row) => {
+      row.analysisProfile = profiles.get(row.clientId) ?? null;
+    });
+  }
   return enrichGlobalPerformanceDashboard(rows, options.period);
 }

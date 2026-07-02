@@ -3,6 +3,7 @@ import type { BudgetPacingInput, BudgetPacingResult, PerformanceStatus } from '.
 const DAY_MS = 86_400_000;
 
 function toLocalDateKey(value: string | Date, timezone: string): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',

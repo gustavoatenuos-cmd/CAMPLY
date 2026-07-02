@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const periodLabels: Record<DashboardPeriod, string> = {
   this_month: 'Mês atual',
+  this_week: 'Semana atual',
   today: 'Hoje',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',

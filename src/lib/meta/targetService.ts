@@ -1,7 +1,15 @@
 import { supabase } from '../supabase';
 import { isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 
-export type PerformanceTargetKind = 'cost_per_result' | 'daily_budget' | 'monthly_budget' | 'minimum_results';
+export type PerformanceTargetKind =
+  | 'cost_per_result'
+  | 'daily_budget'
+  | 'weekly_budget'
+  | 'monthly_budget'
+  | 'minimum_results'
+  | 'maximum_metric'
+  | 'minimum_metric'
+  | 'target_range';
 
 export interface PerformanceTargetHistoryItem {
   id: string;
@@ -10,6 +18,12 @@ export interface PerformanceTargetHistoryItem {
   metricId: string;
   targetKind: PerformanceTargetKind;
   targetValue: number;
+  targetMin?: number | null;
+  targetMax?: number | null;
+  warningTolerancePercent?: number | null;
+  criticalTolerancePercent?: number | null;
+  priorityWeight?: number | null;
+  evaluationPeriod?: string | null;
   effectiveFrom: string;
   effectiveTo: string | null;
   active: boolean;
@@ -35,6 +49,12 @@ export async function setPerformanceTarget(input: {
   metricId: string;
   targetKind: PerformanceTargetKind;
   targetValue: number;
+  targetMin?: number | null;
+  targetMax?: number | null;
+  warningTolerancePercent?: number | null;
+  criticalTolerancePercent?: number | null;
+  priorityWeight?: number | null;
+  evaluationPeriod?: string | null;
 }): Promise<string> {
   if (isMetaE2EMode) {
     const now = new Date().toISOString();
@@ -54,16 +74,27 @@ export async function setPerformanceTarget(input: {
     metaE2EState.targets.unshift({
       id, clientMetaAssetId: input.clientMetaAssetId, campaignId: input.campaignId || null,
       metricId: input.metricId, targetKind: input.targetKind, targetValue: input.targetValue,
+      targetMin: input.targetMin ?? null, targetMax: input.targetMax ?? null,
+      warningTolerancePercent: input.warningTolerancePercent ?? null,
+      criticalTolerancePercent: input.criticalTolerancePercent ?? null,
+      priorityWeight: input.priorityWeight ?? null,
+      evaluationPeriod: input.evaluationPeriod ?? null,
       effectiveFrom: now, effectiveTo: null, active: true,
     });
     return id;
   }
   if (!supabase) throw new Error('Backend analítico não configurado.');
-  const { data, error } = await supabase.rpc('set_client_performance_target', {
+  const { data, error } = await supabase.rpc('set_client_performance_target_v2', {
     p_client_meta_asset_id: input.clientMetaAssetId,
     p_metric_id: input.metricId,
     p_target_kind: input.targetKind,
     p_target_value: input.targetValue,
+    p_target_min: input.targetMin ?? null,
+    p_target_max: input.targetMax ?? null,
+    p_warning_tolerance_percent: input.warningTolerancePercent ?? null,
+    p_critical_tolerance_percent: input.criticalTolerancePercent ?? null,
+    p_priority_weight: input.priorityWeight ?? null,
+    p_evaluation_period: input.evaluationPeriod ?? null,
     p_campaign_id: input.campaignId || null,
     p_effective_from: new Date().toISOString(),
   });

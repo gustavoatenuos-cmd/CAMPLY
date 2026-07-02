@@ -10,10 +10,10 @@ import {
 } from './traceableMetrics';
 
 const validCapabilities = {
-  contractVersion: 4,
+  contractVersion: 5,
   dashboardAvailable: true,
   dashboardRpc: 'get_global_performance_dashboard_v2',
-  supportedPeriods: ['this_month', 'today', 'last_7d', 'last_30d'],
+  supportedPeriods: ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'],
   supportedLevels: ['campaign', 'adset', 'ad'],
   targetsAvailable: true,
   reconciliationAvailable: true,
@@ -21,7 +21,7 @@ const validCapabilities = {
 };
 
 describe('analytics capability negotiation', () => {
-  it('accepts the traceable v4 contract and only known values', () => {
+  it('accepts the traceable v5 contract and only known values', () => {
     const result = parseAnalyticsCapabilities({
       ...validCapabilities,
       supportedPeriods: [...validCapabilities.supportedPeriods, 'unsupported'],
@@ -30,7 +30,7 @@ describe('analytics capability negotiation', () => {
 
     expect(result.mode).toBe('analytics');
     if (result.mode === 'analytics') {
-      expect(result.capabilities.supportedPeriods).toEqual(['this_month', 'today', 'last_7d', 'last_30d']);
+      expect(result.capabilities.supportedPeriods).toEqual(['this_month', 'this_week', 'today', 'last_7d', 'last_30d']);
       expect(result.capabilities.supportedLevels).toEqual(['campaign', 'adset', 'ad']);
     }
   });
@@ -45,6 +45,10 @@ describe('analytics capability negotiation', () => {
       reason: 'capability_contract_incompatible',
     });
     expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 3 })).toEqual({
+      mode: 'compatibility',
+      reason: 'capability_contract_incompatible',
+    });
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 4 })).toEqual({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });

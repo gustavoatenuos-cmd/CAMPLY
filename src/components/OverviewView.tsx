@@ -25,7 +25,9 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
+import { SegmentDecisionOverview, buildSegmentSummaries } from './performance/SegmentDecisionOverview';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
+import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
 
 interface OverviewViewProps {
   data: CamplyData;
@@ -36,6 +38,7 @@ interface OverviewViewProps {
 
 const periodLabels: Record<DashboardPeriod, string> = {
   this_month: 'Mês atual',
+  this_week: 'Semana atual',
   today: 'Hoje',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
@@ -89,17 +92,66 @@ function metricLabel(metricId: string): string {
     instagram_direct_conversations_started: 'conversas no Instagram',
     leads: 'leads',
     purchases: 'compras',
+    cost_per_messaging_conversation: 'custo por conversa',
+    cost_per_lead: 'custo por lead',
+    cost_per_purchase: 'custo por compra',
+    cpm: 'CPM',
+    link_ctr: 'CTR de link',
+    frequency: 'frequência',
+    purchase_roas: 'ROAS',
     landing_page_views: 'visitas à página',
   };
-  return labels[metricId] || metricId.split('_').join(' ');
+  return metricLabels[metricId] || labels[metricId] || metricId.split('_').join(' ');
+}
+
+function formatMetricValue(metricId: string, value: number | null, currency = 'BRL'): string {
+  if (value === null) return 'sem valor confiável';
+  if (
+    metricId === 'spend'
+    || metricId === 'cpm'
+    || metricId.startsWith('cost_per_')
+    || metricId === 'link_cpc'
+    || metricId === 'cpa'
+    || metricId === 'purchase_value'
+  ) {
+    return formatCurrency(value, currency);
+  }
+  if (metricId.includes('ctr')) {
+    return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  }
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+function expectationText(evaluation: PerformanceEvaluation, currency: string): string {
+  if (evaluation.targetKind === 'target_range' && evaluation.targetMin != null && evaluation.targetMax != null) {
+    return `entre ${formatMetricValue(evaluation.metricId, evaluation.targetMin, currency)} e ${formatMetricValue(evaluation.metricId, evaluation.targetMax, currency)}`;
+  }
+  if (['maximum_metric', 'cost_per_result'].includes(evaluation.targetKind)) {
+    return `até ${formatMetricValue(evaluation.metricId, evaluation.targetValue, currency)}`;
+  }
+  if (['minimum_metric', 'minimum_results'].includes(evaluation.targetKind)) {
+    return `mínimo ${formatMetricValue(evaluation.metricId, evaluation.targetValue, currency)}`;
+  }
+  return formatMetricValue(evaluation.metricId, evaluation.targetValue, currency);
+}
+
+function statusEvidence(evaluation: PerformanceEvaluation): string {
+  if (evaluation.status === 'partial_data') return 'A leitura ainda está parcial; sincronize de novo antes de decidir.';
+  if (evaluation.actualValue === null) return 'Ainda não há valor confiável para esta métrica.';
+  if (evaluation.differencePercent === null) return 'Meta e realizado foram comparados, mas sem diferença percentual confiável.';
+  const abs = Math.abs(evaluation.differencePercent).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  if (evaluation.status === 'critical') return `Desvio crítico de ${abs}% em relação ao esperado.`;
+  if (evaluation.status === 'attention') return `Desvio de atenção de ${abs}% em relação ao esperado.`;
+  return 'Dentro da expectativa configurada.';
 }
 
 function evaluationDescription(client: GlobalClientPerformance, evaluation: PerformanceEvaluation): string {
   const account = client.accounts.find((item) => item.clientMetaAssetId === evaluation.clientMetaAssetId);
   const scope = evaluation.campaignId ? 'Campanha' : 'Conta';
-  const actual = evaluation.actualValue === null ? 'sem valor confiável' : formatCurrency(evaluation.actualValue, account?.currency || 'BRL');
-  const target = formatCurrency(evaluation.targetValue, account?.currency || 'BRL');
-  return `${scope}: ${metricLabel(evaluation.metricId)} em ${actual}; meta ${target}.`;
+  const currencyCode = account?.currency || 'BRL';
+  const actual = formatMetricValue(evaluation.metricId, evaluation.actualValue, currencyCode);
+  const target = expectationText(evaluation, currencyCode);
+  return `${scope}: ${metricLabel(evaluation.metricId)} realizado em ${actual}; esperado ${target}. ${statusEvidence(evaluation)}`;
 }
 
 function DashboardUnavailable({
@@ -140,6 +192,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | GlobalClientPerformance['clientStatus']>('all');
+  const [segmentFilter, setSegmentFilter] = useState('all');
 
   const loadCapabilities = useCallback(async () => {
     setCapabilitiesLoading(true);
@@ -185,13 +238,20 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
+    const { summaries, pending } = buildSegmentSummaries(clients, data.clients);
+    const segmentClientIds = segmentFilter === 'all'
+      ? null
+      : segmentFilter === '__pending__'
+        ? new Set(pending.map((client) => client.clientId))
+        : new Set((summaries.find((summary) => summary.key === segmentFilter)?.clients || []).map((client) => client.clientId));
     return clients.filter((client) => {
+      if (segmentClientIds && !segmentClientIds.has(client.clientId)) return false;
       if (statusFilter !== 'all' && client.clientStatus !== statusFilter) return false;
       if (!normalizedSearch) return true;
       return client.clientName.toLocaleLowerCase('pt-BR').includes(normalizedSearch)
         || client.accounts.some((account) => account.accountName.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
     });
-  }, [clients, search, statusFilter]);
+  }, [clients, data.clients, search, segmentFilter, statusFilter]);
 
   const priorities = useMemo(() => clients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
@@ -314,6 +374,13 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </div>
         ) : (
           <>
+            <SegmentDecisionOverview
+              clients={clients}
+              workspaceClients={data.clients}
+              selectedSegment={segmentFilter}
+              onSelectSegment={setSegmentFilter}
+            />
+
             <GlobalSummaryCards clients={filteredClients} />
 
             <div className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 md:flex-row md:items-center md:justify-between">
@@ -357,7 +424,9 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                         <div>
                           <p className="font-bold text-white">{index + 1}. {client.clientName}</p>
                           <p className="mt-1 text-sm text-brand-muted">{evaluationDescription(client, evaluation)}</p>
-                          <p className="mt-2 text-xs text-brand-soft">Motivo técnico: {evaluation.reason}</p>
+                          <p className="mt-2 text-xs text-brand-soft">
+                            Confiança: {evaluation.confidence.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}% · Investigar {evaluation.campaignId ? 'a campanha e seus conjuntos' : 'a conta e as campanhas responsáveis'}.
+                          </p>
                         </div>
                         <PerformanceStatusBadge status={evaluation.status} />
                       </div>
