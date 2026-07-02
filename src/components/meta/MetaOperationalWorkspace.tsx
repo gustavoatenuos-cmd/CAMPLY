@@ -39,6 +39,14 @@ function newerAttemptLabel(account: ClientMetaAccount): string | null {
   return `A tentativa mais recente está ${state}; o último snapshot confiável continua em uso.`;
 }
 
+function catalogErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (/vínculos salvos|leitura direta|meta-client-catalog|demorou mais que o esperado/i.test(message)) {
+    return 'Não foi possível ler os vínculos salvos agora. Nenhuma sincronização nova foi iniciada e nenhum dado foi removido.';
+  }
+  return message || 'Não foi possível carregar as contas Meta.';
+}
+
 export function MetaOperationalWorkspace({
   data,
   initialClientId,
@@ -103,7 +111,7 @@ export function MetaOperationalWorkspace({
         ? current
         : linkable?.metaAssetId || '');
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as contas Meta.');
+      setError(catalogErrorMessage(loadError));
     } finally {
       setLoading(false);
     }

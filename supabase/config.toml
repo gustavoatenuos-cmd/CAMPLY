@@ -6,6 +6,9 @@ verify_jwt = true
 [functions.meta-creative-critic]
 verify_jwt = true
 
+[functions.meta-client-catalog]
+verify_jwt = true
+
 [functions.meta-disconnect]
 verify_jwt = true
 
@@ -29,5 +32,4 @@ verify_jwt = true
 
 [functions.meta-validate-token]
 verify_jwt = true
-
 

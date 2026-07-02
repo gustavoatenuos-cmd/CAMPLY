@@ -1,14 +1,15 @@
-import { supabaseData } from './supabase';
-import { withTimeout } from './withTimeout';
+import {
+  getSupabaseAccessToken,
+  getSupabaseFunctionUrl,
+  getSupabasePublishableKey,
+  isSupabaseConfigured,
+} from './supabase';
+import { OperationTimedOutError } from './withTimeout';
 
 type FunctionEnvelope = {
   error?: string;
   isError?: boolean;
   message?: string;
-};
-
-type FunctionErrorWithContext = Error & {
-  context?: Response;
 };
 
 function envelopeMessage(payload: unknown): string | null {
@@ -24,42 +25,54 @@ function envelopeMessage(payload: unknown): string | null {
   return typeof message === 'string' && message.trim() ? message : null;
 }
 
-async function functionErrorMessage(error: unknown): Promise<string | null> {
-  const response = (error as FunctionErrorWithContext | undefined)?.context;
-  if (!response) return null;
-  try {
-    const payload = await (typeof response.clone === 'function' ? response.clone() : response).json();
-    const message = envelopeMessage(payload);
-    if (message) return message;
-  } catch {
-    try {
-      const text = await (typeof response.clone === 'function' ? response.clone() : response).text();
-      if (text.trim()) return text.trim();
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 export async function invokeFunction<T>(
   name: string,
   body?: Record<string, unknown>,
   timeoutMs = 60_000
 ): Promise<T> {
-  if (!supabaseData) {
+  if (!isSupabaseConfigured) {
     throw new Error('Supabase não está configurado.');
   }
 
-  const { data, error } = await withTimeout(
-    supabaseData.functions.invoke<T & FunctionEnvelope>(name, body === undefined ? undefined : { body }),
-    timeoutMs,
-    `A função ${name} demorou mais que o esperado.`
-  );
+  const url = getSupabaseFunctionUrl(name);
+  const publishableKey = getSupabasePublishableKey();
+  const accessToken = getSupabaseAccessToken();
+  if (!url || !publishableKey) throw new Error('Supabase não está configurado.');
+  if (!accessToken) throw new Error('Sua sessão ainda não foi carregada. Recarregue a página e tente novamente.');
 
-  if (error) {
-    const detailedMessage = await functionErrorMessage(error);
-    throw new Error(detailedMessage || error.message || `Falha ao executar ${name}.`);
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  let data: (T & FunctionEnvelope) | null = null;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new OperationTimedOutError(`A função ${name} demorou mais que o esperado.`);
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(envelopeMessage(data) || `Falha ao executar ${name}.`);
   }
   if (!data) {
     throw new Error(`A função ${name} não retornou dados.`);

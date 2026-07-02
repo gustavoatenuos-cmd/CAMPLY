@@ -32,6 +32,17 @@ type IntegrationStatus = {
 
 type ConnectionStatus = 'unknown' | 'loading' | 'active' | 'none' | 'expired' | 'unavailable';
 
+function metaActionError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : '';
+  if (/meta-oauth-start|demorou mais que o esperado/i.test(message)) {
+    return 'Não foi possível iniciar a autorização com o Facebook agora. A conexão salva não foi alterada; tente novamente em alguns segundos.';
+  }
+  if (/meta-validate-token/i.test(message)) {
+    return 'Não foi possível verificar a conexão salva agora. A leitura operacional permanece preservada.';
+  }
+  return message || fallback;
+}
+
 export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [integration, setIntegration] = useState<IntegrationStatus['integration'] | null>(null);
   const [assets, setAssets] = useState<MetaAsset[]>([]);
@@ -60,9 +71,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       }
     } catch (statusError) {
       setConnectionStatus((current) => current === 'active' ? current : 'unavailable');
-      setError(statusError instanceof Error
-        ? statusError.message
-        : 'Não foi possível carregar a conexão salva. Tente novamente.');
+      setError(metaActionError(statusError, 'Não foi possível carregar a conexão salva. Tente novamente.'));
     } finally {
       setLoading(false);
     }
@@ -89,7 +98,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       if (!response.url) throw new Error('URL de autorização indisponível.');
       window.location.assign(response.url);
     } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'Não foi possível iniciar a conexão.');
+      setError(metaActionError(connectError, 'Não foi possível iniciar a conexão.'));
       setLoading(false);
     }
   };
@@ -118,7 +127,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       setAssets(response.assets || []);
       setNotice('Ativos atualizados e salvos. As métricas das campanhas só mudam quando você sincronizar a conta ou o período.');
     } catch (discoverError) {
-      setError(discoverError instanceof Error ? discoverError.message : 'Não foi possível atualizar os ativos.');
+      setError(metaActionError(discoverError, 'Não foi possível atualizar os ativos.'));
     } finally {
       setSyncing(false);
     }

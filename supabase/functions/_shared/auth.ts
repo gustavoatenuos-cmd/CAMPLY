@@ -1,10 +1,45 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+type VerifiedJwtPayload = {
+  sub?: unknown;
+  email?: unknown;
+  role?: unknown;
+  is_anonymous?: unknown;
+};
+
 export class HttpError extends Error {
   status: number;
   constructor(message: string, status = 400) {
     super(message)
     this.status = status;
+  }
+}
+
+function decodeVerifiedJwtPayload(token: string): VerifiedJwtPayload {
+  const [, payloadSegment] = token.split('.')
+  if (!payloadSegment) throw new HttpError('Unauthorized', 401)
+
+  try {
+    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
+    const json = atob(padded)
+    return JSON.parse(json)
+  } catch {
+    throw new HttpError('Unauthorized', 401)
+  }
+}
+
+function userFromVerifiedGatewayJwt(token: string) {
+  const payload = decodeVerifiedJwtPayload(token)
+  const userId = typeof payload.sub === 'string' ? payload.sub : ''
+  const isAnonymous = payload.is_anonymous === true || payload.is_anonymous === 'true'
+  if (!userId || isAnonymous) throw new HttpError('Unauthorized', 401)
+
+  return {
+    id: userId,
+    email: typeof payload.email === 'string' ? payload.email : undefined,
+    role: typeof payload.role === 'string' ? payload.role : undefined,
+    is_anonymous: false,
   }
 }
 
@@ -26,14 +61,15 @@ export async function requireAuthenticatedUser(req: Request) {
     global: { headers: { Authorization: authorization } },
   })
   const token = authorization.slice('Bearer '.length)
-  const { data, error } = await userClient.auth.getUser(token)
+  const shouldVerifyRemotely = Deno.env.get('CAMPLY_VERIFY_AUTH_REMOTELY') === 'true'
+  const user = shouldVerifyRemotely
+    ? (await userClient.auth.getUser(token)).data.user
+    : userFromVerifiedGatewayJwt(token)
 
-  if (error || !data.user || data.user.is_anonymous) {
-    throw new HttpError('Unauthorized', 401)
-  }
+  if (!user || user.is_anonymous) throw new HttpError('Unauthorized', 401)
 
   return {
-    user: data.user,
+    user,
     userClient,
     adminClient: createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },

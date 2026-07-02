@@ -3,6 +3,19 @@ import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, requireAuthenticatedUser } from '../_shared/auth.ts'
 import { META_GRAPH_VERSION } from '../_shared/meta-api.ts'
 
+async function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([Promise.resolve(operation), timeout])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -33,21 +46,30 @@ serve(async (req) => {
     // Save state hash
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
 
-    await adminClient
+    // Expired-state cleanup is useful but not part of the critical OAuth path.
+    // Do not block "Connect with Facebook" on this maintenance query.
+    adminClient
       .from('meta_oauth_states')
       .delete()
       .eq('user_id', userId)
       .lt('expires_at', new Date().toISOString())
+      .then(({ error }) => {
+        if (error) console.warn('OAuth state cleanup skipped', error.message)
+      })
 
-    const { error: dbError } = await adminClient
-      .from('meta_oauth_states')
-      .insert({
-        user_id: userId,
-        state_hash: stateHash,
-        redirect_uri: redirectUri,
-        scopes: scopes,
-        expires_at: expiresAt
-      });
+    const { error: dbError } = await withTimeout(
+      adminClient
+        .from('meta_oauth_states')
+        .insert({
+          user_id: userId,
+          state_hash: stateHash,
+          redirect_uri: redirectUri,
+          scopes: scopes,
+          expires_at: expiresAt
+        }),
+      8_000,
+      'Saving Meta OAuth state'
+    );
 
     if (dbError) throw dbError;
 

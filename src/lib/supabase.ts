@@ -17,6 +17,19 @@ export function getSupabaseSessionUserId(): string | null {
   return activeUserId;
 }
 
+export function getSupabaseAccessToken(): string | null {
+  return activeAccessToken;
+}
+
+export function getSupabaseFunctionUrl(name: string): string | null {
+  if (!supabaseUrl) return null;
+  return `${String(supabaseUrl).replace(/\/+$/, '')}/functions/v1/${name}`;
+}
+
+export function getSupabasePublishableKey(): string | null {
+  return supabasePublishableKey || null;
+}
+
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl as string, supabasePublishableKey as string, {
       auth: {

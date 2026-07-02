@@ -1,4 +1,5 @@
 import { getSupabaseSessionUserId, supabaseData } from '../supabase';
+import { invokeFunction } from '../invokeFunction';
 import { withTimeout } from '../withTimeout';
 import {
   E2E_ASSET_ID,
@@ -50,7 +51,7 @@ export interface ClientMetaAssetCatalog {
     linkedClientId: string | null;
     clientMetaAssetId: string | null;
   }>;
-  source?: 'rpc' | 'direct' | 'cache';
+  source?: 'rpc' | 'edge' | 'direct' | 'cache';
   cachedAt?: string;
 }
 
@@ -156,6 +157,19 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     };
   }
   if (!supabaseData) throw new Error('Backend analítico não configurado.');
+  try {
+    const catalog = await invokeFunction<ClientMetaAssetCatalog>('meta-client-catalog', {
+      clientId: clientId || null,
+    }, 20_000);
+    const edgeCatalog = { ...catalog, source: 'edge' as const };
+    writeCachedCatalog(clientId, edgeCatalog);
+    return edgeCatalog;
+  } catch {
+    // The Edge catalog runs with the service role and is the preferred path.
+    // Keep the RPC/direct paths as fallbacks when the function is cold or not
+    // available in a specific Supabase environment.
+  }
+
   try {
     const { data, error } = await withTimeout(
       supabaseData.rpc('get_client_meta_asset_catalog', {
