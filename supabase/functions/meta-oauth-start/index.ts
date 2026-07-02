@@ -25,38 +25,19 @@ async function signStatePayload(payload: Record<string, unknown>): Promise<strin
   return `${encodedPayload}.${base64UrlEncode(signature)}`
 }
 
-async function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number, label: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs)
-  })
-
-  try {
-    return await Promise.race([Promise.resolve(operation), timeout])
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { user, adminClient } = await requireAuthenticatedUser(req)
+    const { user } = await requireAuthenticatedUser(req)
     const userId = user.id
 
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
     const rawState = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-    
-    // Hash state for storage
-    const msgUint8 = new TextEncoder().encode(rawState);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const stateHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
+
     const redirectUri = Deno.env.get('META_REDIRECT_URI');
     const appId = Deno.env.get('META_APP_ID');
 
@@ -71,40 +52,6 @@ serve(async (req) => {
       scopes,
       nonce: rawState,
       exp: Math.floor(Date.now() / 1000) + (10 * 60),
-    })
-
-    // Save state hash for compatibility with callbacks already in flight. The
-    // signed state above is authoritative for new authorizations, so database
-    // persistence must never block the Facebook redirect.
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
-
-    // Expired-state cleanup is useful but not part of the critical OAuth path.
-    // Do not block "Connect with Facebook" on this maintenance query.
-    adminClient
-      .from('meta_oauth_states')
-      .delete()
-      .eq('user_id', userId)
-      .lt('expires_at', new Date().toISOString())
-      .then(({ error }) => {
-        if (error) console.warn('OAuth state cleanup skipped', error.message)
-      })
-
-    withTimeout(
-      adminClient
-        .from('meta_oauth_states')
-        .insert({
-          user_id: userId,
-          state_hash: stateHash,
-          redirect_uri: redirectUri,
-          scopes: scopes,
-          expires_at: expiresAt
-        }),
-      8_000,
-      'Saving Meta OAuth state'
-    ).then(({ error }) => {
-      if (error) console.warn('OAuth state compatibility insert skipped', error.message)
-    }).catch((error) => {
-      console.warn('OAuth state compatibility insert timed out', error.message)
     })
 
     // Build Meta OAuth URL

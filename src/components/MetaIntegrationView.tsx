@@ -35,10 +35,12 @@ type ConnectionStatus = 'unknown' | 'loading' | 'active' | 'none' | 'expired' | 
 function metaActionError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : '';
   if (/meta-oauth-start|demorou mais que o esperado/i.test(message)) {
-    return 'Não foi possível iniciar a autorização com o Facebook agora. A conexão salva não foi alterada; tente novamente em alguns segundos.';
+    const detail = message ? ` Detalhe técnico: ${message}` : '';
+    return `Não foi possível iniciar a autorização com o Facebook agora. A conexão salva não foi alterada; tente novamente em alguns segundos.${detail}`;
   }
   if (/meta-validate-token/i.test(message)) {
-    return 'Não foi possível verificar a conexão salva agora. A leitura operacional permanece preservada.';
+    const detail = message ? ` Detalhe técnico: ${message}` : '';
+    return `Não foi possível verificar a conexão salva agora. A leitura operacional permanece preservada.${detail}`;
   }
   return message || fallback;
 }
