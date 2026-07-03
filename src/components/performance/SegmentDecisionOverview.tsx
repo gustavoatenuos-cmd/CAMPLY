@@ -85,6 +85,7 @@ function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysis
   else if (!client.analysisProfile.analysisEnabled) reasons.push('Análise desativada');
   if (!profile?.vertical) reasons.push('Sem segmento');
   if (!profile?.subsegment) reasons.push('Sem subsegmento');
+  if (!profile?.primaryObjective) reasons.push('Objetivo principal pendente');
   if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
   if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
   if (client.accounts.length === 0) reasons.push('Sem conta Meta');

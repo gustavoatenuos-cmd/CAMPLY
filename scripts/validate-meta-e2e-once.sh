@@ -66,6 +66,7 @@ META_APP_SECRET=abc
 APP_BASE_URL=http://localhost:3000
 META_BASE_URL=http://mock-graph:9999
 META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
+CAMPLY_DB_URL=postgresql://postgres:postgres@db:5432/postgres
 EOF
 
 # 2. Preparar migrations incrementais antes de iniciar o Supabase.
@@ -168,7 +169,13 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "9. Rodando script E2E NodeJS..."
-node scripts/test-edge-e2e.cjs
+if ! node scripts/test-edge-e2e.cjs; then
+  echo "--- Logs do Edge Runtime após falha E2E ---"
+  docker logs supabase_edge_runtime_camply 2>&1 | tail -n 200 || true
+  echo "--- Logs do Mock Graph após falha E2E ---"
+  docker logs "$MOCK_CONTAINER_NAME" 2>&1 | tail -n 120 || true
+  exit 1
+fi
 
 # 9. Executar lint, testes e build
 echo "9. Executando Lint..."

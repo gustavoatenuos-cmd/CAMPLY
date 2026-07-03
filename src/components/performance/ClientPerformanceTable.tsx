@@ -10,7 +10,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/perform
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
-import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
+import { metricLabels, primaryObjectiveLabel } from '../../lib/analysis/clientAnalysisProfile';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -66,6 +66,15 @@ function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
 
 function accountRowKey(clientId: string, account: GlobalPerformanceAccount): string {
   return `${clientId}:${account.clientMetaAssetId}`;
+}
+
+const rhythmLabels = {
+  well_above: 'Muito acima do ritmo', above: 'Acima do ritmo', on_track: 'Dentro do ritmo',
+  below: 'Abaixo do ritmo', exceeded: 'Orçamento excedido', unavailable: 'Ritmo indisponível',
+} as const;
+
+function pacingLabel(account: GlobalPerformanceAccount | null): string {
+  return account?.budgetPacing?.rhythmStatus ? rhythmLabels[account.budgetPacing.rhythmStatus] : 'Ritmo indisponível';
 }
 
 function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
@@ -152,16 +161,20 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                 <div className="min-w-0">
                   <p className="truncate text-xs font-bold uppercase tracking-wider text-brand-green">{client.analysisProfile?.vertical || 'Sem segmento'}</p>
                   <h3 className="mt-1 truncate font-black text-white">{client.clientName}</h3>
+                  <p className="mt-1 truncate text-xs font-semibold text-brand-soft">Objetivo: {primaryObjectiveLabel(client.analysisProfile?.primaryObjective)}</p>
                   <p className="mt-1 truncate text-xs text-brand-muted">{account?.accountName || 'Nenhuma conta vinculada'}</p>
                 </div>
                 <PerformanceStatusBadge status={performanceStatus} />
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <MetricCell label="Investimento" value={formatCurrency(spend, account?.currency || null)} metric={spendMetric} />
-                <MetricCell label={metricLabels[primaryMetricId] || 'KPI principal'} value={formatNumber(primaryValue)} metric={primaryMetric} />
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <MetricCell label="Orçamento" value={client.analysisProfile?.plannedBudget ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null) : '—'} />
-                <MetricCell label="Pacing" value={account?.budgetPacing ? `${account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'} />
+                <MetricCell label="Investido" value={formatCurrency(spend, account?.currency || null)} metric={spendMetric} />
+                <MetricCell label={account?.budgetPacing?.exceededAmount ? 'Excedido' : 'Saldo'} value={account?.budgetPacing ? formatCurrency(account.budgetPacing.exceededAmount || account.budgetPacing.remainingBalance || 0, account.currency) : '—'} />
+                <MetricCell label="Consumo" value={account?.budgetPacing?.consumedPercent != null ? `${account.budgetPacing.consumedPercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'} />
+                <MetricCell label="Projeção" value={account?.budgetPacing ? formatCurrency(account.budgetPacing.projectedMonthlySpend, account.currency) : '—'} />
+                <MetricCell label={metricLabels[primaryMetricId] || 'KPI principal'} value={formatNumber(primaryValue)} metric={primaryMetric} />
               </div>
+              <p className="mt-3 text-xs font-bold text-brand-soft">Ritmo do orçamento: {pacingLabel(account)}</p>
               <p className="mt-3 text-xs text-brand-muted">{statusLabel(client.clientStatus)} · {account?.lastSuccessfulRun?.finishedAt ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'Sem sync confiável'}</p>
               <button
                 type="button"
@@ -174,15 +187,17 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
               </button>
               {isExpanded && (
                 <div data-testid="client-performance-details" className="mt-3 space-y-3 border-t border-brand-line pt-3">
+                  {account?.budgetPacing && <div className="grid grid-cols-2 gap-2 rounded-lg bg-black/20 p-3 text-xs sm:grid-cols-3"><MetricCell label="Esperado até agora" value={formatCurrency(account.budgetPacing.expectedSpendUntilNow, account.currency)} /><MetricCell label="Diferença" value={formatCurrency(account.budgetPacing.differenceValue, account.currency)} /><MetricCell label="Média necessária/dia" value={formatCurrency(account.budgetPacing.requiredDailySpend ?? 0, account.currency)} /><MetricCell label="Dias restantes" value={String(account.budgetPacing.daysRemaining ?? 0)} /></div>}
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Metas e realizado</p>
                     {evaluations.length === 0 ? <p className="mt-1 text-xs text-brand-muted">Nenhuma meta comparável neste período.</p> : evaluations.map((evaluation) => (
                       <div key={`${evaluation.metricId}:${evaluation.campaignId || 'account'}`} className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-black/20 p-2 text-xs">
-                        <div><p className="font-bold text-white">{metricLabels[evaluation.metricId] || evaluation.metricId.split('_').join(' ')}</p><p className="text-brand-muted">Esperado {formatNumber(evaluation.targetValue)} · realizado {formatNumber(evaluation.actualValue)}</p></div>
+                        <div><p className="font-bold text-white">{metricLabels[evaluation.metricId] || evaluation.metricId.split('_').join(' ')}</p><p className="text-brand-muted">Esperado {formatNumber(evaluation.targetValue)} · realizado {formatNumber(evaluation.actualValue)} · desvio {evaluation.differencePercent == null ? '—' : `${evaluation.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`} · confiança {evaluation.confidence}%</p></div>
                         <PerformanceStatusBadge status={evaluation.status} />
                       </div>
                     ))}
                   </div>
+                  <p className="rounded-lg border border-brand-line bg-black/20 p-3 text-xs text-brand-soft"><strong className="text-white">Ação recomendada:</strong> {client.score.signals[0]?.nextAction || 'Dados insuficientes para uma conclusão segura.'}</p>
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Campanhas da conta</p>
                     <p className="mt-1 text-xs text-brand-soft">{groups.length > 0 ? groups.map((group) => group.campaignName).join(' · ') : 'Nenhuma campanha confiável neste recorte.'}</p>
@@ -255,7 +270,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                         {account?.budgetPacing ? (
                           <div>
                             <p className="font-bold text-white">{account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</p>
-                            <p className="text-[10px] text-brand-muted">vs. esperado</p>
+                            <p className="text-[10px] text-brand-muted">{pacingLabel(account)}</p>
                           </div>
                         ) : '—'}
                       </div>
@@ -279,6 +294,8 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
 
                     {isExpanded && account && (
                       <div className="border-t border-brand-line bg-brand-ink/50 px-5 py-5">
+                        {account.budgetPacing && <div className="mb-4 grid gap-3 rounded-xl border border-brand-line bg-black/20 p-4 md:grid-cols-5"><MetricCell label="Orçamento" value={formatCurrency(account.budgetPacing.plannedBudget ?? client.analysisProfile?.plannedBudget ?? null, account.currency)} /><MetricCell label="Realizado" value={formatCurrency(account.budgetPacing.actualSpend, account.currency)} /><MetricCell label={account.budgetPacing.exceededAmount ? 'Excedido' : 'Saldo'} value={formatCurrency(account.budgetPacing.exceededAmount || account.budgetPacing.remainingBalance || 0, account.currency)} /><MetricCell label="Esperado agora" value={formatCurrency(account.budgetPacing.expectedSpendUntilNow, account.currency)} /><MetricCell label="Projeção" value={formatCurrency(account.budgetPacing.projectedMonthlySpend, account.currency)} /><MetricCell label="Média necessária/dia" value={formatCurrency(account.budgetPacing.requiredDailySpend ?? 0, account.currency)} /><MetricCell label="Dias restantes" value={String(account.budgetPacing.daysRemaining ?? 0)} /></div>}
+                        {evaluations.length > 0 && <div className="mb-4 grid gap-2 md:grid-cols-2">{evaluations.map((evaluation) => <div key={`${evaluation.metricId}:${evaluation.campaignId || 'account'}`} className="rounded-xl border border-brand-line bg-black/20 p-3 text-xs"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-white">{metricLabels[evaluation.metricId] || evaluation.metricId}</p><p className="mt-1 text-brand-muted">Esperado {formatNumber(evaluation.targetValue)} · realizado {formatNumber(evaluation.actualValue)} · confiança {evaluation.confidence}%</p></div><PerformanceStatusBadge status={evaluation.status} /></div></div>)}</div>}
                         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
                             <p className="flex items-center gap-2 font-bold text-white"><Layers3 size={16} className="text-brand-green" /> Campanhas da conta</p>

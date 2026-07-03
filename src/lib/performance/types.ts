@@ -84,4 +84,12 @@ export interface BudgetPacingResult {
   currency: string | null;
   elapsedDays: number;
   totalDays: number;
+  plannedBudget?: number;
+  remainingBalance?: number;
+  exceededAmount?: number;
+  consumedPercent?: number;
+  elapsedPercent?: number;
+  daysRemaining?: number;
+  requiredDailySpend?: number;
+  rhythmStatus?: 'well_above' | 'above' | 'on_track' | 'below' | 'exceeded' | 'unavailable';
 }

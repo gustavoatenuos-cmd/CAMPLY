@@ -28,6 +28,26 @@ function pacingStatus(differencePercent: number): PerformanceStatus {
   return 'critical';
 }
 
+function rhythmStatus(differencePercent: number, actualSpend: number, plannedBudget: number): BudgetPacingResult['rhythmStatus'] {
+  if (plannedBudget <= 0) return 'unavailable';
+  if (actualSpend > plannedBudget) return 'exceeded';
+  if (differencePercent > 25) return 'well_above';
+  if (differencePercent > 10) return 'above';
+  if (differencePercent < -10) return 'below';
+  return 'on_track';
+}
+
+function budgetControl(actualSpend: number, targetDailyBudget: number, elapsedDays: number, totalDays: number) {
+  const plannedBudget = targetDailyBudget * totalDays;
+  const remainingBalance = Math.max(plannedBudget - actualSpend, 0);
+  const exceededAmount = Math.max(actualSpend - plannedBudget, 0);
+  const consumedPercent = plannedBudget > 0 ? actualSpend / plannedBudget * 100 : 0;
+  const elapsedPercent = totalDays > 0 ? elapsedDays / totalDays * 100 : 100;
+  const daysRemaining = Math.max(totalDays - elapsedDays, 0);
+  const requiredDailySpend = daysRemaining > 0 ? remainingBalance / daysRemaining : 0;
+  return { plannedBudget, remainingBalance, exceededAmount, consumedPercent, elapsedPercent, daysRemaining, requiredDailySpend };
+}
+
 export function calculateBudgetPacing(input: BudgetPacingInput): BudgetPacingResult {
   const periodStartDay = dayNumber(input.periodStart, input.timezone);
   const periodEndDay = dayNumber(input.periodEnd, input.timezone);
@@ -37,6 +57,7 @@ export function calculateBudgetPacing(input: BudgetPacingInput): BudgetPacingRes
   const targetDailyBudget = input.targetDailyBudget ?? (input.targetMonthlyBudget ? input.targetMonthlyBudget / totalDays : 0);
 
   if (!Number.isFinite(targetDailyBudget) || targetDailyBudget <= 0) {
+    const control = budgetControl(input.actualSpend, 0, elapsedDays, totalDays);
     return {
       actualSpend: input.actualSpend,
       targetDailyBudget: 0,
@@ -49,6 +70,8 @@ export function calculateBudgetPacing(input: BudgetPacingInput): BudgetPacingRes
       currency: input.currency,
       elapsedDays,
       totalDays,
+      ...control,
+      rhythmStatus: 'unavailable',
     };
   }
 
@@ -57,6 +80,7 @@ export function calculateBudgetPacing(input: BudgetPacingInput): BudgetPacingRes
   const projectedMonthlySpend = actualDailyAverage * totalDays;
   const differenceValue = input.actualSpend - expectedSpendUntilNow;
   const differencePercent = (differenceValue / expectedSpendUntilNow) * 100;
+  const control = budgetControl(input.actualSpend, targetDailyBudget, elapsedDays, totalDays);
 
   return {
     actualSpend: input.actualSpend,
@@ -70,6 +94,8 @@ export function calculateBudgetPacing(input: BudgetPacingInput): BudgetPacingRes
     currency: input.currency,
     elapsedDays,
     totalDays,
+    ...control,
+    rhythmStatus: rhythmStatus(differencePercent, input.actualSpend, control.plannedBudget),
   };
 }
 
@@ -87,6 +113,11 @@ export function combineBudgetPacingByCurrency(results: BudgetPacingResult[]): Bu
   const differencePercent = expectedSpendUntilNow > 0 ? (differenceValue / expectedSpendUntilNow) * 100 : 0;
 
   const elapsedDays = first.elapsedDays;
+  const plannedBudget = results.reduce((sum, result) => sum + (result.plannedBudget ?? result.targetDailyBudget * result.totalDays), 0);
+  const remainingBalance = results.reduce((sum, result) => sum + (result.remainingBalance ?? Math.max((result.plannedBudget ?? 0) - result.actualSpend, 0)), 0);
+  const exceededAmount = results.reduce((sum, result) => sum + (result.exceededAmount ?? Math.max(result.actualSpend - (result.plannedBudget ?? 0), 0)), 0);
+  const consumedPercent = plannedBudget > 0 ? actualSpend / plannedBudget * 100 : 0;
+  const daysRemaining = first.daysRemaining ?? Math.max(first.totalDays - first.elapsedDays, 0);
 
   return {
     actualSpend,
@@ -100,5 +131,13 @@ export function combineBudgetPacingByCurrency(results: BudgetPacingResult[]): Bu
     currency: first.currency,
     elapsedDays,
     totalDays: first.totalDays,
+    plannedBudget,
+    remainingBalance,
+    exceededAmount,
+    consumedPercent,
+    elapsedPercent: first.elapsedPercent ?? first.elapsedDays / first.totalDays * 100,
+    daysRemaining,
+    requiredDailySpend: daysRemaining > 0 ? remainingBalance / daysRemaining : 0,
+    rhythmStatus: rhythmStatus(differencePercent, actualSpend, plannedBudget),
   };
 }

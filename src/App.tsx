@@ -51,6 +51,7 @@ export default function App() {
       if (new URLSearchParams(window.location.search).get('e2eReset') === '1') {
         resetMetaE2EState();
         resetE2EAnalysisProfiles();
+        window.sessionStorage.removeItem('camply:performance-dashboard-filters');
         window.history.replaceState({}, '', window.location.pathname);
       } else {
         restoreMetaE2EState();

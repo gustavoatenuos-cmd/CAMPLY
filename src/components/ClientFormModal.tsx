@@ -6,17 +6,25 @@ import { Modal } from './ui/Modal';
 import {
   analysisTemplates,
   analysisVerticals,
-  businessModels,
+  applyAnalysisTemplate,
   defaultAnalysisProfile,
+  loadSavedAnalysisTemplates,
   loadClientAnalysisProfile,
   metricLabels,
   primaryChannels,
-  primaryConversionMetrics,
+  primaryObjectiveConfig,
+  primaryObjectives,
   profileMetricOptions,
+  saveAnalysisTemplate,
+  suggestedGoalsForObjective,
   subsegmentsByVertical,
   upsertClientAnalysisProfile,
   type BudgetPeriod,
   type ClientAnalysisProfile,
+  type GoalExpectationType,
+  type PerformanceGoal,
+  type PrimaryObjective,
+  type SavedAnalysisTemplate,
 } from '../lib/analysis/clientAnalysisProfile';
 
 interface ClientFormModalProps {
@@ -53,9 +61,13 @@ export function ClientFormModal({
   const [error, setError] = useState('');
   const [profileDraft, setProfileDraft] = useState<ClientAnalysisProfile>(() => defaultAnalysisProfile(editingClient?.id ?? 'new'));
   const [templateId, setTemplateId] = useState('custom');
+  const [savedTemplates, setSavedTemplates] = useState<SavedAnalysisTemplate[]>([]);
+  const [templateName, setTemplateName] = useState('');
+  const performanceGoals = profileDraft.performanceGoals || [];
 
   useEffect(() => {
     if (!open) return;
+    let alive = true;
     const fallback = defaultAnalysisProfile(editingClient?.id ?? 'new', {
       vertical: editingClient?.segment || undefined,
       budgetPeriod: editingClient?.adInvestmentPeriod as BudgetPeriod | undefined,
@@ -63,15 +75,16 @@ export function ClientFormModal({
     });
     setProfileDraft(fallback);
     setTemplateId('custom');
-    if (!editingClient?.id) return;
-    let alive = true;
-    void loadClientAnalysisProfile(editingClient.id)
-      .then((profile) => {
-        if (alive && profile) setProfileDraft(profile);
-      })
-      .catch(() => {
-        // Mantém o modal utilizável em ambientes onde a migration ainda não foi aplicada.
-      });
+    void loadSavedAnalysisTemplates().then((templates) => { if (alive) setSavedTemplates(templates); });
+    if (editingClient?.id) {
+      void loadClientAnalysisProfile(editingClient.id)
+        .then((profile) => {
+          if (alive && profile) setProfileDraft(profile);
+        })
+        .catch(() => {
+          // Mantém o modal utilizável em ambientes onde a migration ainda não foi aplicada.
+        });
+    }
     return () => {
       alive = false;
     };
@@ -86,18 +99,71 @@ export function ClientFormModal({
   };
 
   const applyTemplate = (id: string) => {
-    setTemplateId(id);
-    const template = analysisTemplates.find((item) => item.id === id);
+    const template = [...analysisTemplates, ...savedTemplates].find((item) => item.id === id);
     if (!template) return;
+    if (performanceGoals.length > 0 && !window.confirm('Aplicar este modelo substituirá as metas em edição. Deseja continuar?')) return;
+    setTemplateId(id);
+    setProfileDraft((current) => applyAnalysisTemplate(current, template));
+  };
+
+  const selectObjective = (objective: PrimaryObjective | null) => {
+    if (!objective) {
+      updateProfile({ primaryObjective: null });
+      return;
+    }
+    const config = primaryObjectiveConfig(objective);
+    const suggestions = performanceGoals.length === 0 ? suggestedGoalsForObjective(objective) : performanceGoals;
     updateProfile({
-      vertical: template.vertical,
-      subsegment: template.subsegment,
-      businessModel: template.businessModel,
-      primaryConversionMetric: template.primaryConversionMetric,
-      secondaryMetrics: template.secondaryMetrics,
-      primaryChannel: template.primaryChannel,
-      budgetPeriod: template.budgetPeriod,
+      primaryObjective: objective,
+      primaryConversionMetric: config.primaryMetric,
+      primaryChannel: config.channel,
+      performanceGoals: suggestions,
+      secondaryMetrics: Array.from(new Set(suggestions.map((item) => item.metricId))),
     });
+  };
+
+  const replaceWithSuggestions = () => {
+    if (!profileDraft.primaryObjective) return;
+    if (performanceGoals.length > 0 && !window.confirm('Substituir as metas atuais pelas sugestões deste objetivo?')) return;
+    const goals = suggestedGoalsForObjective(profileDraft.primaryObjective);
+    updateProfile({ performanceGoals: goals, secondaryMetrics: goals.map((item) => item.metricId) });
+  };
+
+  const updateGoal = (id: string, patch: Partial<PerformanceGoal>) => updateProfile({
+    performanceGoals: performanceGoals.map((item) => item.id === id ? { ...item, ...patch } : item),
+    secondaryMetrics: Array.from(new Set(performanceGoals.map((item) => item.id === id ? String(patch.metricId || item.metricId) : item.metricId))),
+  });
+
+  const addGoal = () => {
+    const next: PerformanceGoal = {
+      id: `goal-${crypto.randomUUID()}`,
+      metricId: 'cpm', expectationType: 'maximum', value: null,
+      minValue: null, maxValue: null, warningTolerancePercent: 10,
+      criticalTolerancePercent: 25, weight: 1,
+    };
+    updateProfile({ performanceGoals: [...performanceGoals, next] });
+  };
+
+  const removeGoal = (id: string) => {
+    const remaining = performanceGoals.filter((item) => item.id !== id);
+    updateProfile({ performanceGoals: remaining, secondaryMetrics: Array.from(new Set(remaining.map((item) => item.metricId))) });
+  };
+
+  const saveCurrentAsTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) {
+      setError('Informe um nome para o modelo personalizado.');
+      return;
+    }
+    try {
+      const saved = await saveAnalysisTemplate(name, profileDraft);
+      setSavedTemplates((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setTemplateId(saved.id);
+      setTemplateName('');
+      setError('');
+    } catch (templateError) {
+      setError(templateError instanceof Error ? templateError.message : 'Não foi possível salvar o modelo.');
+    }
   };
 
   const closeIfIdle = () => {
@@ -112,7 +178,7 @@ export function ClientFormModal({
     const form = new FormData(event.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     if (!name) return;
-    const commercialMetaBudget = Number(form.get('adInvestmentMeta') ?? 0);
+    const commercialMetaBudget = editingClient?.adInvestmentMeta ?? 0;
     const profileBudget = profileDraft.plannedBudget == null
       ? (Number.isFinite(commercialMetaBudget) && commercialMetaBudget > 0 ? commercialMetaBudget : null)
       : Number(profileDraft.plannedBudget);
@@ -215,9 +281,12 @@ export function ClientFormModal({
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo sugerido</span>
               <select value={templateId} onChange={(event) => applyTemplate(event.target.value)} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                <option value="custom">Personalizado / manter edição</option>
+                <option value="custom">Criar sem modelo</option>
                 {analysisTemplates.map((template) => (
                   <option key={template.id} value={template.id}>{template.label}</option>
+                ))}
+                {savedTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.label} · personalizado</option>
                 ))}
               </select>
             </label>
@@ -247,9 +316,10 @@ export function ClientFormModal({
               </label>
             )}
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo de negócio</span>
-              <select value={profileDraft.businessModel} onChange={(event) => updateProfile({ businessModel: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {businessModels.map((model) => <option key={model} value={model}>{model}</option>)}
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Objetivo principal da operação</span>
+              <select value={profileDraft.primaryObjective || ''} onChange={(event) => selectObjective((event.target.value || null) as PrimaryObjective | null)} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Configuração pendente</option>
+                {primaryObjectives.map((objective) => <option key={objective.id} value={objective.id}>{objective.label}</option>)}
               </select>
             </label>
             <label className="block">
@@ -259,10 +329,8 @@ export function ClientFormModal({
               </select>
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão principal</span>
-              <select value={profileDraft.primaryConversionMetric} onChange={(event) => updateProfile({ primaryConversionMetric: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {primaryConversionMetrics.map((metricId) => <option key={metricId} value={metricId}>{metricLabels[metricId] || metricId}</option>)}
-              </select>
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Resultado acompanhado</span>
+              <div className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-brand-soft">{profileDraft.primaryObjective ? metricLabels[profileDraft.primaryConversionMetric] : 'Defina o objetivo principal'}</div>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Periodicidade do orçamento</span>
@@ -277,44 +345,25 @@ export function ClientFormModal({
               <input value={profileDraft.plannedBudget ?? ''} onChange={(event) => updateProfile({ plannedBudget: event.target.value === '' ? null : Number(event.target.value) })} type="number" min="0" step="0.01" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
             </label>
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Investimento mínimo para análise</span>
-              <input value={profileDraft.minimumEvaluationSpend} onChange={(event) => updateProfile({ minimumEvaluationSpend: Number(event.target.value) })} type="number" min="0" step="0.01" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Impressões mínimas</span>
-              <input value={profileDraft.minimumImpressions} onChange={(event) => updateProfile({ minimumImpressions: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Resultados mínimos</span>
-              <input value={profileDraft.minimumResults} onChange={(event) => updateProfile({ minimumResults: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Atraso de atribuição tolerado (horas)</span>
-              <input value={profileDraft.attributionDelayHours} onChange={(event) => updateProfile({ attributionDelayHours: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Plataforma do orçamento</span>
+              <select value={profileDraft.budgetPlatform || 'meta'} onChange={(event) => updateProfile({ budgetPlatform: event.target.value as ClientAnalysisProfile['budgetPlatform'] })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="meta">Meta Ads</option><option value="google">Google Ads</option><option value="youtube">YouTube Ads</option><option value="tiktok">TikTok Ads</option>
+              </select>
             </label>
           </div>
-          <div className="mt-4">
-            <p className="mb-2 text-sm font-semibold text-brand-soft">Métricas que devem ser acompanhadas</p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {profileMetricOptions.map((metricId) => {
-                const checked = profileDraft.secondaryMetrics.includes(metricId);
-                return (
-                  <label key={metricId} className="flex items-center gap-2 rounded-lg border border-brand-line bg-brand-ink/70 px-3 py-2 text-xs font-semibold text-brand-soft">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => updateProfile({
-                        secondaryMetrics: event.target.checked
-                          ? [...profileDraft.secondaryMetrics, metricId]
-                          : profileDraft.secondaryMetrics.filter((item) => item !== metricId),
-                      })}
-                      className="h-4 w-4 accent-brand-green"
-                    />
-                    {metricLabels[metricId] || metricId}
-                  </label>
-                );
-              })}
+          <div className="mt-5 rounded-xl border border-brand-line bg-brand-ink/40 p-3 sm:p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="font-black text-white">Metas de performance</p><p className="text-xs text-brand-muted">Configure somente as métricas que entram na análise e no score.</p></div>
+              <div className="flex flex-wrap gap-2"><button type="button" onClick={replaceWithSuggestions} disabled={!profileDraft.primaryObjective} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft disabled:opacity-50">Usar sugestões</button><button type="button" onClick={addGoal} className="rounded-lg bg-brand-green px-3 py-2 text-xs font-black text-brand-ink">+ Adicionar métrica</button></div>
             </div>
+            <div className="mt-3 space-y-3">
+              {performanceGoals.length === 0 && <p className="rounded-lg border border-dashed border-brand-line p-4 text-sm text-brand-muted">Nenhuma meta configurada. O score ficará inconclusivo até você adicionar uma métrica.</p>}
+              {performanceGoals.map((goal) => <GoalEditor key={goal.id} goal={goal} onChange={(patch) => updateGoal(goal.id, patch)} onRemove={() => removeGoal(goal.id)} />)}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Nome do novo modelo personalizado" />
+            <button type="button" onClick={() => void saveCurrentAsTemplate()} className="rounded-lg border border-brand-green/50 px-3 py-2 text-sm font-bold text-brand-green">Salvar como modelo</button>
           </div>
           <label className="mt-4 flex items-center gap-3 rounded-lg border border-brand-line bg-brand-ink/70 px-3 py-2 text-sm font-semibold text-brand-soft">
             <input type="checkbox" checked={profileDraft.analysisEnabled} onChange={(event) => updateProfile({ analysisEnabled: event.target.checked })} className="h-4 w-4 accent-brand-green" />
@@ -370,8 +419,8 @@ export function ClientFormModal({
               </select>
             </label>
           </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            <MoneyField label="Facebook/Meta" name="adInvestmentMeta" defaultValue={editingClient?.adInvestmentMeta} />
+          <p className="mb-3 rounded-lg border border-brand-green/20 bg-brand-green/5 p-3 text-xs text-brand-soft">O orçamento Meta é definido no Perfil de análise e sincronizado com o cadastro comercial.</p>
+          <div className="grid gap-4 md:grid-cols-3">
             <MoneyField label="Google" name="adInvestmentGoogle" defaultValue={editingClient?.adInvestmentGoogle} />
             <MoneyField label="YouTube" name="adInvestmentYoutube" defaultValue={editingClient?.adInvestmentYoutube} />
             <MoneyField label="TikTok" name="adInvestmentTikTok" defaultValue={editingClient?.adInvestmentTikTok} />
@@ -414,6 +463,33 @@ export function ClientFormModal({
       </form>
     </Modal>
   );
+}
+
+const expectationLabels: Record<GoalExpectationType, string> = {
+  maximum: 'Máximo desejado', minimum: 'Mínimo desejado', range: 'Faixa desejada', quantity_minimum: 'Quantidade mínima',
+};
+
+function GoalEditor({ goal, onChange, onRemove }: { goal: PerformanceGoal; onChange: (patch: Partial<PerformanceGoal>) => void; onRemove: () => void }) {
+  const numberValue = (value: string) => value === '' ? null : Number(value);
+  return (
+    <div className="rounded-xl border border-brand-line bg-brand-surface/70 p-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="text-xs font-bold text-brand-soft">Métrica<select value={goal.metricId} onChange={(event) => onChange({ metricId: event.target.value })} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">{profileMetricOptions.map((id) => <option key={id} value={id}>{metricLabels[id] || id}</option>)}</select></label>
+        <label className="text-xs font-bold text-brand-soft">Tipo de expectativa<select value={goal.expectationType} onChange={(event) => onChange({ expectationType: event.target.value as GoalExpectationType })} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">{Object.entries(expectationLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+        {goal.expectationType === 'range' ? <><GoalNumber label="Mínimo" value={goal.minValue} onChange={(value) => onChange({ minValue: value })} /><GoalNumber label="Máximo" value={goal.maxValue} onChange={(value) => onChange({ maxValue: value })} /></> : <GoalNumber label="Valor desejado" value={goal.value} onChange={(value) => onChange({ value })} />}
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <GoalNumber label="Tolerância de atenção (%)" value={goal.warningTolerancePercent} onChange={(value) => onChange({ warningTolerancePercent: value ?? 0 })} />
+        <GoalNumber label="Tolerância crítica (%)" value={goal.criticalTolerancePercent} onChange={(value) => onChange({ criticalTolerancePercent: value ?? 0 })} />
+        <GoalNumber label="Peso no score" value={goal.weight} onChange={(value) => onChange({ weight: value ?? 1 })} />
+      </div>
+      <button type="button" onClick={onRemove} className="mt-3 text-xs font-bold text-rose-200">Remover métrica</button>
+    </div>
+  );
+
+  function GoalNumber({ label, value, onChange: change }: { label: string; value: number | null; onChange: (value: number | null) => void }) {
+    return <label className="text-xs font-bold text-brand-soft">{label}<input type="number" min="0" step="0.01" value={value ?? ''} onChange={(event) => change(numberValue(event.target.value))} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white" /></label>;
+  }
 }
 
 function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string }) {

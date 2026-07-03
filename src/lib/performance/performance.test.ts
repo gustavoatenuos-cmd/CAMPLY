@@ -193,6 +193,11 @@ describe('calculateBudgetPacing', () => {
     expect(pacing.expectedSpendUntilNow).toBe(400);
     expect(pacing.projectedMonthlySpend).toBe(2625);
     expect(pacing.status).toBe('attention');
+    expect(pacing.plannedBudget).toBe(3000);
+    expect(pacing.remainingBalance).toBe(2650);
+    expect(pacing.consumedPercent).toBeCloseTo(11.67, 1);
+    expect(pacing.daysRemaining).toBe(26);
+    expect(pacing.requiredDailySpend).toBeCloseTo(101.92, 1);
   });
 
   it('does not combine pacing across different currencies', () => {
@@ -226,6 +231,21 @@ describe('calculateBudgetPacing', () => {
     expect(pacing.expectedSpendUntilNow).toBe(400);
     expect(pacing.projectedMonthlySpend).toBe(490);
     expect(pacing.status).toBe('critical');
+    expect(pacing.plannedBudget).toBe(700);
+    expect(pacing.remainingBalance).toBe(420);
+    expect(pacing.daysRemaining).toBe(3);
+    expect(pacing.requiredDailySpend).toBe(140);
+    expect(pacing.rhythmStatus).toBe('below');
+  });
+
+  it('handles daily budgets and closed periods without division by zero', () => {
+    const pacing = calculateBudgetPacing({ actualSpend: 120, targetDailyBudget: 100, periodStart: '2026-07-02', periodEnd: '2026-07-02', currentDate: '2026-07-02', timezone: 'America/Sao_Paulo', currency: 'BRL' });
+    expect(pacing.plannedBudget).toBe(100);
+    expect(pacing.exceededAmount).toBe(20);
+    expect(pacing.remainingBalance).toBe(0);
+    expect(pacing.daysRemaining).toBe(0);
+    expect(pacing.requiredDailySpend).toBe(0);
+    expect(pacing.rhythmStatus).toBe('exceeded');
   });
 });
 
@@ -398,6 +418,27 @@ describe('enrichGlobalPerformanceDashboard', () => {
       projectedMonthlySpend: 105,
       totalDays: 7,
     });
+
+    const [profileGoalResult] = enrichGlobalPerformanceDashboard(
+      [{
+        ...raw,
+        analysisProfile: {
+          ...raw.analysisProfile!,
+          primaryObjective: 'leads',
+          minimumEvaluationSpend: 0,
+          performanceGoals: [{
+            id: 'profile-cpl', metricId: 'cost_per_lead', expectationType: 'maximum',
+            value: 10, minValue: null, maxValue: null,
+            warningTolerancePercent: 10, criticalTolerancePercent: 25, weight: 3,
+          }],
+        },
+      }],
+      'this_week',
+      new Date('2026-07-02T15:00:00Z')
+    );
+    expect(profileGoalResult.resolvedTargets).toHaveLength(1);
+    expect(profileGoalResult.resolvedTargets[0].id).toContain('profile:client_1');
+    expect(profileGoalResult.evaluations[0]).toMatchObject({ metricId: 'leads', targetKind: 'cost_per_result', actualValue: 18, status: 'critical' });
 
     const [profileMonthlyAtTimezoneBoundary] = enrichGlobalPerformanceDashboard(
       [{

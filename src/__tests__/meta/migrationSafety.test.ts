@@ -27,6 +27,11 @@ const analysisProfilesMigration = readFileSync(
   'utf8'
 );
 
+const profileGoalsTemplatesMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260702000027_profile_goals_templates.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -111,5 +116,21 @@ describe('operational dashboard reliability migration safety', () => {
     expect(analysisProfilesMigration).not.toMatch(/pg_get_functiondef/i);
     expect(analysisProfilesMigration).not.toMatch(/regexp_replace/i);
     expect(analysisProfilesMigration).not.toMatch(/v_definition\s*:=\s*replace/i);
+  });
+
+  it('adds objectives and reusable templates without deleting legacy profile data', () => {
+    expect(profileGoalsTemplatesMigration).toContain('ADD COLUMN IF NOT EXISTS primary_objective');
+    expect(profileGoalsTemplatesMigration).toContain('ADD COLUMN IF NOT EXISTS performance_goals');
+    expect(profileGoalsTemplatesMigration).toContain('CREATE TABLE IF NOT EXISTS public.analysis_profile_templates');
+    expect(profileGoalsTemplatesMigration).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(profileGoalsTemplatesMigration).toContain('upsert_client_analysis_profile_v2');
+    expect(profileGoalsTemplatesMigration).toContain('save_analysis_profile_template');
+    expect(profileGoalsTemplatesMigration).toContain('duplicate_analysis_profile_template');
+    expect(profileGoalsTemplatesMigration).toContain('archive_analysis_profile_template');
+    expect(profileGoalsTemplatesMigration).toContain('apply_analysis_profile_template');
+    expect(profileGoalsTemplatesMigration).toContain("REVOKE ALL ON FUNCTION public.save_analysis_profile_template");
+    expect(profileGoalsTemplatesMigration).toContain('GRANT EXECUTE ON FUNCTION public.save_analysis_profile_template');
+    expect(profileGoalsTemplatesMigration).not.toMatch(/DROP\s+COLUMN\s+business_model/i);
+    expect(profileGoalsTemplatesMigration).not.toMatch(/DELETE\s+FROM\s+public\.client_analysis_profiles/i);
   });
 });

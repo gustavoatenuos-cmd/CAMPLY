@@ -174,9 +174,9 @@ async function persistIntegrationViaDirectPostgres(
   encryptedToken: string,
   tokenExpiresAt: string | null,
 ): Promise<void> {
-  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+  const dbUrl = Deno.env.get('CAMPLY_DB_URL') ?? Deno.env.get('SUPABASE_DB_URL')
   if (!dbUrl) {
-    throw new HttpError('SUPABASE_DB_URL não está configurado para fallback direto do OAuth Meta.', 500)
+    throw new HttpError('A conexão direta com o banco não está configurada para fallback direto do OAuth Meta.', 500)
   }
 
   const sql = postgres(dbUrl, {
@@ -262,7 +262,7 @@ async function persistIntegrationViaDirectPostgres(
     throw new HttpError(`Não foi possível salvar a integração Meta no banco pelo fallback direto: ${message}`, 500)
   } finally {
     try {
-      await sql.end({ timeout: 1 })
+      await sql.end()
     } catch (endError) {
       console.warn('Meta OAuth direct Postgres connection close skipped', {
         message: endError instanceof Error ? endError.message : String(endError),
