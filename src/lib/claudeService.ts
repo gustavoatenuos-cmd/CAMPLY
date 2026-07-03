@@ -1,5 +1,6 @@
-import { CamplyData, AgentAlert } from '../types';
+import { CamplyData, AgentAlert, Campaign, Client } from '../types';
 import { invokeFunction } from './invokeFunction';
+
 
 // ============================================================
 // CLAUDE AI SERVICE - Camada de inteligência interpretativa
@@ -37,11 +38,11 @@ export interface ClaudeAgentResponse {
   recommended_actions: string[];
 }
 
-function buildContext(data: CamplyData): ClaudeAgentContext {
+function buildContext(data: CamplyData, userEmail?: string | null): ClaudeAgentContext {
   const activeAlerts = (data.agentAlerts || []).filter(a => a.status === 'active');
 
   return {
-    user: 'Gustavo',
+    user: userEmail ?? 'Gestor',
     totalClients: data.clients.filter(c => c.status === 'active').length,
     totalCampaigns: data.campaigns.filter(c => !['paused', 'setup'].includes(c.status)).length,
     totalProjects: data.projects.filter(p => p.status !== 'done').length,
@@ -58,8 +59,9 @@ function buildContext(data: CamplyData): ClaudeAgentContext {
   };
 }
 
-export async function generateAgentSummary(data: CamplyData): Promise<ClaudeAgentResponse | null> {
-  const context = buildContext(data);
+export async function generateAgentSummary(data: CamplyData, userEmail?: string | null): Promise<ClaudeAgentResponse | null> {
+  const context = buildContext(data, userEmail);
+
 
   try {
     const responseData = await invokeFunction<any>('claude-proxy', {
@@ -186,4 +188,153 @@ export async function processChatCommand(userInput: string, data: CamplyData): P
       reply_text: 'Desculpe, tive um problema ao processar seu comando (verifique se a API Key da Anthropic está configurada nos secrets). Tente novamente em instantes.',
     };
   }
+}
+// ============================================================
+// CAMPAIGN DEEP ANALYSIS (Phase 1)
+// ============================================================
+
+export interface CampaignAnalysisContext {
+  campaign: {
+    name: string;
+    objective: string;
+    platform: string;
+    status: string;
+    budget: number;
+    spent: number;
+    lastOptimizedAt?: string;
+  };
+  client: {
+    name: string;
+    category?: string;
+    benchmarks?: Record<string, number>;
+  };
+  alerts: Array<{ title: string; message: string; severity: string }>;
+}
+
+export interface CampaignAnalysisResponse {
+  health_score: number;          // 0-100
+  diagnosis: string;             // O que está acontecendo
+  primary_issue: string | null;  // Problema principal detectado
+  budget_assessment: 'too_low' | 'adequate' | 'too_high' | 'exhausted';
+  recommendations: Array<{
+    priority: 'high' | 'medium' | 'low';
+    action: string;
+    reason: string;
+    expected_impact: string;
+  }>;
+}
+
+export async function generateCampaignAnalysis(
+  campaign: Campaign,
+  client: Client,
+  data: CamplyData
+): Promise<CampaignAnalysisResponse | null> {
+  const campaignAlerts = (data.agentAlerts || [])
+    .filter(a => a.relatedEntityId === campaign.id && a.status === 'active')
+    .map(a => ({ title: a.title, message: a.message, severity: a.severity }));
+
+  const context: CampaignAnalysisContext = {
+    campaign: {
+      name: campaign.name,
+      objective: campaign.objective as string,
+      platform: campaign.platform,
+      status: campaign.status,
+      budget: campaign.budget,
+      spent: campaign.spent,
+      lastOptimizedAt: campaign.lastOptimizedAt,
+    },
+    client: {
+      name: client.name,
+      category: client.category,
+      benchmarks: client.benchmarks as Record<string, number> | undefined,
+    },
+    alerts: campaignAlerts,
+  };
+
+  try {
+    const responseData = await invokeFunction<any>('claude-proxy', {
+      mode: 'campaign_analysis',
+      userMessage: `Analise detalhadamente esta campanha e retorne um JSON com health_score (0-100), diagnosis, primary_issue, budget_assessment e recommendations:\n\n${JSON.stringify(context, null, 2)}`,
+      maxTokens: 1024,
+    });
+
+    const text = responseData.result?.content?.[0]?.text;
+    if (!text) return generateLocalCampaignAnalysis(campaign, campaignAlerts);
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]) as CampaignAnalysisResponse;
+    }
+    return generateLocalCampaignAnalysis(campaign, campaignAlerts);
+  } catch {
+    return generateLocalCampaignAnalysis(campaign, campaignAlerts);
+  }
+}
+
+function generateLocalCampaignAnalysis(
+  campaign: Campaign,
+  alerts: Array<{ title: string; severity: string }>
+): CampaignAnalysisResponse {
+  const criticals = alerts.filter(a => a.severity === 'critical').length;
+  const warnings = alerts.filter(a => a.severity === 'warning').length;
+
+  // Calcular health score base
+  let healthScore = 100;
+  healthScore -= criticals * 20;
+  healthScore -= warnings * 10;
+
+  // Checar budget
+  const budgetPct = campaign.budget > 0 ? (campaign.spent / campaign.budget) * 100 : 0;
+  let budgetAssessment: CampaignAnalysisResponse['budget_assessment'] = 'adequate';
+  if (budgetPct >= 90) { budgetAssessment = 'exhausted'; healthScore -= 15; }
+  else if (budgetPct < 20 && campaign.status === 'live') { budgetAssessment = 'too_low'; }
+
+  healthScore = Math.max(0, Math.min(100, healthScore));
+
+  const primaryIssue = criticals > 0
+    ? alerts.find(a => a.severity === 'critical')?.title ?? null
+    : warnings > 0
+    ? alerts.find(a => a.severity === 'warning')?.title ?? null
+    : null;
+
+  const recommendations = [];
+  if (budgetAssessment === 'exhausted') {
+    recommendations.push({
+      priority: 'high' as const,
+      action: 'Revisar orçamento da campanha',
+      reason: 'Budget esgotado pode interromper a entrega de anúncios',
+      expected_impact: 'Retomar alcance e impressões',
+    });
+  }
+  if (campaign.lastOptimizedAt) {
+    const daysSince = Math.floor((Date.now() - new Date(campaign.lastOptimizedAt).getTime()) / 86400000);
+    if (daysSince >= 3) {
+      recommendations.push({
+        priority: 'high' as const,
+        action: `Otimizar campanha (${daysSince} dias sem otimização)`,
+        reason: 'Campanhas sem otimização perdem performance ao longo do tempo',
+        expected_impact: 'Melhora de CTR e redução de CPM',
+      });
+    }
+  }
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: 'low' as const,
+      action: 'Continuar monitorando métricas',
+      reason: 'Campanha aparentemente saudável',
+      expected_impact: 'Manutenção da performance atual',
+    });
+  }
+
+  return {
+    health_score: healthScore,
+    diagnosis: healthScore >= 80
+      ? 'Campanha funcionando dentro do esperado.'
+      : healthScore >= 50
+      ? 'Campanha com pontos de atenção que requerem revisão.'
+      : 'Campanha com problemas críticos que precisam de ação imediata.',
+    primary_issue: primaryIssue,
+    budget_assessment: budgetAssessment,
+    recommendations,
+  };
 }

@@ -1,21 +1,25 @@
-import { Banknote, BriefcaseBusiness, Columns3, History, Landmark, LayoutDashboard, Settings, Sparkles, Users, BotMessageSquare, Facebook, LogOut } from 'lucide-react';
+import { BarChart3, Bell, Banknote, BriefcaseBusiness, Columns3, History, Landmark, LayoutDashboard, Settings, Sparkles, Users, BotMessageSquare, Facebook, LogOut } from 'lucide-react';
+
 import { BrandLogo } from './BrandLogo';
 import { ViewId } from '../types';
 
 const items = [
-  { id: 'today', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'agentChat', label: 'Chat IA (Voz)', icon: BotMessageSquare },
-  { id: 'campaigns', label: 'Campanhas', icon: Columns3 },
-  { id: 'creativeCritic', label: 'Lab. Criativo', icon: Sparkles },
-  { id: 'clients', label: 'Clientes', icon: Users },
-  { id: 'mediaFinance', label: 'Verbas de mídia', icon: Banknote },
-  { id: 'projects', label: 'Projetos', icon: BriefcaseBusiness },
-  { id: 'personalFinance', label: 'Meu financeiro', icon: Landmark },
-  { id: 'activity', label: 'Histórico', icon: History },
-  { id: 'intelligence', label: 'Inteligência', icon: Sparkles },
-  { id: 'agentSettings', label: 'Config. Agente', icon: Settings },
+  { id: 'today',           label: 'Dashboard',      icon: LayoutDashboard },
+  { id: 'clientAnalytics', label: 'Analytics',       icon: BarChart3 },
+  { id: 'agentChat',       label: 'Chat IA',         icon: BotMessageSquare },
+  { id: 'campaigns',       label: 'Campanhas',       icon: Columns3 },
+  { id: 'creativeCritic',  label: 'Lab. Criativo',   icon: Sparkles },
+  { id: 'alertCenter',     label: 'Alertas',         icon: Bell },
+  { id: 'clients',         label: 'Clientes',        icon: Users },
+  { id: 'mediaFinance',    label: 'Verbas de mídia', icon: Banknote },
+  { id: 'projects',        label: 'Projetos',        icon: BriefcaseBusiness },
+  { id: 'personalFinance', label: 'Meu financeiro',  icon: Landmark },
+  { id: 'activity',        label: 'Histórico',       icon: History },
+  { id: 'intelligence',    label: 'Inteligência',    icon: Sparkles },
+  { id: 'agentSettings',   label: 'Config. Agente',  icon: Settings },
   { id: 'metaIntegration', label: 'Integração Meta', icon: Facebook },
 ] satisfies Array<{ id: ViewId; label: string; icon: typeof LayoutDashboard }>;
+
 
 interface SidebarProps {
   activeView: ViewId;
@@ -45,6 +49,9 @@ export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: Si
               {item.label}
             </span>
             {item.id === 'intelligence' && alertCount > 0 && (
+              <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-bold text-white">{alertCount}</span>
+            )}
+            {item.id === 'alertCenter' && alertCount > 0 && (
               <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-bold text-white">{alertCount}</span>
             )}
           </button>

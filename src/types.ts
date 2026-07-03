@@ -6,7 +6,63 @@ import type {
   TrendAvailability,
 } from './lib/meta/metaSyncTypes';
 
-export type ViewId = 'today' | 'campaigns' | 'clients' | 'mediaFinance' | 'projects' | 'personalFinance' | 'activity' | 'intelligence' | 'agentSettings' | 'agentChat' | 'metaIntegration' | 'creativeCritic';
+export type ViewId =
+  | 'today'
+  | 'campaigns'
+  | 'clients'
+  | 'mediaFinance'
+  | 'projects'
+  | 'personalFinance'
+  | 'activity'
+  | 'intelligence'
+  | 'agentSettings'
+  | 'agentChat'
+  | 'metaIntegration'
+  | 'creativeCritic'
+  // Analytical views (Phase 1+)
+  | 'clientAnalytics'
+  | 'budgetTracker'
+  | 'alertCenter'
+  | 'campaignDrilldown';
+
+// ===================== CLIENT CATEGORY =====================
+
+export type ClientCategory =
+  | 'ecommerce'        // E-commerce: foco em ROAS, compras, CPP
+  | 'lead_generation'  // Captação: foco em CPL, formulários
+  | 'local_business'   // Negócio local: alcance, mensagens, CPM
+  | 'saas'             // Software: cadastros, trials
+  | 'content'          // Criadores: engajamento, alcance
+  | 'other';           // Personalizado
+
+export const CLIENT_CATEGORY_LABELS: Record<ClientCategory, string> = {
+  ecommerce: 'E-commerce',
+  lead_generation: 'Geração de Leads',
+  local_business: 'Negócio Local',
+  saas: 'SaaS / App',
+  content: 'Conteúdo',
+  other: 'Outro',
+};
+
+// Primary metrics displayed per category
+export const CATEGORY_PRIMARY_METRICS: Record<ClientCategory, string[]> = {
+  ecommerce:       ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  lead_generation: ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  local_business:  ['spent', 'reach', 'cpm', 'cpm_msg', 'frequency', 'ctr'],
+  saas:            ['spent', 'cpl', 'signups', 'ctr', 'cpc', 'cpm'],
+  content:         ['spent', 'reach', 'impressions', 'ctr', 'cpm', 'frequency'],
+  other:           ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
+};
+
+export interface ClientBenchmarks {
+  cpm?: number;   // CPM de referência do segmento
+  cpc?: number;   // CPC de referência
+  cpl?: number;   // Custo por lead de referência
+  cpr?: number;   // Custo por resultado de referência
+  roas?: number;  // ROAS mínimo aceitável
+  ctr?: number;   // CTR mínimo esperado (%)
+  cpa?: number;   // Custo por aquisição alvo
+}
 
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';
@@ -38,6 +94,11 @@ export interface Client {
   notes?: string;
   metaAdAccountId?: string;
   metaAdAccountName?: string;
+  // Analytics & categorization (Phase 1)
+  category?: ClientCategory;
+  benchmarks?: ClientBenchmarks;
+  monthlyBudgetLimit?: number;   // Limite mensal de gasto de mídia (R$)
+  alertBudgetAt?: number;        // Alertar ao atingir X% do limite (0-100)
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
@@ -53,7 +114,12 @@ export interface CampaignMetrics {
   checkouts: number;
   purchases: number;
   impressions?: number;
-  conversations?: number; // @deprecated
+  reach?: number;
+  frequency?: number;
+  cpm?: number;
+  roas?: number;
+  leads?: number;
+  cpl?: number;
 }
 
 export interface Campaign {
@@ -290,6 +356,76 @@ export interface CamplyData {
   agentRules: AgentRule[];
   agentAlerts: AgentAlert[];
   agentLogs: AgentActivityLog[];
+}
+
+// ===================== COST ALERTS & THRESHOLDS =====================
+
+export type CostAlertSeverity = 'critical' | 'warning' | 'info';
+
+export type CostAlertType =
+  | 'budget_exhausted'      // Budget diário esgotado (>90%)
+  | 'budget_high'           // Budget >70% consumido antes das 18h
+  | 'high_cpm'              // CPM muito acima do benchmark
+  | 'low_ctr'               // CTR caiu >30% vs. período anterior
+  | 'high_frequency'        // Frequência >3 (fadiga de criativo)
+  | 'high_cpl'              // CPL subiu >25% vs. média histórica
+  | 'low_roas'              // ROAS abaixo do breakeven
+  | 'campaign_no_delivery'  // Campanha sem entrega há X horas
+  | 'monthly_budget_alert'  // Limite mensal próximo
+  | 'custom';               // Threshold personalizado
+
+export interface CostAlert {
+  id: string;
+  userId?: string;
+  clientId: string;
+  campaignId?: string;
+  alertType: CostAlertType;
+  severity: CostAlertSeverity;
+  metricName: string;
+  currentValue?: number;
+  thresholdValue?: number;
+  message: string;
+  isResolved: boolean;
+  triggeredAt: string;
+  resolvedAt?: string;
+}
+
+export interface CostThreshold {
+  id: string;
+  userId?: string;
+  clientId: string;
+  campaignId?: string;  // null = aplica para todos do cliente
+  metric: 'cpm' | 'cpc' | 'cpl' | 'cpa' | 'roas' | 'budget_pct' | 'frequency';
+  warningLevel: number;
+  criticalLevel: number;
+  period: 'daily' | 'weekly' | 'monthly';
+  isActive: boolean;
+}
+
+// ===================== METRIC SNAPSHOTS =====================
+
+export interface MetricSnapshot {
+  id?: string;
+  clientId: string;
+  campaignId: string;
+  snapshotDate: string;        // YYYY-MM-DD
+  period: '1d' | '7d' | '14d' | '30d';
+  spent: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  ctr: number;
+  cpm: number;
+  cpc: number;
+  results: number;
+  cpr: number;                 // custo por resultado
+  leads?: number;
+  cpl?: number;
+  purchases?: number;
+  cpa?: number;
+  roas?: number;
+  syncedAt?: string;
 }
 
 export interface Insight {

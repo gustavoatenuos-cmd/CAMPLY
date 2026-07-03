@@ -25,6 +25,10 @@ const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanc
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 const OverviewView = React.lazy(() => import('./components/OverviewView').then(m => ({ default: m.OverviewView })));
 const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
+// Phase 1 — Analytics views
+const ClientAnalyticsView = React.lazy(() => import('./components/ClientAnalyticsView').then(m => ({ default: m.ClientAnalyticsView })));
+const AlertCenterView = React.lazy(() => import('./components/AlertCenterView').then(m => ({ default: m.AlertCenterView })));
+
 
 function initialActiveView(): ViewId {
   if (typeof window !== 'undefined') {
@@ -282,6 +286,10 @@ export default function App() {
               {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
               {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
+              {/* Phase 1 — Analytics views */}
+              {activeView === 'clientAnalytics' && <ClientAnalyticsView data={data} updateData={updateData} />}
+              {activeView === 'alertCenter' && <AlertCenterView data={data} updateData={updateData} />}
+
             </Suspense>
           </ErrorBoundary>
         </div>
