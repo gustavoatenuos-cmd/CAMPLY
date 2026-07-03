@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { CamplyData, Client, BillingType, InvestmentPeriod, ClientStatus } from '../types';
+import { CamplyData, Client, BillingType, InvestmentPeriod, ClientStatus, ClientCategory, ClientBenchmarks, CLIENT_CATEGORY_LABELS } from '../types';
+
 import { createActivityLog, makeId } from '../data/camplyStore';
 import React from 'react';
 import { Modal } from './ui/Modal';
@@ -53,6 +54,16 @@ export function ClientFormModal({
   const [error, setError] = useState('');
   const [profileDraft, setProfileDraft] = useState<ClientAnalysisProfile>(() => defaultAnalysisProfile(editingClient?.id ?? 'new'));
   const [templateId, setTemplateId] = useState('custom');
+  // Analytics & alertas
+  const [category, setCategory] = useState<ClientCategory | ''>(() => editingClient?.category ?? '');
+  const [benchmarks, setBenchmarks] = useState<ClientBenchmarks>(() => editingClient?.benchmarks ?? {});
+  const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState<string>(() =>
+    editingClient?.monthlyBudgetLimit ? String(editingClient.monthlyBudgetLimit) : ''
+  );
+  const [alertBudgetAt, setAlertBudgetAt] = useState<string>(() =>
+    editingClient?.alertBudgetAt ? String(editingClient.alertBudgetAt) : '80'
+  );
+
 
   useEffect(() => {
     if (!open) return;
@@ -63,6 +74,12 @@ export function ClientFormModal({
     });
     setProfileDraft(fallback);
     setTemplateId('custom');
+    // Reset analytics fields
+    setCategory(editingClient?.category ?? '');
+    setBenchmarks(editingClient?.benchmarks ?? {});
+    setMonthlyBudgetLimit(editingClient?.monthlyBudgetLimit ? String(editingClient.monthlyBudgetLimit) : '');
+    setAlertBudgetAt(editingClient?.alertBudgetAt ? String(editingClient.alertBudgetAt) : '80');
+
     if (!editingClient?.id) return;
     let alive = true;
     void loadClientAnalysisProfile(editingClient.id)
@@ -136,7 +153,13 @@ export function ClientFormModal({
       adInvestmentTikTok: Number(form.get('adInvestmentTikTok') ?? 0),
       status: String(form.get('status') ?? 'lead') as ClientStatus,
       notes: String(form.get('notes') ?? ''),
+      // Analytics & alertas
+      category: category || undefined,
+      benchmarks: Object.keys(benchmarks).length > 0 ? benchmarks : undefined,
+      monthlyBudgetLimit: monthlyBudgetLimit ? Number(monthlyBudgetLimit) : undefined,
+      alertBudgetAt: alertBudgetAt ? Number(alertBudgetAt) : undefined,
     };
+
     const analysisProfile: ClientAnalysisProfile = {
       ...profileDraft,
       clientId: nextClient.id,
@@ -397,6 +420,93 @@ export function ClientFormModal({
           <span className="mb-2 block text-sm font-semibold text-brand-soft">Observações</span>
           <textarea name="notes" defaultValue={editingClient?.notes} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
         </label>
+
+        {/* ===== Analytics & Alertas ===== */}
+        <section className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4">
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-400">Analytics &amp; Alertas de Custo</p>
+            <p className="mt-1 text-sm text-brand-muted">Define a categoria do cliente para exibir as métricas certas e configurar alertas automáticos.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Categoria */}
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Categoria do cliente</span>
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value as ClientCategory | '')}
+                className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-violet-500"
+              >
+                <option value="">Não definido</option>
+                {(Object.entries(CLIENT_CATEGORY_LABELS) as [ClientCategory, string][]).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Limite mensal de gasto */}
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Limite mensal de mídia (R$)</span>
+              <div className="flex rounded-lg border border-brand-line bg-brand-ink focus-within:border-violet-500">
+                <span className="grid place-items-center border-r border-brand-line px-3 text-sm font-bold text-violet-400">R$</span>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={monthlyBudgetLimit}
+                  onChange={e => setMonthlyBudgetLimit(e.target.value)}
+                  placeholder="Ex.: 5000"
+                  className="w-full bg-transparent px-3 py-2 text-white outline-none"
+                />
+              </div>
+            </label>
+
+            {/* Alertar em % */}
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Alertar quando atingir (%)</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range" min="50" max="100" step="5"
+                  value={alertBudgetAt}
+                  onChange={e => setAlertBudgetAt(e.target.value)}
+                  className="flex-1 accent-violet-500"
+                />
+                <span className="w-10 text-right text-sm font-bold text-violet-400">{alertBudgetAt}%</span>
+              </div>
+            </label>
+          </div>
+
+          {/* Benchmarks */}
+          <div className="mt-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Benchmarks de referência (opcional)</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(['cpm', 'cpc', 'cpl', 'cpr', 'ctr', 'roas'] as const).map(metric => (
+                <label key={metric} className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase text-zinc-500">{metric.toUpperCase()}</span>
+                  <div className="flex rounded-lg border border-brand-line bg-brand-ink focus-within:border-violet-500">
+                    {metric !== 'roas' && metric !== 'ctr' && (
+                      <span className="grid place-items-center border-r border-brand-line px-2 text-xs font-bold text-zinc-500">R$</span>
+                    )}
+                    {metric === 'ctr' && (
+                      <span className="grid place-items-center border-r border-brand-line px-2 text-xs font-bold text-zinc-500">%</span>
+                    )}
+                    {metric === 'roas' && (
+                      <span className="grid place-items-center border-r border-brand-line px-2 text-xs font-bold text-zinc-500">x</span>
+                    )}
+                    <input
+                      type="number" min="0" step={metric === 'roas' || metric === 'ctr' ? '0.01' : '0.01'}
+                      value={benchmarks[metric] ?? ''}
+                      onChange={e => setBenchmarks(prev => ({
+                        ...prev,
+                        [metric]: e.target.value === '' ? undefined : Number(e.target.value),
+                      }))}
+                      placeholder="—"
+                      className="w-full bg-transparent px-2 py-1.5 text-sm text-white outline-none"
+                    />
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        </section>
+
 
         <div className="flex justify-end gap-3 border-t border-brand-line pt-5">
           <button
