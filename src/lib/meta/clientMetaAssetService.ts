@@ -56,6 +56,7 @@ export interface ClientMetaAssetCatalog {
 }
 
 const CACHE_PREFIX = 'camply.meta.assetCatalog.v1';
+const memoryCatalogCache = new Map<string, ClientMetaAssetCatalog>();
 
 function cacheKey(clientId?: string): string | null {
   const userId = getSupabaseSessionUserId();
@@ -64,46 +65,21 @@ function cacheKey(clientId?: string): string | null {
 }
 
 function readCachedCatalog(clientId?: string): ClientMetaAssetCatalog | null {
-  if (typeof window === 'undefined') return null;
   const key = cacheKey(clientId);
   if (!key) return null;
-  try {
-    let raw = window.localStorage.getItem(key);
-    if (!raw && !clientId) {
-      const userId = getSupabaseSessionUserId();
-      const userPrefix = userId ? `${CACHE_PREFIX}:${userId}:` : null;
-      if (userPrefix) {
-        for (let index = 0; index < window.localStorage.length; index += 1) {
-          const storageKey = window.localStorage.key(index);
-          if (storageKey?.startsWith(userPrefix)) {
-            raw = window.localStorage.getItem(storageKey);
-            if (raw) break;
-          }
-        }
-      }
-    }
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as ClientMetaAssetCatalog;
-    if (!Array.isArray(parsed.clients) || !Array.isArray(parsed.availableAssets)) return null;
-    return { ...parsed, source: 'cache' };
-  } catch {
-    return null;
-  }
+  const direct = memoryCatalogCache.get(key);
+  if (direct) return { ...direct, source: 'cache' };
+  if (clientId) return null;
+  const userId = getSupabaseSessionUserId();
+  const prefix = userId ? `${CACHE_PREFIX}:${userId}:` : '';
+  const fallback = [...memoryCatalogCache.entries()].find(([candidate]) => candidate.startsWith(prefix))?.[1];
+  return fallback ? { ...fallback, source: 'cache' } : null;
 }
 
 function writeCachedCatalog(clientId: string | undefined, catalog: ClientMetaAssetCatalog): void {
-  if (typeof window === 'undefined') return;
   const key = cacheKey(clientId);
   if (!key) return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify({
-      ...catalog,
-      source: catalog.source || 'rpc',
-      cachedAt: new Date().toISOString(),
-    }));
-  } catch {
-    // Cache is a resilience layer only; storage failures must not block the dashboard.
-  }
+  memoryCatalogCache.set(key, { ...catalog, source: catalog.source || 'rpc', cachedAt: new Date().toISOString() });
 }
 
 export function loadCachedClientMetaAssetCatalog(clientId?: string): ClientMetaAssetCatalog | null {
