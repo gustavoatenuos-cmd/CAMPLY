@@ -1,269 +1,99 @@
-/**
- * cost-alert-engine/index.ts
- * Edge Function — Motor de alertas de custo
- * Analisa métricas de campanhas e gera alertas em budget_alerts
- * baseado em cost_thresholds configurados pelo usuário.
- */
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { corsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+type Json = Record<string, unknown>;
+type Severity = 'critical' | 'warning' | 'info';
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+const object = (value: unknown): Json => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
+const array = (value: unknown): Json[] => Array.isArray(value) ? value.filter((item): item is Json => Boolean(item && typeof item === 'object')) : [];
+const finite = (value: unknown): number | null => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; };
 
-interface CampaignSummary {
-  campaignId: string;
-  clientId: string;
-  name: string;
-  status: string;
-  budget: number;
-  spent: number;
-  lastOptimizedAt?: string;
-  metrics?: {
-    cpm?: number;
-    cpc?: number;
-    cpl?: number;
-    cpr?: number;
-    roas?: number;
-    ctr?: number;
-    frequency?: number;
-  };
-}
-
-interface AlertToInsert {
-  user_id: string;
-  client_id: string;
-  campaign_id?: string;
-  alert_type: string;
-  severity: 'critical' | 'warning' | 'info';
-  metric_name: string;
-  current_value?: number;
-  threshold_value?: number;
-  message: string;
-  is_resolved: boolean;
+function violation(target: Json, actual: number): { active: boolean; severity: Severity; threshold: number } | null {
+  const kind = String(target.expectationType ?? '');
+  const value = finite(target.targetValue); const min = finite(target.targetMin); const max = finite(target.targetMax);
+  const warning = finite(target.warningTolerancePercent) ?? 10; const critical = finite(target.criticalTolerancePercent) ?? 25;
+  let deviation = 0; let active = false; let threshold = value ?? min ?? max ?? 0;
+  if (kind === 'maximum' && value != null && value > 0 && actual > value) { active = true; deviation = (actual - value) / value * 100; }
+  else if ((kind === 'minimum' || kind === 'quantity_minimum') && value != null && value > 0 && actual < value) { active = true; deviation = (value - actual) / value * 100; }
+  else if (kind === 'range' && min != null && max != null && (actual < min || actual > max)) {
+    active = true; threshold = actual < min ? min : max; deviation = Math.abs(actual - threshold) / Math.max(threshold, 0.0001) * 100;
+  }
+  if (!['maximum', 'minimum', 'quantity_minimum', 'range'].includes(kind) || threshold <= 0) return null;
+  return { active, severity: deviation > critical ? 'critical' : deviation > warning ? 'warning' : 'info', threshold };
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const authorization = req.headers.get('Authorization');
+    if (!authorization?.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401);
+    const url = Deno.env.get('SUPABASE_URL') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    if (!url || !anonKey || !serviceKey) return json({ error: 'Server configuration unavailable' }, 500);
+    const caller = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
+    const service = createClient(url, serviceKey, { auth: { persistSession: false } });
+    const { data: { user }, error: authError } = await caller.auth.getUser();
+    if (authError || !user) return json({ error: 'Invalid token' }, 401);
+    const body = object(await req.json()); const clientId = String(body.client_id ?? '').trim();
+    const period = String(body.period ?? 'this_month');
+    if (!clientId || !['today', 'this_month', 'last_7d', 'last_30d'].includes(period)) return json({ error: 'client_id or period is invalid' }, 400);
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
+    const { data: ownedClient, error: ownershipError } = await caller.from('client_identity')
+      .select('client_id').eq('client_id', clientId).is('archived_at', null).maybeSingle();
+    if (ownershipError) return json({ error: `Ownership validation failed: ${ownershipError.message}` }, 500);
+    if (!ownedClient) return json({ error: 'Client not found' }, 403);
 
-    // Get user from auth token
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const { data: dashboard, error: dashboardError } = await caller.rpc('get_client_intelligence_dashboard_v1', { p_client_id: clientId, p_period: period });
+    if (dashboardError) return json({ error: `Qualified metrics read failed: ${dashboardError.message}` }, 502);
+    const dto = object(dashboard); const quality = object(dto.dataQuality); const reliable = object(dto.reliableRun);
+    if (quality.status !== 'complete' || !reliable.id) return json({ error: 'No qualified successful run is available; alerts were not changed.' }, 409);
 
-    // Parse request body — expects list of campaign summaries
-    const body = await req.json() as { campaigns: CampaignSummary[] };
-    const campaigns = body.campaigns ?? [];
-
-    if (campaigns.length === 0) {
-      return new Response(JSON.stringify({ alerts: [], generated: 0 }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Load custom thresholds for this user
-    const { data: thresholds } = await supabase
-      .from('cost_thresholds')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_active', true);
-
-    // Load existing unresolved alerts to avoid duplicates (within last 24h)
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: existingAlerts } = await supabase
-      .from('budget_alerts')
-      .select('alert_type, campaign_id, client_id')
-      .eq('user_id', user.id)
-      .eq('is_resolved', false)
-      .gte('triggered_at', since);
-
-    const existingKeys = new Set(
-      (existingAlerts ?? []).map((a: any) => `${a.alert_type}:${a.campaign_id ?? a.client_id}`)
-    );
-
-    const alertsToInsert: AlertToInsert[] = [];
-
-    for (const campaign of campaigns) {
-      const addAlert = (
-        type: string,
-        severity: 'critical' | 'warning' | 'info',
-        metricName: string,
-        message: string,
-        currentValue?: number,
-        thresholdValue?: number,
-      ) => {
-        const key = `${type}:${campaign.campaignId}`;
-        if (existingKeys.has(key)) return; // deduplicate
-        existingKeys.add(key);
-        alertsToInsert.push({
-          user_id: user.id,
-          client_id: campaign.clientId,
-          campaign_id: campaign.campaignId,
-          alert_type: type,
-          severity,
-          metric_name: metricName,
-          current_value: currentValue,
-          threshold_value: thresholdValue,
-          message,
-          is_resolved: false,
-        });
-      };
-
-      // Rule 1: Budget exhausted (>90%)
-      if (campaign.budget > 0) {
-        const pct = (campaign.spent / campaign.budget) * 100;
-        if (pct >= 90 && !['paused', 'setup'].includes(campaign.status)) {
-          addAlert(
-            'budget_exhausted', 'critical', 'budget_pct',
-            `${campaign.name}: budget ${pct.toFixed(0)}% esgotado (R$ ${campaign.spent.toFixed(2)} de R$ ${campaign.budget.toFixed(2)})`,
-            pct, 90
-          );
-        } else if (pct >= 70 && !['paused', 'setup'].includes(campaign.status)) {
-          addAlert(
-            'budget_high', 'warning', 'budget_pct',
-            `${campaign.name}: budget ${pct.toFixed(0)}% consumido`,
-            pct, 70
-          );
-        }
-      }
-
-      // Rule 2: No optimization for 3+ days
-      if (campaign.lastOptimizedAt && !['paused', 'setup'].includes(campaign.status)) {
-        const daysSince = Math.floor(
-          (Date.now() - new Date(campaign.lastOptimizedAt).getTime()) / 86400000
-        );
-        if (daysSince >= 7) {
-          addAlert(
-            'no_optimization_critical', 'critical', 'days_since_optimization',
-            `${campaign.name}: ${daysSince} dias sem otimização — revisão urgente necessária`,
-            daysSince, 7
-          );
-        } else if (daysSince >= 3) {
-          addAlert(
-            'no_optimization', 'warning', 'days_since_optimization',
-            `${campaign.name}: ${daysSince} dias sem otimização`,
-            daysSince, 3
-          );
-        }
-      }
-
-      // Rule 3: High frequency (>3)
-      if (campaign.metrics?.frequency !== undefined && campaign.metrics.frequency > 3) {
-        addAlert(
-          'high_frequency', 'warning', 'frequency',
-          `${campaign.name}: frequência ${campaign.metrics.frequency.toFixed(1)} — possível fadiga de criativo`,
-          campaign.metrics.frequency, 3
-        );
-      }
-
-      // Rule 4: Custom thresholds
-      if (thresholds && campaign.metrics) {
-        for (const threshold of thresholds as any[]) {
-          if (threshold.client_id !== campaign.clientId) continue;
-          if (threshold.campaign_id && threshold.campaign_id !== campaign.campaignId) continue;
-
-          const metricValue = campaign.metrics[threshold.metric as keyof typeof campaign.metrics];
-          if (metricValue === undefined) continue;
-
-          const isROAS = threshold.metric === 'roas';
-
-          // For ROAS: lower is worse (invert comparison)
-          const criticalBreach = isROAS
-            ? metricValue < threshold.critical_level
-            : metricValue >= threshold.critical_level;
-          const warningBreach = isROAS
-            ? metricValue < threshold.warning_level
-            : metricValue >= threshold.warning_level;
-
-          if (criticalBreach) {
-            addAlert(
-              `custom_${threshold.metric}_critical`, 'critical', threshold.metric,
-              `${campaign.name}: ${threshold.metric.toUpperCase()} ${metricValue.toFixed(2)} ${isROAS ? 'abaixo' : 'acima'} do limite crítico (${threshold.critical_level})`,
-              metricValue, threshold.critical_level
-            );
-          } else if (warningBreach) {
-            addAlert(
-              `custom_${threshold.metric}_warning`, 'warning', threshold.metric,
-              `${campaign.name}: ${threshold.metric.toUpperCase()} ${metricValue.toFixed(2)} ${isROAS ? 'abaixo' : 'acima'} do limite de atenção (${threshold.warning_level})`,
-              metricValue, threshold.warning_level
-            );
-          }
-        }
-      }
-    }
-
-    // Batch insert new alerts
-    let inserted = 0;
-    if (alertsToInsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from('budget_alerts')
-        .insert(alertsToInsert);
-
-      if (insertError) {
-        console.error('Error inserting alerts:', insertError);
+    const metrics = object(dto.metrics); const targets = array(dto.targets);
+    const evaluatedRuleKeys = new Set<string>(); const evaluatedActiveKeys = new Set<string>();
+    let created = 0; let updated = 0; let resolved = 0;
+    for (const target of targets) {
+      const metricId = String(target.metricId ?? ''); const metric = object(metrics[metricId]);
+      const actual = metric.available === true ? finite(metric.value) : null;
+      if (!metricId || actual == null) continue;
+      const ruleKey = `target:${String(target.id ?? `${metricId}:${target.expectationType}`)}`;
+      evaluatedRuleKeys.add(ruleKey);
+      const result = violation(target, actual); if (!result) continue;
+      const { data: existing, error: existingError } = await service.from('budget_alerts')
+        .select('id,status').eq('user_id', user.id).eq('client_id', clientId).eq('rule_key', ruleKey)
+        .eq('metric_name', metricId).eq('period', period).is('campaign_id', null).in('status', ['active', 'acknowledged']).maybeSingle();
+      if (existingError) return json({ error: `Alert read failed: ${existingError.message}` }, 500);
+      if (!result.active) continue;
+      evaluatedActiveKeys.add(ruleKey);
+      const payload = { user_id: user.id, client_id: clientId, campaign_id: null, client_meta_asset_id: null,
+        alert_type: 'performance_target', rule_key: ruleKey, severity: result.severity, status: existing?.status ?? 'active',
+        metric_name: metricId, current_value: actual, threshold_value: result.threshold,
+        message: `${metricId}: ${actual} fora da meta ${result.threshold}.`, is_resolved: false, period,
+        run_id: String(reliable.id), last_triggered_at: new Date().toISOString(),
+        first_triggered_at: new Date().toISOString(), evidence: { target, metric, runId: reliable.id } };
+      if (existing?.id) {
+        const { error } = await service.from('budget_alerts').update({ ...payload, first_triggered_at: undefined }).eq('id', existing.id);
+        if (error) return json({ error: `Alert update failed: ${error.message}` }, 500); updated += 1;
       } else {
-        inserted = alertsToInsert.length;
+        const { error } = await service.from('budget_alerts').insert(payload);
+        if (error) return json({ error: `Alert insert failed: ${error.message}` }, 500); created += 1;
       }
     }
 
-    // Auto-resolve old alerts for campaigns that no longer breach
-    // (mark as resolved if campaign no longer triggers that alert type)
-    const activeCampaignIds = new Set(campaigns.map(c => c.campaignId));
-    const { data: oldAlerts } = await supabase
-      .from('budget_alerts')
-      .select('id, alert_type, campaign_id')
-      .eq('user_id', user.id)
-      .eq('is_resolved', false)
-      .in('alert_type', ['budget_high', 'no_optimization', 'high_frequency']);
-
-    const toResolve = (oldAlerts ?? [])
-      .filter((a: any) => !alertsToInsert.some(
-        i => i.alert_type === a.alert_type && i.campaign_id === a.campaign_id
-      ))
-      .map((a: any) => a.id);
-
-    if (toResolve.length > 0) {
-      await supabase
-        .from('budget_alerts')
-        .update({ is_resolved: true, resolved_at: new Date().toISOString() })
-        .in('id', toResolve);
+    const { data: currentAlerts, error: currentError } = await service.from('budget_alerts').select('id,rule_key')
+      .eq('user_id', user.id).eq('client_id', clientId).eq('period', period).is('campaign_id', null).in('status', ['active', 'acknowledged']);
+    if (currentError) return json({ error: `Alert readback failed: ${currentError.message}` }, 500);
+    const toResolve = (currentAlerts ?? []).filter((item) => evaluatedRuleKeys.has(item.rule_key) && !evaluatedActiveKeys.has(item.rule_key)).map((item) => item.id);
+    if (toResolve.length) {
+      const { error } = await service.from('budget_alerts').update({ status: 'resolved', is_resolved: true, resolved_at: new Date().toISOString() }).in('id', toResolve);
+      if (error) return json({ error: `Alert resolution failed: ${error.message}` }, 500); resolved = toResolve.length;
     }
-
-    return new Response(JSON.stringify({
-      alerts: alertsToInsert,
-      generated: inserted,
-      resolved: toResolve.length,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const { data: readback, error: readbackError } = await service.from('budget_alerts').select('*')
+      .eq('user_id', user.id).eq('client_id', clientId).eq('period', period).in('status', ['active', 'acknowledged']);
+    if (readbackError) return json({ error: `Alert confirmation failed: ${readbackError.message}` }, 500);
+    return json({ clientId, period, runId: reliable.id, created, updated, resolved, alerts: readback ?? [] });
   } catch (error) {
-    console.error('cost-alert-engine error:', error);
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
