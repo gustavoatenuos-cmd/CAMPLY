@@ -4,8 +4,8 @@ export async function withDirectPostgres<T>(
   operation: (sql: ReturnType<typeof postgres>) => Promise<T>,
   connectTimeoutSeconds = 5,
 ): Promise<T> {
-  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
-  if (!dbUrl) throw new Error('SUPABASE_DB_URL não está configurado.')
+  const dbUrl = Deno.env.get('CAMPLY_DB_URL') ?? Deno.env.get('SUPABASE_DB_URL')
+  if (!dbUrl) throw new Error('A conexão direta com o banco não está configurada.')
 
   const sql = postgres(dbUrl, {
     max: 1,
@@ -18,7 +18,7 @@ export async function withDirectPostgres<T>(
     return await operation(sql)
   } finally {
     try {
-      await sql.end({ timeout: 1 })
+      await sql.end()
     } catch (error) {
       console.warn('Direct Postgres connection close skipped', {
         message: error instanceof Error ? error.message : String(error),

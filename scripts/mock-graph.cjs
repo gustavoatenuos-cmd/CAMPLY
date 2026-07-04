@@ -113,6 +113,15 @@ const server = http.createServer((req, res) => {
     date_start = `${parts.year}-${parts.month}-01`;
     date_stop = `${parts.year}-${parts.month}-${parts.day}`;
   }
+  if (parsedUrl.query.date_preset === 'last_7d') {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+    const today = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+    const since = new Date(today.getTime() - 6 * 86_400_000);
+    date_start = since.toISOString().slice(0, 10);
+    date_stop = today.toISOString().slice(0, 10);
+  }
   if (parsedUrl.query.time_range) {
      try {
        const tr = JSON.parse(parsedUrl.query.time_range);

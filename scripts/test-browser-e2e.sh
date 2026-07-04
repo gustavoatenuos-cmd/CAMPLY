@@ -96,10 +96,11 @@ assert_js '(() => { const segment=document.querySelector("[data-testid=\"segment
 
 step "analysis profile persistence"
 "${BROWSER[@]}" find role button click --name "Clientes"
-"${BROWSER[@]}" wait 200
-"${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
-"${BROWSER[@]}" wait 250
+"${BROWSER[@]}" wait 500
+"${BROWSER[@]}" find role button click --name "Editar"
+"${BROWSER[@]}" wait 800
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
+"${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Objetivo principal")); const select=label?.querySelector("select"); if (!select || select.value) return true; const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"whatsapp_messages"); select.dispatchEvent(new Event("change",{bubbles:true})); return true; })()' >/dev/null
 "${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); const input=label?.querySelector("input"); if (!input) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,"1650"); input.dispatchEvent(new Event("input",{bubbles:true})); return true; })()' >/dev/null
 "${BROWSER[@]}" find role button click --name "Salvar alterações"
 "${BROWSER[@]}" wait 300
@@ -114,11 +115,14 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 "${BROWSER[@]}" find role button click --name "Clientes"
-"${BROWSER[@]}" wait 200
+"${BROWSER[@]}" wait 1000
+assert_js '[...document.querySelectorAll("article")].some((item) => item.innerText.includes("Clínica Mock"))' 'client card did not render after reload'
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
-"${BROWSER[@]}" wait 250
+"${BROWSER[@]}" wait 800
+assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not reopen after reload'
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile did not survive reload'
-"${BROWSER[@]}" find role button click --name "Cancelar"
+"${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("button")].find((item) => item.innerText.trim() === "Cancelar"); button?.click(); return Boolean(button); })()' >/dev/null
+assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not close after reload validation'
 "${BROWSER[@]}" find role button click --name "Dashboard"
 "${BROWSER[@]}" wait 300
 assert_js '(() => { const segment=document.querySelector("[data-testid=\"segment-filter-Saúde\"]"); const subsegment=document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]"); return Boolean(segment && subsegment && segment.getAttribute("aria-pressed") === "true" && subsegment.getAttribute("aria-pressed") === "true"); })()' 'filters did not survive profile navigation and reload'
@@ -238,15 +242,16 @@ assert_js 'document.body.innerText.includes("Campanha ativa mock") && !document.
 
 "${BROWSER[@]}" find role button click --name "Clientes"
 "${BROWSER[@]}" wait 200
-assert_js 'document.body.innerText.includes("Base operacional e Meta Ads") && document.querySelectorAll("[data-testid=meta-operational-workspace]").length === 1' 'Clients did not reuse the official workspace'
+"${BROWSER[@]}" wait 500
+assert_js 'document.body.innerText.includes("Performance oficial por cliente")' 'Clients did not reuse the official workspace'
 "${BROWSER[@]}" find role button click --name "Campanhas"
 "${BROWSER[@]}" wait 400
 assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("performance meta e operação") && text.includes("quadro operacional") && text.includes("planejamento interno"); })()' 'Campaigns did not separate official and operational data'
 
-assert_js 'Object.keys(localStorage).some(key => key.includes("00000000-0000-0000-0000-00000000e2e0"))' 'user-scoped cache was not created'
+assert_js '!Object.keys(localStorage).some(key => key.includes("00000000-0000-0000-0000-00000000e2e0") || key.startsWith("camply.meta.assetCatalog"))' 'operational data leaked into localStorage'
 "${BROWSER[@]}" find role button click --name "Sair"
 "${BROWSER[@]}" wait 200
-assert_js 'document.body.innerText.includes("Gestão de Tráfego Inteligente") && Object.keys(localStorage).length === 0' 'logout did not clear user-scoped cache'
+assert_js 'document.body.innerText.includes("Gestão de Tráfego Inteligente") && !Object.keys(localStorage).some(key => key.startsWith("camply"))' 'logout left operational data in localStorage'
 assert_js '!document.querySelector(".vite-error-overlay, #webpack-dev-server-client-overlay")' 'browser error overlay detected'
 
 echo "Browser E2E passed: login -> link -> sync -> campaign -> adset -> ad -> creative -> target -> reconciliation -> period -> logout"

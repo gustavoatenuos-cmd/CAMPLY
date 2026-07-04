@@ -46,6 +46,7 @@ async function runScenario(scenarioName, assetId, accessToken, assertFn, extraPa
   } catch (err) {
     console.error(`❌ Scenario ${scenarioName} failed!`);
     console.error(err.message);
+    if (text) console.error(`Response body: ${text}`);
     failedCount++;
     process.exitCode = 1;
     throw err;

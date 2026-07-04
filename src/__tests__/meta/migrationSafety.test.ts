@@ -26,6 +26,12 @@ const analysisProfilesMigration = readFileSync(
   new URL('../../../supabase/migrations/20260702000026_analysis_profiles_weekly_targets.sql', import.meta.url),
   'utf8'
 );
+const profileGoalsMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260702000027_profile_goals_templates.sql', import.meta.url), 'utf8'
+);
+const clientIntelligenceMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260704000028_unify_client_intelligence.sql', import.meta.url), 'utf8'
+);
 
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
@@ -111,5 +117,16 @@ describe('operational dashboard reliability migration safety', () => {
     expect(analysisProfilesMigration).not.toMatch(/pg_get_functiondef/i);
     expect(analysisProfilesMigration).not.toMatch(/regexp_replace/i);
     expect(analysisProfilesMigration).not.toMatch(/v_definition\s*:=\s*replace/i);
+  });
+
+  it('normalizes client targets and project links without deleting legacy data', () => {
+    expect(profileGoalsMigration).toContain('performance_goals JSONB');
+    expect(clientIntelligenceMigration).toContain('CREATE TABLE IF NOT EXISTS public.project_clients');
+    expect(clientIntelligenceMigration).toContain('create_client_with_configuration_v1');
+    expect(clientIntelligenceMigration).toContain('get_client_intelligence_dashboard_v1');
+    expect(clientIntelligenceMigration).toContain('client_targets_active_client_scope_unique');
+    expect(clientIntelligenceMigration).toContain("WHERE campaign_id IS NULL AND status IN ('active', 'acknowledged')");
+    expect(clientIntelligenceMigration).not.toMatch(/\bDELETE\s+FROM\b/i);
+    expect(clientIntelligenceMigration).not.toMatch(/pg_get_functiondef|regexp_replace/i);
   });
 });

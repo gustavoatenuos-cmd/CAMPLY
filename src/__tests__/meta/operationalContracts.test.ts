@@ -180,7 +180,8 @@ describe('operational analytics contracts', () => {
 
     expect(clientsViewSource).toContain('metaWorkspaceKey');
     expect(clientsViewSource).toContain('onClientPersisted');
-    expect(appSource).toContain('saveRemoteDataAndConfirmClient');
+    expect(appSource).toContain('saveClientConfiguration');
+    expect(supabaseStoreSource).toContain('create_client_with_configuration_v1');
     expect(appSource).toContain('skipNextRemoteSaveRef');
     expect(supabaseStoreSource).toContain('confirmClientIdentity');
     expect(supabaseStoreSource).toContain('saveRemoteDataAndConfirmClient');
