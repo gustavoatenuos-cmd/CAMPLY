@@ -29,6 +29,36 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   META_BASE_URL: 'https://graph.facebook.test',
 }));
 
+vi.mock('../../../supabase/functions/_shared/direct-postgres.ts', () => ({
+  withDirectPostgres: vi.fn(async (callback) => {
+    const mockSql = vi.fn().mockImplementation((strings) => {
+      const queryStr = strings[0];
+      if (queryStr.includes('meta_integrations')) {
+        return [{
+          id: 'integration-1',
+          user_id: 'user-1',
+          status: 'active',
+          meta_user_name: 'Conta salva',
+          access_token_encrypted: 'encrypted',
+          last_validated_at: '2026-07-01T10:00:00Z',
+        }];
+      }
+      if (queryStr.includes('meta_assets')) {
+        return [{
+          id: 'asset-1',
+          integration_id: 'integration-1',
+          asset_type: 'adaccount',
+          asset_id: 'act_1',
+          asset_name: 'Conta persistida',
+          asset_status: 'ACTIVE',
+        }];
+      }
+      return [];
+    });
+    return callback(mockSql);
+  }),
+}));
+
 let handleRequest: (req: Request) => Promise<Response>;
 let requireAuthenticatedUser: any;
 let decryptToken: any;

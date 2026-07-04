@@ -51,12 +51,17 @@ async function run() {
   let failCount = 0;
 
   for (const res of responses) {
-    if (res.status === 302) {
+    const location = res.headers.get('location') || '';
+    if (res.status === 302 && location.includes('meta_sync=success')) {
       successCount++;
     } else {
       failCount++;
-      const text = await res.text();
-      console.log('Failure response:', text);
+      if (res.status !== 302) {
+        const text = await res.text();
+        console.log('Failure response:', text);
+      } else {
+        console.log('Failure redirect location:', location);
+      }
     }
   }
 
