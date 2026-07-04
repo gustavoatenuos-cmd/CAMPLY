@@ -107,6 +107,7 @@ function evaluationMetricLabel(evaluation: PerformanceEvaluation): string {
   const labels: Record<string, string> = {
     messaging_conversations_started_total: 'Conversas iniciadas',
     leads: 'Leads',
+    registrations: 'Cadastros',
     purchases: 'Compras',
     cpm: 'CPM',
     link_ctr: 'CTR de link',
@@ -192,6 +193,7 @@ function metricProfileWeight(evaluation: PerformanceEvaluation, input: Performan
   if (primary && evaluation.metricId === primary) return 2.5 * configuredWeight;
   if (primary === 'messaging_conversations_started_total' && evaluation.metricId === 'cost_per_messaging_conversation') return 2.5 * configuredWeight;
   if (primary === 'leads' && evaluation.metricId === 'cost_per_lead') return 2.5 * configuredWeight;
+  if (primary === 'registrations' && ['registrations', 'cost_per_registration'].includes(evaluation.metricId)) return 2.5 * configuredWeight;
   if (primary === 'purchases' && ['cost_per_purchase', 'purchase_roas', 'purchase_value'].includes(evaluation.metricId)) return 2.5 * configuredWeight;
   if (secondary.has(evaluation.metricId)) return 1.35 * configuredWeight;
   return input.profile ? 0 : configuredWeight;

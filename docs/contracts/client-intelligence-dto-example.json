@@ -1,0 +1,12 @@
+{
+  "client": { "id": "client-1", "name": "Clínica A", "company": "Clínica A", "status": "active", "vertical": "Saúde", "subsegment": "Odontologia", "primaryObjective": "whatsapp_messages", "primaryChannel": "WhatsApp" },
+  "period": "this_month",
+  "dataQuality": { "status": "complete", "reliableRunId": "00000000-0000-0000-0000-000000000001", "latestAttemptRunId": "00000000-0000-0000-0000-000000000002", "latestAttemptStatus": "partial", "timezone": "America/Sao_Paulo", "currency": "BRL", "dateStart": "2026-07-01", "dateStop": "2026-07-31", "message": "newer_incomplete_attempt" },
+  "budgetPacing": { "period": "monthly", "planned": 1700, "actual": 1500, "expectedNow": 220, "balance": 200, "consumedPercent": 88.24, "expectedPercent": 12.9, "projectedEnd": 11625, "status": "well_above" },
+  "score": { "value": 62, "status": "attention", "confidence": 82, "explanation": "Existem desvios relevantes.", "factors": [] },
+  "metrics": [{ "metricId": "cost_per_messaging_conversation", "label": "Custo por conversa", "unit": "currency", "target": 15, "actual": 18, "previous": null, "difference": 3, "percentageDifference": 20, "status": "attention", "trend": "unavailable", "confidence": 85, "explanation": "cost_above_warning_tolerance" }],
+  "campaigns": [],
+  "alerts": [],
+  "priorities": []
+}
+

@@ -1,15 +1,17 @@
 import { CamplyData, AgentAlert, Campaign, Client } from '../types';
 import { invokeFunction } from './invokeFunction';
+import { isSupabaseConfigured } from './supabase';
+import { buildClientIntelligenceAIContext, listClientIntelligenceOverview } from '../services/clientIntelligenceService';
+import type { ClientIntelligenceAIContextDTO } from '../contracts/clientIntelligence';
 
 
 // ============================================================
 // CLAUDE AI SERVICE - Camada de inteligência interpretativa
 // ============================================================
 
+let claudeBackendAvailable: boolean | null = null;
 export function isClaudeConfigured(): boolean {
-  // Now relies on backend secret, so we assume true for the frontend 
-  // or we can just always attempt and fallback if it fails.
-  return true;
+  return isSupabaseConfigured && claudeBackendAvailable !== false;
 }
 
 // Estrutura de entrada para o Claude (contexto estruturado)
@@ -60,20 +62,20 @@ function buildContext(data: CamplyData, userEmail?: string | null): ClaudeAgentC
 }
 
 export async function generateAgentSummary(data: CamplyData, userEmail?: string | null): Promise<ClaudeAgentResponse | null> {
-  const context = buildContext(data, userEmail);
-
-
+  if (!isClaudeConfigured()) return null;
   try {
+    const dashboards = await listClientIntelligenceOverview('this_month');
+    const context = dashboards.map(buildClientIntelligenceAIContext);
     const responseData = await invokeFunction<any>('claude-proxy', {
       mode: 'operational_summary',
-      userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
+      userMessage: `Analise somente o DTO oficial abaixo e gere o resumo para ${userEmail ?? 'Gestor'}:\n\n${JSON.stringify(context, null, 2)}`,
       maxTokens: 512,
     });
 
     const text = responseData.result?.content?.[0]?.text;
 
     if (!text) {
-      return generateLocalSummary(data);
+      return generateOfficialLocalSummary(context);
     }
 
     // Extrair JSON da resposta
@@ -82,11 +84,25 @@ export async function generateAgentSummary(data: CamplyData, userEmail?: string 
       return JSON.parse(jsonMatch[0]) as ClaudeAgentResponse;
     }
 
-    return generateLocalSummary(data);
+    claudeBackendAvailable = true;
+    return generateOfficialLocalSummary(context);
   } catch (error) {
     console.warn('[ClaudeService] Error calling Claude API, using local fallback:', error);
-    return generateLocalSummary(data);
+    claudeBackendAvailable = false;
+    return null;
   }
+}
+
+function generateOfficialLocalSummary(contexts: ClientIntelligenceAIContextDTO[]): ClaudeAgentResponse {
+  const critical = contexts.filter((item) => item.score.status === 'critical' || item.activeAlerts.some((alert) => alert.severity === 'critical'));
+  const attention = contexts.filter((item) => item.score.status === 'attention');
+  const unavailable = contexts.filter((item) => item.dataQuality.status === 'unavailable');
+  return {
+    summary_title: critical.length ? 'Atenção necessária' : unavailable.length ? 'Dados pendentes' : 'Resumo oficial',
+    summary_text: `${critical.length} cliente(s) críticos, ${attention.length} em atenção e ${unavailable.length} sem dados qualificados.`,
+    urgency_level: critical.length ? 'high' : attention.length ? 'medium' : 'low',
+    recommended_actions: contexts.flatMap((item) => item.priorities.map((priority) => `${item.client.name}: ${priority.title}`)).slice(0, 4),
+  };
 }
 
 // Fallback determinístico quando o Claude não está disponível

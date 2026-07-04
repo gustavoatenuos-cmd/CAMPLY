@@ -21,6 +21,7 @@ import type {
   PerformanceEvaluation,
   PerformanceTarget,
 } from './types';
+import type { PerformanceGoal } from '../analysis/clientAnalysisProfile';
 
 export type GlobalClientStatus =
   | 'not_connected'
@@ -126,6 +127,52 @@ function normalizeMetricMap(metrics: Record<string, MetricContract> | undefined)
 function availableMetricValue(metrics: Record<string, MetricContract>, metricId: string): number | null {
   const metric = metrics[metricId];
   return metric?.available && typeof metric.value === 'number' && Number.isFinite(metric.value) ? metric.value : null;
+}
+
+const costGoalResultMetric: Record<string, string> = {
+  cost_per_messaging_conversation: 'messaging_conversations_started_total',
+  cost_per_lead: 'leads',
+  cost_per_registration: 'registrations',
+  cost_per_purchase: 'purchases',
+  cost_per_landing_page_view: 'landing_page_views',
+};
+
+function profileGoalTarget(goal: PerformanceGoal, clientMetaAssetId: string, profile: ClientAnalysisProfile): PerformanceTarget | null {
+  const isRange = goal.expectationType === 'range';
+  const targetValue = isRange ? goal.maxValue : goal.value;
+  if (targetValue == null || targetValue <= 0) return null;
+  const costResultMetric = costGoalResultMetric[goal.metricId];
+  const targetKind = costResultMetric
+    ? 'cost_per_result'
+    : goal.expectationType === 'maximum'
+      ? 'maximum_metric'
+      : goal.expectationType === 'range'
+        ? 'target_range'
+        : goal.expectationType === 'quantity_minimum'
+          ? 'minimum_results'
+          : 'minimum_metric';
+  return {
+    id: `profile:${profile.clientId}:${goal.id}:${clientMetaAssetId}`,
+    clientMetaAssetId,
+    metricId: costResultMetric || goal.metricId,
+    targetKind,
+    targetValue,
+    targetMin: goal.minValue,
+    targetMax: goal.maxValue,
+    warningTolerancePercent: goal.warningTolerancePercent,
+    criticalTolerancePercent: goal.criticalTolerancePercent,
+    priorityWeight: goal.weight,
+    evaluationPeriod: profile.budgetPeriod === 'daily' ? 'today' : profile.budgetPeriod === 'weekly' ? 'this_week' : 'this_month',
+    effectiveFrom: profile.updatedAt || profile.createdAt,
+  };
+}
+
+function profileTargets(profile: ClientAnalysisProfile | null | undefined, accounts: GlobalPerformanceAccount[]): PerformanceTarget[] {
+  const goals = profile?.performanceGoals || [];
+  if (!profile?.analysisEnabled || goals.length === 0) return [];
+  return accounts.flatMap((account) => goals
+    .map((goal) => profileGoalTarget(goal, account.clientMetaAssetId, profile))
+    .filter((target): target is PerformanceTarget => target !== null));
 }
 
 function profileDataGateReason(client: GlobalClientPerformance, currentDate: Date): string | null {
@@ -349,7 +396,9 @@ export function enrichGlobalPerformanceDashboard(
   currentDate = new Date()
 ): GlobalClientPerformance[] {
   return rows.map((row) => {
-    const targets = (row.resolvedTargets ?? []).map((target) => ({
+    const configuredProfileTargets = profileTargets(row.analysisProfile, row.accounts ?? []);
+    const sourceTargets = configuredProfileTargets.length > 0 ? configuredProfileTargets : row.resolvedTargets ?? [];
+    const targets = sourceTargets.map((target) => ({
       ...target,
       targetValue: asFiniteNumber(target.targetValue) ?? 0,
       targetMin: asFiniteNumber(target.targetMin),
@@ -481,6 +530,15 @@ export async function loadGlobalPerformanceDashboard(options: {
       businessModel: 'negócio local',
       secondaryMetrics: ['cpm', 'link_ctr', 'frequency'],
       primaryChannel: 'Misto',
+      primaryObjective: input.primaryConversionMetric === 'purchases'
+        ? 'sales'
+        : input.primaryConversionMetric === 'leads'
+          ? 'leads'
+          : input.primaryConversionMetric === 'registrations'
+            ? 'registrations'
+            : 'whatsapp_messages',
+      budgetPlatform: 'meta',
+      performanceGoals: [],
       minimumEvaluationSpend: 0,
       minimumImpressions: 0,
       minimumResults: 0,

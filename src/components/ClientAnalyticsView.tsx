@@ -1,427 +1,85 @@
-/**
- * ClientAnalyticsView.tsx
- * Phase 1 — Main analytical view per client.
- * Shows KPIs by category/objective, campaign health scores, and cost alerts.
- */
-import React, { useState, useMemo } from 'react';
-import type { CamplyData, Campaign, Client, ClientCategory } from '../types';
-import { CLIENT_CATEGORY_LABELS } from '../types';
-import { CategoryBadge } from './CategoryBadge';
-import { HealthScoreGauge } from './HealthScoreGauge';
-import { AlertBadge } from './ui/AlertBadge';
-import { MetricCompareCard } from './performance/MetricCompareCard';
-import { selectMetricsForCampaign, formatMetricValue } from '../lib/meta/metricsSelector';
+import { useEffect, useState } from 'react';
+import type { CamplyData } from '../types';
+import type { ClientIntelligenceDashboardDTO, IntelligencePeriod } from '../contracts/clientIntelligence';
+import { getClientIntelligenceDashboard } from '../services/clientIntelligenceService';
 
-interface ClientAnalyticsViewProps {
-  data: CamplyData;
-  updateData: (updater: (data: CamplyData) => CamplyData) => void;
+interface Props { data: CamplyData; updateData: (updater: (data: CamplyData) => CamplyData) => void }
+const periods: Array<{ id: IntelligencePeriod; label: string }> = [
+  { id: 'today', label: 'Hoje' }, { id: 'yesterday', label: 'Ontem' },
+  { id: 'this_week', label: 'Esta semana' }, { id: 'last_week', label: 'Semana anterior' },
+  { id: 'this_month', label: 'Este mês' }, { id: 'last_month', label: 'Mês anterior' },
+];
+
+function format(value: number | null, unit?: string, currency = 'BRL') {
+  if (value == null) return '—';
+  if (unit === 'currency') return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+  if (unit === 'percentage') return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  if (unit === 'ratio') return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}x`;
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
 
-// Derives a simple health score for a campaign based on alerts + status
-function deriveCampaignHealthScore(campaign: Campaign, data: CamplyData): number {
-  const alerts = (data.agentAlerts || []).filter(
-    a => a.relatedEntityId === campaign.id && a.status === 'active'
-  );
-  let score = 100;
-  score -= alerts.filter(a => a.severity === 'critical').length * 20;
-  score -= alerts.filter(a => a.severity === 'warning').length * 10;
-  if (campaign.status === 'paused') score -= 15;
-  if (campaign.status === 'waiting') score -= 10;
-  const budgetPct = campaign.budget > 0 ? (campaign.spent / campaign.budget) * 100 : 0;
-  if (budgetPct >= 90) score -= 15;
-  return Math.max(0, Math.min(100, score));
-}
+export function ClientAnalyticsView({ data }: Props) {
+  const [clientId, setClientId] = useState(data.clients[0]?.id ?? '');
+  const [period, setPeriod] = useState<IntelligencePeriod>('this_month');
+  const [dashboard, setDashboard] = useState<ClientIntelligenceDashboardDTO | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-function deriveClientHealthScore(clientId: string, data: CamplyData): number {
-  const clientCampaigns = data.campaigns.filter(c => c.clientId === clientId);
-  if (clientCampaigns.length === 0) return 80;
-  const avg = clientCampaigns.reduce((s, c) => s + deriveCampaignHealthScore(c, data), 0) / clientCampaigns.length;
-  return Math.round(avg);
-}
-
-// ==================== CLIENT CARD ====================
-
-interface ClientCardProps {
-  client: Client;
-  data: CamplyData;
-  isSelected: boolean;
-  onSelect: () => void;
-}
-
-function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
-  const healthScore = deriveClientHealthScore(client.id, data);
-  const activeCampaigns = data.campaigns.filter(
-    c => c.clientId === client.id && !['paused', 'setup'].includes(c.status)
-  ).length;
-  const criticalAlerts = (data.agentAlerts || []).filter(
-    a => a.clientId === client.id && a.status === 'active' && a.severity === 'critical'
-  ).length;
+  useEffect(() => {
+    if (!clientId) return;
+    let active = true;
+    setLoading(true); setError('');
+    void getClientIntelligenceDashboard(clientId, period).then((result) => {
+      if (active) setDashboard(result);
+    }).catch((reason) => {
+      if (active) { setDashboard(null); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a inteligência.'); }
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [clientId, period]);
 
   return (
-    <button
-      onClick={onSelect}
-      className={`w-full rounded-xl border p-4 text-left transition-all ${
-        isSelected
-          ? 'border-violet-500/60 bg-violet-500/10'
-          : 'border-white/8 bg-white/4 hover:border-white/15 hover:bg-white/7'
-      }`}
-    >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{client.name}</p>
-          {client.company && (
-            <p className="truncate text-xs text-zinc-500">{client.company}</p>
-          )}
-        </div>
-        <HealthScoreGauge score={healthScore} size="sm" showLabel={false} />
+    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
+      <header className="mb-5">
+        <p className="text-xs font-black uppercase tracking-[.2em] text-brand-green">Inteligência oficial</p>
+        <h1 className="mt-1 text-2xl font-black text-white">Analytics por cliente</h1>
+        <p className="mt-1 text-sm text-brand-muted">Somente runs completos persistidos; tentativas parciais aparecem separadamente.</p>
+      </header>
+      <div className="mb-5 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-4 md:grid-cols-2">
+        <label className="text-xs font-bold text-brand-soft">Cliente<select aria-label="Cliente analítico" value={clientId} onChange={(event) => setClientId(event.target.value)} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">{data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || client.name}</option>)}</select></label>
+        <label className="text-xs font-bold text-brand-soft">Período<select aria-label="Período analítico" value={period} onChange={(event) => setPeriod(event.target.value as IntelligencePeriod)} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">{periods.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <CategoryBadge category={client.category} size="sm" />
-        {activeCampaigns > 0 && (
-          <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-            {activeCampaigns} campanha{activeCampaigns !== 1 ? 's' : ''} ativa{activeCampaigns !== 1 ? 's' : ''}
-          </span>
-        )}
-        {criticalAlerts > 0 && (
-          <AlertBadge severity="critical" label={`${criticalAlerts} crítico${criticalAlerts > 1 ? 's' : ''}`} />
-        )}
-      </div>
-    </button>
-  );
-}
-
-// ==================== CAMPAIGN METRICS PANEL ====================
-
-interface CampaignPanelProps {
-  campaign: Campaign;
-  client: Client;
-  data: CamplyData;
-}
-
-function CampaignPanel({ campaign, client, data }: CampaignPanelProps) {
-  const healthScore = deriveCampaignHealthScore(campaign, data);
-  const metrics = selectMetricsForCampaign(campaign.objective, client.category, 6);
-  const alerts = (data.agentAlerts || []).filter(
-    a => a.relatedEntityId === campaign.id && a.status === 'active'
-  );
-
-  // Build metric value map from campaign data
-  const metricValues: Record<string, number | undefined> = {
-    spent: campaign.spent,
-    ctr: campaign.ctr,
-    cpc: campaign.cpc,
-    cpr: campaign.cpr,
-    impressions: campaign.impressions,
-    pageViews: campaign.pageViews,
-    checkouts: campaign.checkouts,
-    purchases: campaign.purchases,
-    results: campaign.results,
-  };
-
-  const budgetPct = campaign.budget > 0 ? Math.round((campaign.spent / campaign.budget) * 100) : 0;
-  const daysSinceOptimized = campaign.lastOptimizedAt
-    ? Math.floor((Date.now() - new Date(campaign.lastOptimizedAt).getTime()) / 86400000)
-    : null;
-
-  const statusColors: Record<string, string> = {
-    live:     'bg-emerald-500/20 text-emerald-300',
-    optimize: 'bg-amber-500/20 text-amber-300',
-    launching:'bg-sky-500/20 text-sky-300',
-    setup:    'bg-zinc-500/20 text-zinc-300',
-    waiting:  'bg-orange-500/20 text-orange-300',
-    paused:   'bg-zinc-500/20 text-zinc-400',
-  };
-
-  return (
-    <div className="rounded-xl border border-white/8 bg-white/4 p-5">
-      {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-bold text-white">{campaign.name}</h3>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[campaign.status] ?? 'bg-zinc-500/20 text-zinc-300'}`}>
-              {campaign.status === 'live' ? 'No ar' :
-               campaign.status === 'optimize' ? 'Otimizar' :
-               campaign.status === 'launching' ? 'Subindo' :
-               campaign.status === 'setup' ? 'Setup' :
-               campaign.status === 'waiting' ? 'Aguardando' : 'Pausada'}
-            </span>
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-              {campaign.platform}
-            </span>
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-              {campaign.objective}
-            </span>
+      {loading && <div className="rounded-xl border border-brand-line p-8 text-center text-brand-soft">Carregando dados oficiais…</div>}
+      {error && <div role="alert" className="rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-rose-100">{error}</div>}
+      {!loading && !error && dashboard && (
+        <div className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card label="Última sincronização confiável" value={dashboard.dataQuality.reliableRunId ? `${dashboard.dataQuality.dateStart ?? ''} — ${dashboard.dataQuality.dateStop ?? ''}` : 'Indisponível'} />
+            <Card label="Última tentativa" value={dashboard.dataQuality.latestAttemptRunId ? dashboard.dataQuality.latestAttemptStatus ?? 'Sem status' : 'Nenhuma'} />
+            <Card label="Score explicável" value={dashboard.score.value == null ? 'Dados insuficientes' : `${dashboard.score.value}/100`} detail={dashboard.score.explanation} />
           </div>
-          {daysSinceOptimized !== null && (
-            <p className={`text-xs ${daysSinceOptimized >= 3 ? 'text-amber-400' : 'text-zinc-500'}`}>
-              {daysSinceOptimized === 0
-                ? 'Otimizada hoje'
-                : `Última otimização: ${daysSinceOptimized}d atrás`}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <HealthScoreGauge score={healthScore} size="md" />
-        </div>
-      </div>
-
-      {/* Budget bar */}
-      {campaign.budget > 0 && (
-        <div className="mb-4">
-          <div className="mb-1 flex justify-between text-xs text-zinc-400">
-            <span>Budget {campaign.budget >= 1000 ? `R$ ${(campaign.budget / 1000).toFixed(1)}k` : `R$ ${campaign.budget.toFixed(0)}`}</span>
-            <span className={budgetPct >= 90 ? 'text-rose-400 font-semibold' : budgetPct >= 70 ? 'text-amber-400' : 'text-zinc-400'}>
-              {budgetPct}% consumido
-            </span>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Card label="Planejado" value={format(dashboard.budgetPacing.planned, 'currency', dashboard.dataQuality.currency ?? 'BRL')} />
+            <Card label="Investido" value={format(dashboard.budgetPacing.actual, 'currency', dashboard.dataQuality.currency ?? 'BRL')} />
+            <Card label="Esperado agora" value={format(dashboard.budgetPacing.expectedNow, 'currency', dashboard.dataQuality.currency ?? 'BRL')} />
+            <Card label="Projeção" value={format(dashboard.budgetPacing.projectedEnd, 'currency', dashboard.dataQuality.currency ?? 'BRL')} detail={dashboard.budgetPacing.status} />
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/8">
-            <div
-              className={`h-full rounded-full transition-all ${
-                budgetPct >= 90 ? 'bg-rose-500' : budgetPct >= 70 ? 'bg-amber-500' : 'bg-violet-500'
-              }`}
-              style={{ width: `${Math.min(100, budgetPct)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Metrics grid */}
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {metrics.map(metric => (
-          <MetricCompareCard
-            key={metric.key}
-            metric={metric}
-            currentValue={metricValues[metric.key]}
-            benchmarkValue={client.benchmarks?.[metric.key as keyof typeof client.benchmarks]}
-            compact
-          />
-        ))}
-      </div>
-
-      {/* Active alerts */}
-      {alerts.length > 0 && (
-        <div className="space-y-1.5">
-          {alerts.map(alert => (
-            <div
-              key={alert.id}
-              className={`flex items-start gap-2 rounded-lg p-2.5 text-xs ${
-                alert.severity === 'critical' ? 'bg-rose-500/10 text-rose-200' :
-                alert.severity === 'warning' ? 'bg-amber-500/10 text-amber-200' :
-                'bg-sky-500/10 text-sky-200'
-              }`}
-            >
-              <AlertBadge severity={alert.severity as any} showDot size="sm" />
-              <div>
-                <p className="font-medium">{alert.title}</p>
-                <p className="text-zinc-400">{alert.message}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ==================== MAIN VIEW ====================
-
-export function ClientAnalyticsView({ data }: ClientAnalyticsViewProps) {
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState<ClientCategory | 'all'>('all');
-
-  const activeClients = useMemo(
-    () => data.clients.filter(c => c.status === 'active'),
-    [data.clients]
-  );
-
-  const filteredClients = useMemo(() => {
-    return activeClients.filter(c => {
-      const matchSearch =
-        !search ||
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.company.toLowerCase().includes(search.toLowerCase());
-      const matchCategory =
-        filterCategory === 'all' || c.category === filterCategory;
-      return matchSearch && matchCategory;
-    });
-  }, [activeClients, search, filterCategory]);
-
-  const selectedClient = useMemo(
-    () => activeClients.find(c => c.id === selectedClientId) ?? (filteredClients[0] || null),
-    [selectedClientId, activeClients, filteredClients]
-  );
-
-  const selectedClientCampaigns = useMemo(() => {
-    if (!selectedClient) return [];
-    return data.campaigns
-      .filter(c => c.clientId === selectedClient.id)
-      .sort((a, b) => {
-        const order = { live: 0, optimize: 1, launching: 2, waiting: 3, setup: 4, paused: 5 };
-        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
-      });
-  }, [selectedClient, data.campaigns]);
-
-  const categories = useMemo(() => {
-    const used = new Set(activeClients.map(c => c.category).filter(Boolean));
-    return Array.from(used) as ClientCategory[];
-  }, [activeClients]);
-
-  // Summary stats
-  const totalSpent = useMemo(() => {
-    if (!selectedClient) return 0;
-    return selectedClientCampaigns.reduce((s, c) => s + (c.spent || 0), 0);
-  }, [selectedClient, selectedClientCampaigns]);
-
-  const totalAlerts = useMemo(() => {
-    if (!selectedClient) return 0;
-    return (data.agentAlerts || []).filter(
-      a => a.clientId === selectedClient.id && a.status === 'active'
-    ).length;
-  }, [selectedClient, data.agentAlerts]);
-
-  return (
-    <div className="flex h-full min-h-0 overflow-hidden">
-      {/* ── Sidebar: client list ── */}
-      <aside className="flex h-full w-72 flex-shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/8 p-4">
-        <div className="flex-shrink-0">
-          <h2 className="mb-3 text-lg font-bold text-white">Analytics por Cliente</h2>
-
-          {/* Search */}
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar cliente..."
-            className="mb-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-          />
-
-          {/* Category filter */}
-          {categories.length > 1 && (
-            <div className="mb-3 flex flex-wrap gap-1">
-              <button
-                onClick={() => setFilterCategory('all')}
-                className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-                  filterCategory === 'all'
-                    ? 'bg-violet-500 text-white'
-                    : 'bg-white/8 text-zinc-400 hover:bg-white/12'
-                }`}
-              >
-                Todos
-              </button>
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setFilterCategory(cat)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-                    filterCategory === cat
-                      ? 'bg-violet-500 text-white'
-                      : 'bg-white/8 text-zinc-400 hover:bg-white/12'
-                  }`}
-                >
-                  {CLIENT_CATEGORY_LABELS[cat]}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Client list */}
-        <div className="flex flex-col gap-2">
-          {filteredClients.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-500">
-              {search ? 'Nenhum cliente encontrado' : 'Nenhum cliente ativo'}
-            </p>
+          {dashboard.dataQuality.status === 'unavailable' ? (
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-6 text-amber-100"><strong>Dados indisponíveis.</strong><p className="mt-1 text-sm">Sem run qualificado, nenhuma pontuação ou leitura saudável é inventada.</p></div>
           ) : (
-            filteredClients.map(client => (
-              <ClientCard
-                key={client.id}
-                client={client}
-                data={data}
-                isSelected={selectedClient?.id === client.id}
-                onSelect={() => setSelectedClientId(client.id)}
-              />
-            ))
-          )}
-        </div>
-      </aside>
-
-      {/* ── Main content ── */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
-        {!selectedClient ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-zinc-500">Selecione um cliente para ver as métricas</p>
-          </div>
-        ) : (
-          <>
-            {/* Client header */}
-            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-bold text-white">{selectedClient.name}</h1>
-                  <CategoryBadge category={selectedClient.category} size="md" />
-                </div>
-                {selectedClient.company && (
-                  <p className="text-sm text-zinc-400">{selectedClient.company}</p>
-                )}
-              </div>
-
-              {/* Summary stats */}
-              <div className="flex gap-4">
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Gasto Total</p>
-                  <p className="text-lg font-bold text-white">
-                    {formatMetricValue('spent', totalSpent)}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Campanhas</p>
-                  <p className="text-lg font-bold text-white">{selectedClientCampaigns.length}</p>
-                </div>
-                {totalAlerts > 0 && (
-                  <div className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-center">
-                    <p className="text-xs text-rose-400">Alertas</p>
-                    <p className="text-lg font-bold text-rose-300">{totalAlerts}</p>
-                  </div>
-                )}
-              </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {dashboard.metrics.map((metric) => <Card key={metric.metricId} label={metric.label} value={format(metric.actual, metric.unit, dashboard.dataQuality.currency ?? 'BRL')} detail={`Meta: ${typeof metric.target === 'number' ? format(metric.target, metric.unit, dashboard.dataQuality.currency ?? 'BRL') : metric.target ? `${metric.target.min}–${metric.target.max}` : 'não configurada'} · ${metric.status}`} />)}
             </div>
-
-            {/* Benchmarks (if set) */}
-            {selectedClient.benchmarks && Object.keys(selectedClient.benchmarks).length > 0 && (
-              <div className="mb-4 flex flex-wrap gap-2">
-                <span className="text-xs text-zinc-500">Benchmarks:</span>
-                {Object.entries(selectedClient.benchmarks).map(([k, v]) => (
-                  v !== undefined && (
-                    <span key={k} className="rounded-full bg-white/8 px-2.5 py-0.5 text-xs text-zinc-400">
-                      {k.toUpperCase()}: {formatMetricValue(k, v as number)}
-                    </span>
-                  )
-                ))}
-              </div>
-            )}
-
-            {/* Campaigns */}
-            {selectedClientCampaigns.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 p-12">
-                <p className="text-zinc-500">Nenhuma campanha encontrada para este cliente.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {selectedClientCampaigns.map(campaign => (
-                  <CampaignPanel
-                    key={campaign.id}
-                    campaign={campaign}
-                    client={selectedClient}
-                    data={data}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </main>
-    </div>
+          )}
+          <div className="rounded-xl border border-brand-line bg-brand-surface p-4">
+            <h2 className="font-black text-white">Campanhas do mesmo run confiável</h2>
+            {dashboard.campaigns.length === 0 ? <p className="mt-3 text-sm text-brand-muted">Nenhuma campanha qualificada para o período.</p> : <div className="mt-3 grid gap-2">{dashboard.campaigns.map((campaign) => <div key={`${campaign.campaignId}-${campaign.objective}`} className="min-w-0 rounded-lg border border-brand-line bg-brand-ink p-3"><p className="truncate font-bold text-white">{campaign.campaignName}</p><p className="text-xs text-brand-muted">{campaign.objective ?? 'Objetivo não classificado'} · {format(campaign.spend, 'currency', dashboard.dataQuality.currency ?? 'BRL')}</p></div>)}</div>}
+          </div>
+        </div>
+      )}
+    </section>
   );
+}
+
+function Card({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return <div className="min-w-0 rounded-xl border border-brand-line bg-brand-surface p-4"><p className="text-xs font-bold uppercase tracking-wide text-brand-muted">{label}</p><p className="mt-2 break-words text-lg font-black text-white">{value}</p>{detail && <p className="mt-1 text-xs text-brand-soft">{detail}</p>}</div>;
 }
