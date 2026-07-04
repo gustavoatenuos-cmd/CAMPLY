@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import postgres from 'https://esm.sh/postgres@3.4.5'
+import postgres from 'npm:postgres@3.4.4'
 import { corsHeaders } from '../_shared/cors.ts'
 import { encryptToken } from '../_shared/crypto.ts'
 import { META_BASE_URL } from '../_shared/meta-api.ts'
@@ -168,15 +168,53 @@ async function persistIntegrationViaPostgrest(
   if (insertError) throw insertError
 }
 
+async function resolveHost(hostname: string): Promise<string> {
+  try {
+    const conn = await Deno.connect({ hostname, port: 5432 })
+    const remoteAddr = conn.remoteAddr
+    conn.close()
+    if (remoteAddr && 'hostname' in remoteAddr) {
+      return remoteAddr.hostname
+    }
+  } catch (err) {
+    console.warn(`Failed to resolve host ${hostname} via TCP connection, trying resolveDns:`, err)
+  }
+
+  if (!hostname.includes('_')) {
+    try {
+      const records = await Deno.resolveDns(hostname, 'A')
+      if (records && records.length > 0) {
+        return records[0]
+      }
+    } catch (err) {
+      console.warn(`Failed to resolve DNS for ${hostname} via Deno.resolveDns:`, err)
+    }
+  }
+  return hostname
+}
+
 async function persistIntegrationViaDirectPostgres(
   stateData: MetaOAuthStateData,
   meData: MetaOAuthProfileData,
   encryptedToken: string,
   tokenExpiresAt: string | null,
 ): Promise<void> {
-  const dbUrl = Deno.env.get('SUPABASE_DB_URL')
+  let dbUrl = Deno.env.get('DIRECT_DB_URL') || Deno.env.get('SUPABASE_DB_URL')
   if (!dbUrl) {
-    throw new HttpError('SUPABASE_DB_URL não está configurado para fallback direto do OAuth Meta.', 500)
+    throw new HttpError('SUPABASE_DB_URL ou DIRECT_DB_URL não está configurado para fallback direto do OAuth Meta.', 500)
+  }
+
+  try {
+    const match = dbUrl.match(/@([^:/]+)(:\d+)?\//)
+    if (match && match[1]) {
+      const hostname = match[1]
+      if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^[0-9.]+$/.test(hostname)) {
+        const resolvedIp = await resolveHost(hostname)
+        dbUrl = dbUrl.replace(`@${hostname}`, `@${resolvedIp}`)
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to parse and resolve database host in oauth callback', err)
   }
 
   const sql = postgres(dbUrl, {
