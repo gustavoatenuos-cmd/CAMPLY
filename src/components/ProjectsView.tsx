@@ -4,16 +4,20 @@ import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Project, ProjectStatus, ProjectType } from '../types';
 import { clientOptionLabel } from './ClientsView';
+import { ClientFormModal } from './ClientFormModal';
+import type { ClientAnalysisProfile } from '../lib/analysis/clientAnalysisProfile';
 
 interface ProjectsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
+  persistClientData?: (nextData: CamplyData, clientId: string, profile: ClientAnalysisProfile, idempotencyKey: string) => Promise<void>;
 }
 
-export function ProjectsView({ data, updateData }: ProjectsViewProps) {
+export function ProjectsView({ data, updateData, persistClientData }: ProjectsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedProjectType, setSelectedProjectType] = useState<ProjectType | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [clientProjectId, setClientProjectId] = useState<string | null>(null);
   const editingProject = data.projects.find((project) => project.id === editingProjectId);
   const projectBillingType: Project['billingType'] = editingProject?.billingType ?? (selectedProjectType === 'site' ? 'one_time' : 'recurring');
   const groupedClients = data.clients.filter((client) => client.projectId);
@@ -135,6 +139,15 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
+      <ClientFormModal
+        data={data}
+        updateData={updateData}
+        editingClient={null}
+        open={Boolean(clientProjectId)}
+        initialProjectId={clientProjectId ?? ''}
+        persistClientData={persistClientData}
+        onClose={() => setClientProjectId(null)}
+      />
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Projetos</p>
@@ -339,6 +352,12 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 >
                   <Edit3 size={14} />
                   Editar
+                </button>
+                <button
+                  onClick={() => setClientProjectId(project.id)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-3 py-2 text-xs font-bold text-brand-ink"
+                >
+                  <Plus size={14} /> Adicionar cliente
                 </button>
               </div>
             </div>

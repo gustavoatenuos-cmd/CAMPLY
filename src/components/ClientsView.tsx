@@ -4,11 +4,12 @@ import { createActivityLog, money, normalizeMonthlyInvestment } from '../data/ca
 import type { CamplyData, Client, ClientStatus, Project } from '../types';
 import { ClientFormModal } from './ClientFormModal';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
+import type { ClientAnalysisProfile } from '../lib/analysis/clientAnalysisProfile';
 
 interface ClientsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
-  persistClientData?: (nextData: CamplyData, clientId: string) => Promise<void>;
+  persistClientData?: (nextData: CamplyData, clientId: string, profile: ClientAnalysisProfile, idempotencyKey: string) => Promise<void>;
 }
 
 export function ClientsView({ data, updateData, persistClientData }: ClientsViewProps) {

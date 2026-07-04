@@ -4,14 +4,15 @@ import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
-import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
+import { buildInsights, clearUserData, initialData, setActivityActor } from './data/camplyStore';
+import { loadRemoteData, resetRemoteWorkspaceState, saveClientConfiguration, saveRemoteData } from './data/supabaseStore';
 import { setSupabaseSession, supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
 import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState, restoreMetaE2EState } from './lib/meta/metaE2ERuntime';
-import { resetE2EAnalysisProfiles } from './lib/analysis/clientAnalysisProfile';
+import { resetE2EAnalysisProfiles, upsertClientAnalysisProfile } from './lib/analysis/clientAnalysisProfile';
+import type { ClientAnalysisProfile } from './lib/analysis/clientAnalysisProfile';
 
 const ActivityView = React.lazy(() => import('./components/ActivityView').then(m => ({ default: m.ActivityView })));
 const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
@@ -77,7 +78,7 @@ export default function App() {
       resetRemoteWorkspaceState();
       setRemoteLoaded(false);
       setSession(data.session);
-      setData(loadData(data.session?.user.id));
+      setData(initialData);
       setAuthReady(true);
     });
 
@@ -92,7 +93,7 @@ export default function App() {
         sessionUserIdRef.current = nextUserId;
       }
       setSession(nextSession);
-      setData(nextSession ? loadData(nextSession.user.id) : initialData);
+      setData(initialData);
       setAuthReady(true);
     });
 
@@ -129,10 +130,6 @@ export default function App() {
       active = false;
     };
   }, [authenticated, session?.user.id]);
-
-  useEffect(() => {
-    saveData(data, session?.user.id);
-  }, [data, session?.user.id]);
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
@@ -208,14 +205,21 @@ export default function App() {
     });
   };
 
-  const persistClientData = async (nextData: CamplyData, clientId: string) => {
-    if (!authenticated || isMetaE2EMode) {
+  const persistClientData = async (nextData: CamplyData, clientId: string, profile: ClientAnalysisProfile, idempotencyKey: string) => {
+    if (isMetaE2EMode) {
+      await upsertClientAnalysisProfile(profile);
       skipNextRemoteSaveRef.current = true;
       setData(nextData);
       return;
     }
 
-    await saveRemoteDataAndConfirmClient(nextData, clientId);
+    if (!authenticated) {
+      skipNextRemoteSaveRef.current = true;
+      setData(nextData);
+      return;
+    }
+
+    await saveClientConfiguration(nextData, clientId, profile, idempotencyKey);
     skipNextRemoteSaveRef.current = true;
     setData(nextData);
     setSyncError(null);
@@ -278,7 +282,7 @@ export default function App() {
               {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
               {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
               {activeView === 'mediaFinance' && <FinanceView data={data} />}
-              {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
+              {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} persistClientData={persistClientData} />}
               {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
               {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}

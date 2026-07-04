@@ -2,6 +2,7 @@ import { CamplyData } from '../types';
 import { normalizeData, sanitizeWorkspaceData } from './camplyStore';
 import { getSupabaseSessionUserId, isSupabaseConfigured, supabaseData } from '../lib/supabase';
 import { withTimeout } from '../lib/withTimeout';
+import type { ClientAnalysisProfile } from '../lib/analysis/clientAnalysisProfile';
 
 type WorkspaceRow = {
   data: CamplyData;
@@ -127,4 +128,34 @@ export const saveRemoteDataAndConfirmClient = async (
   if (!confirmed) {
     throw new Error('O cliente foi salvo, mas ainda não apareceu no índice analítico. Tente novamente antes de vincular uma conta Meta.');
   }
+};
+
+export const saveClientConfiguration = async (
+  data: CamplyData,
+  clientId: string,
+  profile: ClientAnalysisProfile,
+  idempotencyKey: string
+): Promise<void> => {
+  if (!isSupabaseConfigured || !supabaseData) throw new Error('Supabase não está configurado. O cliente não foi salvo.');
+  const client = data.clients.find((item) => item.id === clientId);
+  if (!client) throw new Error('O cliente não está presente no payload de confirmação.');
+  const response = await withTimeout(
+    supabaseData.rpc('create_client_with_configuration_v1', {
+      p_client: client,
+      p_project_id: client.projectId || null,
+      p_profile: profile,
+      p_targets: profile.performanceGoals || [],
+      p_idempotency_key: idempotencyKey,
+      p_workspace: sanitizeWorkspaceData(data),
+      p_expected_version: remoteVersion,
+    }),
+    20_000,
+    'A transação do cliente demorou mais que o esperado.'
+  );
+  if (response.error) throw new Error(`Não foi possível confirmar o cliente no banco: ${response.error.message}`);
+  const payload = response.data as { workspaceVersion?: number } | null;
+  if (!payload?.workspaceVersion) throw new Error('O banco não confirmou a versão do cadastro.');
+  remoteVersion = Number(payload.workspaceVersion);
+  const confirmed = await confirmClientIdentity(clientId);
+  if (!confirmed) throw new Error('A transação terminou sem confirmar a identidade analítica do cliente.');
 };
