@@ -12,6 +12,8 @@ import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 
+// ─── Helpers de formatação ────────────────────────────────────────────────────
+
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
 }
@@ -34,6 +36,8 @@ function formatCurrency(value: number | null, currency: string | null): string {
   }
 }
 
+// ─── Sistema de semântica visual ──────────────────────────────────────────────
+
 const severity: Record<PerformanceStatus, number> = {
   unavailable: 0,
   insufficient_data: 1,
@@ -45,10 +49,116 @@ const severity: Record<PerformanceStatus, number> = {
 
 function worstEvaluation(evaluations: PerformanceEvaluation[]): PerformanceStatus {
   if (evaluations.length === 0) return 'unavailable';
-  return evaluations.reduce<PerformanceStatus>((worst, evaluation) => (
-    severity[evaluation.status] > severity[worst] ? evaluation.status : worst
-  ), 'unavailable');
+  return evaluations.reduce<PerformanceStatus>(
+    (worst, ev) => (severity[ev.status] > severity[worst] ? ev.status : worst),
+    'unavailable',
+  );
 }
+
+/** Cor do indicador (bolinha) na primeira coluna */
+function statusDotColor(status: PerformanceStatus): string {
+  switch (status) {
+    case 'critical':
+      return 'bg-red-500';
+    case 'attention':
+      return 'bg-amber-400';
+    case 'partial_data':
+      return 'bg-amber-400/70';
+    case 'on_track':
+      return 'bg-green-500';
+    default:
+      return 'bg-[#475569]'; // cinza — sem dados
+  }
+}
+
+/** Fundo + borda-esquerda da linha baseado no status mais grave */
+function rowStyle(status: PerformanceStatus): string {
+  switch (status) {
+    case 'critical':
+      return 'border-l-[3px] border-l-red-500 bg-red-500/[0.04]';
+    case 'attention':
+      return 'border-l-[3px] border-l-amber-400 bg-amber-400/[0.04]';
+    default:
+      return 'border-l-[3px] border-l-transparent';
+  }
+}
+
+// ─── Barra de pacing ──────────────────────────────────────────────────────────
+
+/** Exibe uma mini barra de progresso (80px × 4px) + valor colorido.
+ *  A largura representa a SEVERIDADE do desvio (0 % = perfeito, 100 % = desvio extremo).
+ *  Verde < 10 %, âmbar 10–25 %, vermelho > 25 %.
+ */
+function PacingBar({ pct }: { pct: number }) {
+  const abs = Math.abs(pct);
+  const barWidth = Math.min(abs * 3, 100); // escala: desvio de 33 % = barra cheia
+  const colorClass =
+    abs > 25 ? 'bg-red-500' :
+    abs > 10 ? 'bg-amber-400' :
+               'bg-green-500';
+  const textClass =
+    abs > 25 ? 'text-red-400' :
+    abs > 10 ? 'text-amber-400' :
+               'text-green-400';
+
+  return (
+    <div>
+      <div className="mb-1 h-1 w-[80px] overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full transition-all ${colorClass}`}
+          style={{ width: `${barWidth}%` }}
+        />
+      </div>
+      <p className={`text-[10px] font-semibold ${textClass}`}>
+        {pct > 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+      </p>
+    </div>
+  );
+}
+
+// ─── Linha de campanha (expandida) ────────────────────────────────────────────
+
+function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
+  const spendMetric = group.metrics.spend;
+  const conversationsMetric = group.metrics.messaging_conversations_started_total;
+  const leadsMetric = group.metrics.leads;
+  const purchasesMetric = group.metrics.purchases;
+
+  return (
+    <div className="grid gap-3 rounded-xl border border-brand-line/70 bg-brand-ink/40 p-4 md:grid-cols-[minmax(240px,1.7fr)_repeat(4,minmax(90px,0.7fr))] md:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate font-bold text-white">{group.campaignName}</span>
+          {group.classifiedObjective && (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-brand-soft">
+              {group.classifiedObjective}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 truncate text-xs text-brand-muted">
+          {group.destinationType || 'Destino não informado'} · {group.attributionSetting || 'Atribuição não informada'}
+        </p>
+      </div>
+      <MetricCell label="Investido" value={formatCurrency(metricValue(spendMetric), group.currency)} metric={spendMetric} />
+      <MetricCell label="Conversas" value={formatNumber(metricValue(conversationsMetric))} metric={conversationsMetric} />
+      <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
+      <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
+    </div>
+  );
+}
+
+function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</p>
+      <p className="mt-1 font-bold text-white">
+        <TraceableMetricValue metric={metric}>{value}</TraceableMetricValue>
+      </p>
+    </div>
+  );
+}
+
+// ─── Helpers de status de sync ────────────────────────────────────────────────
 
 function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
   const labels: Record<GlobalClientPerformance['clientStatus'], string> = {
@@ -68,45 +178,7 @@ function accountRowKey(clientId: string, account: GlobalPerformanceAccount): str
   return `${clientId}:${account.clientMetaAssetId}`;
 }
 
-function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
-  const spendMetric = group.metrics.spend;
-  const conversationsMetric = group.metrics.messaging_conversations_started_total;
-  const leadsMetric = group.metrics.leads;
-  const purchasesMetric = group.metrics.purchases;
-  const spend = metricValue(spendMetric);
-  const conversations = metricValue(conversationsMetric);
-  const leads = metricValue(leadsMetric);
-  const purchases = metricValue(purchasesMetric);
-
-  return (
-    <div className="grid gap-3 rounded-xl border border-brand-line/70 bg-brand-ink/40 p-4 md:grid-cols-[minmax(240px,1.7fr)_repeat(4,minmax(90px,0.7fr))] md:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-bold text-white">{group.campaignName}</span>
-          {group.classifiedObjective && (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-brand-soft">{group.classifiedObjective}</span>
-          )}
-        </div>
-        <p className="mt-1 truncate text-xs text-brand-muted">
-          {group.destinationType || 'Destino não informado'} · {group.attributionSetting || 'Atribuição não informada'}
-        </p>
-      </div>
-      <MetricCell label="Investido" value={formatCurrency(spend, group.currency)} metric={spendMetric} />
-      <MetricCell label="Conversas" value={formatNumber(conversations)} metric={conversationsMetric} />
-      <MetricCell label="Leads" value={formatNumber(leads)} metric={leadsMetric} />
-      <MetricCell label="Compras" value={formatNumber(purchases)} metric={purchasesMetric} />
-    </div>
-  );
-}
-
-function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">{label}</p>
-      <p className="mt-1 font-bold text-white"><TraceableMetricValue metric={metric}>{value}</TraceableMetricValue></p>
-    </div>
-  );
-}
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerformance[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -120,49 +192,102 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
 
   return (
     <div className="overflow-hidden rounded-2xl border border-brand-line bg-brand-surface">
+
+      {/* Cabeçalho */}
       <div className="flex flex-col gap-2 border-b border-brand-line p-5 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Central de clientes</p>
           <h2 className="mt-1 text-xl font-black text-white">Performance por conta de anúncios</h2>
-          <p className="mt-1 text-sm text-brand-muted">Os valores seguem conta, moeda, período e atribuição disponíveis no sync confiável.</p>
+          <p className="mt-1 text-sm text-brand-muted">
+            Os valores seguem conta, moeda, período e atribuição disponíveis no sync confiável.
+          </p>
         </div>
         <p className="text-xs text-brand-muted">Clique em uma linha para abrir as campanhas.</p>
       </div>
 
+      {/* ── Mobile ── */}
       <div data-testid="client-performance-mobile" className="space-y-3 p-4 lg:hidden">
         {rows.map(({ client, account }) => {
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric = account?.metrics.spend;
           const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
           const primaryMetric = account?.metrics[primaryMetricId];
-          const spend = metricValue(spendMetric);
-          const primaryValue = metricValue(primaryMetric);
           const evaluations = account
-            ? client.evaluations.filter((evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId)
+            ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
             : [];
           const performanceStatus = worstEvaluation(evaluations);
           const groups = account
-            ? client.metricGroups.filter((group) => group.clientMetaAssetId === account.clientMetaAssetId)
+            ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
             : [];
           const isExpanded = expanded === key;
 
           return (
-            <article key={key} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4">
+            <article
+              key={key}
+              className={`rounded-xl border bg-brand-ink/50 p-4 transition ${
+                performanceStatus === 'critical'
+                  ? 'border-red-500/30'
+                  : performanceStatus === 'attention'
+                  ? 'border-amber-400/30'
+                  : 'border-brand-line'
+              }`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-bold uppercase tracking-wider text-brand-green">{client.analysisProfile?.vertical || 'Sem segmento'}</p>
-                  <h3 className="mt-1 truncate font-black text-white">{client.clientName}</h3>
-                  <p className="mt-1 truncate text-xs text-brand-muted">{account?.accountName || 'Nenhuma conta vinculada'}</p>
+                  <p className="truncate text-xs font-bold uppercase tracking-wider text-brand-green">
+                    {client.analysisProfile?.vertical || 'Sem segmento'}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    {/* Indicador de saúde */}
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotColor(performanceStatus)}`} aria-hidden="true" />
+                    <h3 className="truncate font-black text-white">{client.clientName}</h3>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-brand-muted">
+                    {account?.accountName || 'Nenhuma conta vinculada'}
+                  </p>
                 </div>
                 <PerformanceStatusBadge status={performanceStatus} />
               </div>
+
               <div className="mt-4 grid grid-cols-2 gap-2">
-                <MetricCell label="Investimento" value={formatCurrency(spend, account?.currency || null)} metric={spendMetric} />
-                <MetricCell label={metricLabels[primaryMetricId] || 'KPI principal'} value={formatNumber(primaryValue)} metric={primaryMetric} />
-                <MetricCell label="Orçamento" value={client.analysisProfile?.plannedBudget ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null) : '—'} />
-                <MetricCell label="Pacing" value={account?.budgetPacing ? `${account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—'} />
+                <MetricCell
+                  label="Investimento"
+                  value={formatCurrency(metricValue(spendMetric), account?.currency || null)}
+                  metric={spendMetric}
+                />
+                <MetricCell
+                  label={metricLabels[primaryMetricId] || 'KPI principal'}
+                  value={formatNumber(metricValue(primaryMetric))}
+                  metric={primaryMetric}
+                />
+                <MetricCell
+                  label="Orçamento"
+                  value={
+                    client.analysisProfile?.plannedBudget
+                      ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null)
+                      : '—'
+                  }
+                />
+                {/* Pacing visual no mobile */}
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Pacing</p>
+                  <div className="mt-1">
+                    {account?.budgetPacing
+                      ? <PacingBar pct={account.budgetPacing.differencePercent} />
+                      : <span className="font-bold text-brand-muted">—</span>
+                    }
+                  </div>
+                </div>
               </div>
-              <p className="mt-3 text-xs text-brand-muted">{statusLabel(client.clientStatus)} · {account?.lastSuccessfulRun?.finishedAt ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'Sem sync confiável'}</p>
+
+              <p className="mt-3 text-xs text-brand-muted">
+                {statusLabel(client.clientStatus)} · {
+                  account?.lastSuccessfulRun?.finishedAt
+                    ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
+                    : 'Sem sync confiável'
+                }
+              </p>
+
               <button
                 type="button"
                 data-testid="client-performance-details-toggle"
@@ -170,24 +295,41 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                 onClick={() => setExpanded(isExpanded ? null : key)}
                 className="mt-3 inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"
               >
-                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
               </button>
+
               {isExpanded && (
                 <div data-testid="client-performance-details" className="mt-3 space-y-3 border-t border-brand-line pt-3">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Metas e realizado</p>
-                    {evaluations.length === 0 ? <p className="mt-1 text-xs text-brand-muted">Nenhuma meta comparável neste período.</p> : evaluations.map((evaluation) => (
-                      <div key={`${evaluation.metricId}:${evaluation.campaignId || 'account'}`} className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-black/20 p-2 text-xs">
-                        <div><p className="font-bold text-white">{metricLabels[evaluation.metricId] || evaluation.metricId.split('_').join(' ')}</p><p className="text-brand-muted">Esperado {formatNumber(evaluation.targetValue)} · realizado {formatNumber(evaluation.actualValue)}</p></div>
-                        <PerformanceStatusBadge status={evaluation.status} />
-                      </div>
-                    ))}
+                    {evaluations.length === 0
+                      ? <p className="mt-1 text-xs text-brand-muted">Nenhuma meta comparável neste período.</p>
+                      : evaluations.map((ev) => (
+                        <div
+                          key={`${ev.metricId}:${ev.campaignId || 'account'}`}
+                          className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-black/20 p-2 text-xs"
+                        >
+                          <div>
+                            <p className="font-bold text-white">{metricLabels[ev.metricId] || ev.metricId.split('_').join(' ')}</p>
+                            <p className="text-brand-muted">Esperado {formatNumber(ev.targetValue)} · realizado {formatNumber(ev.actualValue)}</p>
+                          </div>
+                          <PerformanceStatusBadge status={ev.status} />
+                        </div>
+                      ))
+                    }
                   </div>
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Campanhas da conta</p>
-                    <p className="mt-1 text-xs text-brand-soft">{groups.length > 0 ? groups.map((group) => group.campaignName).join(' · ') : 'Nenhuma campanha confiável neste recorte.'}</p>
+                    <p className="mt-1 text-xs text-brand-soft">
+                      {groups.length > 0
+                        ? groups.map((g) => g.campaignName).join(' · ')
+                        : 'Nenhuma campanha confiável neste recorte.'}
+                    </p>
                   </div>
-                  <p className="text-xs text-brand-muted">Qualidade: {account?.dataQuality.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}</p>
+                  <p className="text-xs text-brand-muted">
+                    Qualidade: {account?.dataQuality.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}
+                  </p>
                 </div>
               )}
             </article>
@@ -195,6 +337,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
         })}
       </div>
 
+      {/* ── Desktop ── */}
       <div data-testid="client-performance-desktop" className="hidden overflow-x-auto lg:block">
         <table className="min-w-[1180px] w-full text-left text-sm">
           <thead className="border-b border-brand-line bg-brand-ink/60 text-[11px] uppercase tracking-wider text-brand-muted">
@@ -227,45 +370,100 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
               const costPerLead = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
               const costPerPurchase = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
               const evaluations = account
-                ? client.evaluations.filter((evaluation) => evaluation.clientMetaAssetId === account.clientMetaAssetId)
+                ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
               const performanceStatus = worstEvaluation(evaluations);
               const groups = account
-                ? client.metricGroups.filter((group) => group.clientMetaAssetId === account.clientMetaAssetId)
+                ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
               const isExpanded = expanded === key;
 
               return (
                 <tr key={key} className="align-top">
                   <td colSpan={11} className="p-0">
+                    {/**
+                     * rowStyle() aplica:
+                     *  - borda-esquerda 3 px colorida por severidade
+                     *  - fundo com opacity 4 % na cor semântica
+                     * group + group-hover expõe o botão "Ver campanhas" na última célula.
+                     */}
                     <button
                       type="button"
                       onClick={() => account && setExpanded(isExpanded ? null : key)}
-                      className={`grid w-full min-w-[1180px] grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px] items-center text-left transition ${account ? 'hover:bg-white/[0.03]' : 'cursor-default'} `}
+                      className={[
+                        'group grid w-full min-w-[1180px]',
+                        'grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px]',
+                        'items-center text-left transition-colors duration-100',
+                        account ? 'hover:bg-white/[0.03]' : 'cursor-default',
+                        rowStyle(performanceStatus),
+                      ].join(' ')}
                     >
+                      {/* Coluna 1: indicador de saúde + nome */}
                       <div className="flex items-center gap-3 px-4 py-4">
-                        {account ? (isExpanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />) : <Database size={17} />}
+                        {account
+                          ? (isExpanded ? <ChevronDown size={17} className="shrink-0 text-brand-muted" /> : <ChevronRight size={17} className="shrink-0 text-brand-muted" />)
+                          : <Database size={17} className="shrink-0 text-brand-muted" />
+                        }
+                        {/* Bolinha de status */}
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${statusDotColor(performanceStatus)}`}
+                          aria-hidden="true"
+                        />
                         <div className="min-w-0">
                           <p className="truncate font-bold text-white">{client.clientName}</p>
-                          <p className="truncate text-xs text-brand-muted">{account?.accountName || 'Nenhuma conta vinculada'}</p>
+                          <p className="truncate text-xs text-brand-muted">
+                            {account?.accountName || 'Nenhuma conta vinculada'}
+                          </p>
                         </div>
                       </div>
-                      <div className="px-4 py-4 font-bold text-white"><TraceableMetricValue metric={spendMetric}>{formatCurrency(spend, account?.currency || null)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4">
-                        {account?.budgetPacing ? (
-                          <div>
-                            <p className="font-bold text-white">{account.budgetPacing.differencePercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</p>
-                            <p className="text-[10px] text-brand-muted">vs. esperado</p>
-                          </div>
-                        ) : '—'}
+
+                      {/* Coluna 2: Investimento */}
+                      <div className="px-4 py-4 font-bold text-white">
+                        <TraceableMetricValue metric={spendMetric}>
+                          {formatCurrency(spend, account?.currency || null)}
+                        </TraceableMetricValue>
                       </div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerConversation}>{formatCurrency(metricValue(costPerConversation), account?.currency || null)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerLead}>{formatCurrency(metricValue(costPerLead), account?.currency || null)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4 text-white"><TraceableMetricValue metric={costPerPurchase}>{formatCurrency(metricValue(costPerPurchase), account?.currency || null)}</TraceableMetricValue></div>
-                      <div className="px-4 py-4"><PerformanceStatusBadge status={performanceStatus} /></div>
+
+                      {/* Coluna 3: Pacing — barra visual */}
+                      <div className="px-4 py-4">
+                        {account?.budgetPacing
+                          ? <PacingBar pct={account.budgetPacing.differencePercent} />
+                          : <span className="text-brand-muted">—</span>
+                        }
+                      </div>
+
+                      {/* Colunas 4–9: métricas */}
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue>
+                      </div>
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={costPerConversation}>
+                          {formatCurrency(metricValue(costPerConversation), account?.currency || null)}
+                        </TraceableMetricValue>
+                      </div>
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue>
+                      </div>
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={costPerLead}>
+                          {formatCurrency(metricValue(costPerLead), account?.currency || null)}
+                        </TraceableMetricValue>
+                      </div>
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue>
+                      </div>
+                      <div className="px-4 py-4 text-white">
+                        <TraceableMetricValue metric={costPerPurchase}>
+                          {formatCurrency(metricValue(costPerPurchase), account?.currency || null)}
+                        </TraceableMetricValue>
+                      </div>
+
+                      {/* Coluna 10: Situação */}
+                      <div className="px-4 py-4">
+                        <PerformanceStatusBadge status={performanceStatus} />
+                      </div>
+
+                      {/* Coluna 11: Dados + hover CTA */}
                       <div className="px-4 py-4">
                         <p className="font-semibold text-white">{statusLabel(client.clientStatus)}</p>
                         <p className="mt-1 flex items-center gap-1 text-[10px] text-brand-muted">
@@ -274,28 +472,46 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                             ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
                             : 'Sem sync confiável'}
                         </p>
+                        {/* Botão fantasma — aparece no hover da linha */}
+                        {account && (
+                          <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
+                            Ver campanhas
+                          </span>
+                        )}
                       </div>
                     </button>
 
+                    {/* Linha expandida: campanhas */}
                     {isExpanded && account && (
                       <div className="border-t border-brand-line bg-brand-ink/50 px-5 py-5">
                         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                           <div>
-                            <p className="flex items-center gap-2 font-bold text-white"><Layers3 size={16} className="text-brand-green" /> Campanhas da conta</p>
-                            <p className="mt-1 text-xs text-brand-muted">Cada combinação de objetivo, destino e atribuição permanece separada.</p>
+                            <p className="flex items-center gap-2 font-bold text-white">
+                              <Layers3 size={16} className="text-brand-green" /> Campanhas da conta
+                            </p>
+                            <p className="mt-1 text-xs text-brand-muted">
+                              Cada combinação de objetivo, destino e atribuição permanece separada.
+                            </p>
                           </div>
                           <div className="text-xs text-brand-muted">
-                            Moeda: <strong className="text-white">{account.currency || '—'}</strong> · Timezone: <strong className="text-white">{account.timezone || '—'}</strong>
+                            Moeda: <strong className="text-white">{account.currency || '—'}</strong> · Timezone:{' '}
+                            <strong className="text-white">{account.timezone || '—'}</strong>
                           </div>
                         </div>
                         <div className="space-y-3">
-                          {groups.length > 0 ? groups.map((group, index) => (
-                            <CampaignGroupRow key={`${group.campaignId}:${group.attributionSetting || 'none'}:${index}`} group={group} />
-                          )) : (
-                            <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
-                              Nenhuma campanha confiável foi retornada para este período.
-                            </div>
-                          )}
+                          {groups.length > 0
+                            ? groups.map((group, i) => (
+                              <CampaignGroupRow
+                                key={`${group.campaignId}:${group.attributionSetting || 'none'}:${i}`}
+                                group={group}
+                              />
+                            ))
+                            : (
+                              <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
+                                Nenhuma campanha confiável foi retornada para este período.
+                              </div>
+                            )
+                          }
                         </div>
                       </div>
                     )}
@@ -308,7 +524,9 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
       </div>
 
       {rows.length === 0 && (
-        <div className="p-10 text-center text-brand-muted">Nenhum cliente disponível para os filtros atuais.</div>
+        <div className="p-10 text-center text-brand-muted">
+          Nenhum cliente disponível para os filtros atuais.
+        </div>
       )}
     </div>
   );
