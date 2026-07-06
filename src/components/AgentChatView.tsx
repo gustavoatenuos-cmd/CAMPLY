@@ -15,14 +15,27 @@ interface AgentChatViewProps {
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
 }
 
+const CHAT_KEY = 'camply:agent-chat-history';
+
+const DEFAULT_MESSAGES: Message[] = [
+  {
+    id: '1',
+    role: 'agent',
+    text: 'Olá! Sou seu assistente operacional. Você pode me pedir para criar clientes, campanhas, tarefas ou projetos. Pode digitar ou usar o microfone!',
+  },
+];
+
+const loadInitialMessages = (): Message[] => {
+  try {
+    const stored = window.sessionStorage.getItem(CHAT_KEY);
+    return stored ? JSON.parse(stored) as Message[] : DEFAULT_MESSAGES;
+  } catch {
+    return DEFAULT_MESSAGES;
+  }
+};
+
 export function AgentChatView({ data, updateData }: AgentChatViewProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'agent',
-      text: 'Olá! Sou seu assistente operacional. Você pode me pedir para criar clientes, campanhas, tarefas ou projetos. Pode digitar ou usar o microfone!',
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>(loadInitialMessages);
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -74,6 +87,14 @@ export function AgentChatView({ data, updateData }: AgentChatViewProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(CHAT_KEY, JSON.stringify(messages.slice(-50)));
+    } catch (error) {
+      console.warn('Camply chat history save skipped:', error instanceof Error ? error.message : String(error));
+    }
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
