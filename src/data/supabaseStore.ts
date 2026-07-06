@@ -75,6 +75,14 @@ const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
 
   if (error) {
     console.error('Camply Supabase save failed:', error.message);
+    if (error.code === '40001') {
+      const { data: row } = await supabaseData
+        .from('camply_workspace')
+        .select('version')
+        .eq('id', userId)
+        .single<{ version: number }>();
+      if (row) remoteVersion = row.version;
+    }
     return false;
   }
 
