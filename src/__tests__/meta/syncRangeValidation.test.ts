@@ -39,7 +39,7 @@ let validateReturnedPeriodRange: any;
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: () => '' } });
-  const indexStr = '../../../supabase/functions/meta-sync-ads/index.ts';
+  const indexStr = '../../../supabase/functions/meta-sync-performance/index.ts';
   const module = await import(indexStr);
   validateReturnedPeriodRange = module.validateReturnedPeriodRange;
 });

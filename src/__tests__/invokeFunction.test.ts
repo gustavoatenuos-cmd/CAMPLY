@@ -31,7 +31,7 @@ describe('invokeFunction', () => {
       },
     }), { status: 503 }));
 
-    await expect(invokeFunction('meta-sync-ads', { metaAssetId: 'asset_1' }))
+    await expect(invokeFunction('meta-sync-performance', { metaAssetId: 'asset_1' }))
       .rejects.toThrow('Database persistence verification failed');
   });
 });

@@ -51,7 +51,7 @@ let fetchMetaGraphPaginated: any;
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: (k: string) => k === 'META_APP_SECRET' ? 'secret' : '' } });
   
-  const indexStr = '../../../supabase/functions/meta-sync-ads/index.ts';
+  const indexStr = '../../../supabase/functions/meta-sync-performance/index.ts';
   const module = await import(indexStr);
   handleRequest = module.handleRequest;
   

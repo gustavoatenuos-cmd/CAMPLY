@@ -66,7 +66,7 @@ async function syncOperationalMetaAsset(
     };
   }
 
-  const response = await invokeFunction<MetaSyncResponse>('meta-sync-ads', {
+  const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
     metaAssetId: input.metaAssetId,
     periods: [input.period],
     requestedLevel: input.requestedLevel || 'campaign',
@@ -96,7 +96,7 @@ export async function syncClientMeta(
     throw new Error('A sincronização exige metaAssetId ou adAccountId');
   }
 
-  const response = await invokeFunction<MetaSyncResponse>('meta-sync-ads', {
+  const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
     metaAssetId: options.metaAssetId,
     adAccountId: options.adAccountId,
     periods: options.periods,
