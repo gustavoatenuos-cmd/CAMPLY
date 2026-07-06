@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { AlertCircle, X } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
@@ -38,6 +39,35 @@ function initialActiveView(): ViewId {
   return 'today';
 }
 
+// ─── Toast global de erro de sincronização ────────────────────────────────────
+// Substitui o banner vermelho permanente que bloqueava espaço em todas as telas.
+// Aparece fixo no canto inferior direito e pode ser fechado manualmente.
+function SyncErrorToast({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-rose-400/30 bg-brand-surface p-4 shadow-2xl"
+    >
+      <AlertCircle size={18} className="mt-0.5 shrink-0 text-rose-400" />
+      <p className="flex-1 text-sm leading-5 text-rose-200">{message}</p>
+      <button
+        type="button"
+        aria-label="Fechar notificação"
+        onClick={onDismiss}
+        className="shrink-0 rounded-lg p-1 text-rose-300/60 transition hover:bg-white/[0.06] hover:text-rose-200"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -47,11 +77,17 @@ export default function App() {
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
   const [claudeLoading, setClaudeLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncErrorDismissed, setSyncErrorDismissed] = useState(false);
   const [remoteLoadError, setRemoteLoadError] = useState<string | null>(null);
   const [remoteLoadAttempt, setRemoteLoadAttempt] = useState(0);
   const sessionUserIdRef = useRef<string | null>(null);
   const skipNextRemoteSaveRef = useRef(false);
   const focusRefreshRunningRef = useRef(false);
+
+  // Reexibir o toast se surgir um novo erro após o usuário fechar
+  useEffect(() => {
+    if (syncError) setSyncErrorDismissed(false);
+  }, [syncError]);
 
   useEffect(() => {
     if (isMetaE2EMode) {
@@ -335,11 +371,6 @@ export default function App() {
             </button>
           </div>
         )}
-        {syncError && (
-          <div role="alert" className="border-b border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
-            {syncError}
-          </div>
-        )}
         <div className="min-h-0 flex-1">
           <ErrorBoundary key={activeView} viewName={activeView}>
             <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
@@ -370,6 +401,14 @@ export default function App() {
           </ErrorBoundary>
         </div>
       </main>
+      {/* Toast global de erro de CRM — não bloqueia nenhuma tela */}
+      {syncError && !syncErrorDismissed && (
+        <SyncErrorToast
+          message={syncError}
+          onDismiss={() => setSyncErrorDismissed(true)}
+        />
+      )}
+
       <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
     </div>
   );

@@ -134,7 +134,8 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
   };
 
   return (
-    <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
+    // bg-brand-ink: fundo consistente com as demais views
+    <section className="h-full overflow-y-auto bg-brand-ink p-4 sm:p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-green">Projetos</p>
@@ -273,6 +274,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
         )}
       </Modal>
 
+      {/* KPI cards — bg-brand-surface (contraste correto sobre o fundo bg-brand-ink) */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Summary label="Projetos ativos" value={data.projects.filter((project) => project.status !== 'done').length.toString()} />
         <Summary label="Clientes em projetos" value={groupedClients.length.toString()} />
@@ -302,7 +304,8 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
               : Math.max(0, projectAmount - projectReceived);
 
           return (
-          <article key={project.id} className="rounded-xl border border-brand-line bg-brand-ink p-5">
+          // Cartão usa bg-brand-surface (não mais bg-brand-ink, que é o fundo da section)
+          <article key={project.id} className="rounded-xl border border-brand-line bg-brand-surface p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-white">{project.name}</h2>
@@ -323,7 +326,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 )}
               </div>
               <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-                <select value={project.status} onChange={(event) => setStatus(project.id, event.target.value as ProjectStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
+                <select value={project.status} onChange={(event) => setStatus(project.id, event.target.value as ProjectStatus)} className="rounded-md border border-brand-line bg-brand-ink/50 px-2 py-1 text-xs text-white">
                   <option value="planning">{projectStatusLabels.planning}</option>
                   <option value="active">{projectStatusLabels.active}</option>
                   <option value="waiting">{projectStatusLabels.waiting}</option>
@@ -349,46 +352,47 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                   <span>Progresso</span>
                   <span>{project.progress}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-brand-surface2">
+                <div className="h-2 rounded-full bg-brand-ink/60">
                   <div className="h-2 rounded-full bg-brand-green" style={{ width: `${project.progress}%` }} />
                 </div>
               </div>
             )}
 
+            {/* Métricas internas — bg-brand-ink/50 sobre bg-brand-surface: hierarquia correta */}
             <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">Gestão recorrente dos clientes</p>
                 <p className="mt-1 font-semibold text-brand-green">{money(recurringTotal)}/mês</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">Serviços pontuais dos clientes</p>
                 <p className="mt-1 font-semibold text-white">{money(oneTimeTotal)}</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">Mídia estimada mensal</p>
                 <p className="mt-1 font-semibold text-white">{money(monthlyMedia)}</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">Modelo do projeto</p>
                 <p className="mt-1 font-semibold text-white">{project.billingType === 'recurring' ? 'Trabalho recorrente' : 'Entrega pontual'}</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">{project.billingType === 'recurring' ? 'Somatória do projeto' : 'Valor cobrado'}</p>
                 <p className="mt-1 font-semibold text-white">{money(projectAmount)}</p>
               </div>
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">{project.billingType === 'recurring' ? 'Recorrência mensal' : 'Em aberto'}</p>
                 <p className="mt-1 font-semibold text-brand-green">{money(openAmount)}</p>
               </div>
               {project.billingType === 'one_time' ? (
-                <div className="rounded-lg bg-brand-surface p-3">
+                <div className="rounded-lg bg-brand-ink/50 p-3">
                   <p className="text-xs text-brand-muted">Status financeiro</p>
                   <p className={`mt-1 font-semibold ${project.paymentStatus === 'paid' ? 'text-brand-green' : 'text-amber-200'}`}>
                     {paymentStatusLabels[project.paymentStatus]}
                   </p>
                 </div>
               ) : project.amountCharged > 0 ? (
-                <div className="rounded-lg bg-brand-surface p-3">
+                <div className="rounded-lg bg-brand-ink/50 p-3">
                   <p className="text-xs text-brand-muted">Taxa do projeto</p>
                   <p className={`mt-1 font-semibold ${project.paymentStatus === 'paid' ? 'text-brand-green' : 'text-amber-200'}`}>
                     {paymentStatusLabels[project.paymentStatus]}
@@ -396,18 +400,18 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 </div>
               ) : null}
               {project.billingType === 'one_time' && (
-                <div className="rounded-lg bg-brand-surface p-3">
+                <div className="rounded-lg bg-brand-ink/50 p-3">
                   <p className="text-xs text-brand-muted">Prazo</p>
                   <p className="mt-1 font-semibold text-white">{project.dueDate ? formatDate(project.dueDate) : 'Sem prazo'}</p>
                 </div>
               )}
-              <div className="rounded-lg bg-brand-surface p-3">
+              <div className="rounded-lg bg-brand-ink/50 p-3">
                 <p className="text-xs text-brand-muted">Próxima ação</p>
                 <p className="mt-1 text-sm font-medium text-white">{project.nextAction}</p>
               </div>
             </div>
 
-            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-surface p-3 xl:grid-cols-[1fr_1fr_1fr_1.4fr_auto] xl:items-end">
+            <form onSubmit={(event) => updateProjectDetails(event, project)} className="mt-4 grid gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3 xl:grid-cols-[1fr_1fr_1fr_1.4fr_auto] xl:items-end">
               <MoneyField label={project.billingType === 'recurring' ? 'Taxa fixa (opcional)' : 'Valor cobrado'} name="amountCharged" defaultValue={project.amountCharged} />
               <MoneyField label="Valor recebido" name="amountReceived" defaultValue={project.amountReceived} />
               <label className="block">
@@ -434,7 +438,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
             </div>
 
             {project.deliveredUrl && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-brand-line bg-brand-surface">
+              <div className="mt-4 overflow-hidden rounded-xl border border-brand-line bg-brand-ink/50">
                 <div className="border-b border-brand-line px-3 py-2 text-xs text-brand-muted">
                   Preview do projeto entregue
                 </div>
@@ -477,8 +481,9 @@ function MoneyField({ label, name, ...props }: React.InputHTMLAttributes<HTMLInp
 }
 
 function Summary({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  // bg-brand-surface: cartões KPI têm contraste correto sobre o fundo bg-brand-ink da section
   return (
-    <div className="rounded-xl border border-brand-line bg-brand-ink p-5">
+    <div className="rounded-xl border border-brand-line bg-brand-surface p-5">
       <p className="text-sm text-brand-muted">{label}</p>
       <p className={`mt-3 text-2xl font-black ${highlight ? 'text-brand-green' : 'text-white'}`}>{value}</p>
     </div>
