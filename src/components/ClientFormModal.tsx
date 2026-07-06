@@ -6,7 +6,8 @@ import React from 'react';
 import { Modal } from './ui/Modal';
 import {
   analysisVerticals,
-  businessModels,
+  operationTypes,
+  salesModels,
   defaultAnalysisProfile,
   loadClientAnalysisProfile,
   metricLabels,
@@ -100,20 +101,12 @@ export function ClientFormModal({
     setProfileDraft((current) => ({ ...current, ...patch }));
   };
 
-  const handleBusinessModelChange = (businessModel: string) => {
-    if (businessModel === 'Conversas pelo WhatsApp') {
-      updateProfile({
-        businessModel,
-        primaryConversionMetric: 'messaging_conversations_started_total',
-        secondaryMetrics: ['messaging_conversations_started_total', 'leads', 'cost_per_lead', 'link_cpc', 'cpm', 'cost_per_purchase'],
-      });
-    } else {
-      updateProfile({
-        businessModel,
-        primaryConversionMetric: 'purchases',
-        secondaryMetrics: ['purchases', 'cost_per_purchase', 'purchase_roas', 'purchase_value', 'link_cpc', 'cpm', 'landing_page_views'],
-      });
-    }
+  const handleSalesModelToggle = (modelValue: string, isChecked: boolean) => {
+    updateProfile({
+      salesModels: isChecked
+        ? [...profileDraft.salesModels, modelValue]
+        : profileDraft.salesModels.filter(m => m !== modelValue)
+    });
   };
 
   const closeIfIdle = () => {
@@ -235,11 +228,11 @@ export function ClientFormModal({
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Segmento principal</span>
-              <select value={profileDraft.vertical} onChange={(event) => updateProfile({ vertical: event.target.value, subsegment: subsegmentsByVertical[event.target.value]?.[0] || 'Outros', customVertical: null, customSubsegment: null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {analysisVerticals.map((vertical) => <option key={vertical} value={vertical}>{vertical}</option>)}
+              <select value={profileDraft.vertical} onChange={(event) => updateProfile({ vertical: event.target.value, subsegment: subsegmentsByVertical[event.target.value]?.[0]?.value || 'outros', customVertical: null, customSubsegment: null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                {analysisVerticals.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
-            {profileDraft.vertical === 'Outros' && (
+            {profileDraft.vertical === 'outros' && (
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-brand-soft">Segmento personalizado</span>
                 <input value={profileDraft.customVertical ?? ''} onChange={(event) => updateProfile({ customVertical: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex.: Turismo" />
@@ -247,33 +240,63 @@ export function ClientFormModal({
             )}
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Subsegmento</span>
-              <input list="client-subsegments" value={profileDraft.subsegment} onChange={(event) => updateProfile({ subsegment: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-              <datalist id="client-subsegments">
-                {subsegmentOptions.map((subsegment) => <option key={subsegment} value={subsegment} />)}
-              </datalist>
+              <select value={profileDraft.subsegment} onChange={(event) => updateProfile({ subsegment: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                {subsegmentOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
             </label>
-            {profileDraft.subsegment === 'Outros' && (
+            {profileDraft.subsegment === 'outros' && (
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-brand-soft">Subsegmento personalizado</span>
                 <input value={profileDraft.customSubsegment ?? ''} onChange={(event) => updateProfile({ customSubsegment: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex.: Agência de viagens" />
               </label>
             )}
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo de negócio</span>
-              <select value={profileDraft.businessModel} onChange={(event) => handleBusinessModelChange(event.target.value)} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {businessModels.map((model) => <option key={model} value={model}>{model}</option>)}
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de operação</span>
+              <select value={profileDraft.operationType || ''} onChange={(event) => updateProfile({ operationType: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Selecione...</option>
+                {operationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
+            <div className="md:col-span-2">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo de venda (Múltipla escolha)</span>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {salesModels.map((item) => (
+                  <label key={item.value} className="flex items-center gap-2 rounded-lg border border-brand-line bg-brand-ink/70 px-3 py-2 text-xs font-semibold text-brand-soft hover:border-brand-green cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={profileDraft.salesModels.includes(item.value)}
+                      onChange={(e) => handleSalesModelToggle(item.value, e.target.checked)}
+                      className="h-4 w-4 accent-brand-green"
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </div>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Canal principal</span>
               <select value={profileDraft.primaryChannel} onChange={(event) => updateProfile({ primaryChannel: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {primaryChannels.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
+                {primaryChannels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Canal secundário</span>
+              <select value={profileDraft.secondaryChannel || ''} onChange={(event) => updateProfile({ secondaryChannel: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Nenhum</option>
+                {primaryChannels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão principal</span>
               <select value={profileDraft.primaryConversionMetric} onChange={(event) => updateProfile({ primaryConversionMetric: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {primaryConversionMetrics.map((metricId) => <option key={metricId} value={metricId}>{metricLabels[metricId] || metricId}</option>)}
+                {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão secundária</span>
+              <select value={profileDraft.secondaryConversionMetric || ''} onChange={(event) => updateProfile({ secondaryConversionMetric: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+                <option value="">Nenhuma</option>
+                {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">

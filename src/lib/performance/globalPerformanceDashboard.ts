@@ -481,6 +481,10 @@ export async function loadGlobalPerformanceDashboard(options: {
     const defaultProfile = (input: Partial<ClientAnalysisProfile> & Pick<ClientAnalysisProfile, 'clientId' | 'vertical' | 'subsegment' | 'primaryConversionMetric' | 'budgetPeriod' | 'plannedBudget'>): ClientAnalysisProfile => ({
       customVertical: null,
       customSubsegment: null,
+      operationType: null,
+      salesModels: [],
+      secondaryChannel: null,
+      secondaryConversionMetric: null,
       businessModel: 'negócio local',
       secondaryMetrics: ['cpm', 'link_ctr', 'frequency'],
       primaryChannel: 'Misto',

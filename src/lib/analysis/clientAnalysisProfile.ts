@@ -1,30 +1,75 @@
 import { supabaseData } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
-export const analysisVerticals = [
-  'Serviços locais',
-  'E-commerce',
-  'Venda direta',
-] as const;
+export interface ValueLabel {
+  value: string;
+  label: string;
+}
 
-export const businessModels = [
-  'Conversas pelo WhatsApp',
-  'Vendas pelo site',
-] as const;
+export const analysisVerticals: ValueLabel[] = [
+  { value: 'saude', label: 'Saúde' },
+  { value: 'alimentacao', label: 'Alimentação' },
+  { value: 'varejo', label: 'Varejo' },
+  { value: 'educacao_infoproduto', label: 'Educação / Infoproduto' },
+  { value: 'servicos_locais', label: 'Serviços locais' },
+  { value: 'imobiliario', label: 'Imobiliário' },
+  { value: 'automotivo', label: 'Automotivo' },
+  { value: 'b2b_atacado', label: 'B2B / Atacado' },
+  { value: 'outros', label: 'Outros' },
+];
 
-export const primaryChannels = [
-  'WhatsApp',
-  'Site',
-  'Loja física',
-] as const;
+export const operationTypes: ValueLabel[] = [
+  { value: 'local', label: 'Local' },
+  { value: 'online', label: 'Online' },
+  { value: 'hibrida', label: 'Híbrida' },
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'atacado', label: 'Atacado' },
+  { value: 'lancamento', label: 'Lançamento' },
+  { value: 'recorrencia', label: 'Recorrência' },
+];
 
-export const primaryConversionMetrics = [
-  'messaging_conversations_started_total',
-  'leads',
-  'purchases',
-  'landing_page_views',
-  'link_clicks',
-] as const;
+export const salesModels: ValueLabel[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'loja_fisica', label: 'Loja física' },
+  { value: 'ecommerce_proprio', label: 'E-commerce próprio' },
+  { value: 'checkout_digital', label: 'Checkout digital' },
+  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'instagram_direct', label: 'Instagram Direct' },
+  { value: 'ligacao', label: 'Ligação' },
+  { value: 'formulario', label: 'Formulário' },
+  { value: 'delivery_app', label: 'Delivery app' },
+  { value: 'atacado', label: 'Atacado' },
+];
+
+export const primaryChannels: ValueLabel[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'site_ecommerce', label: 'Site / E-commerce' },
+  { value: 'pagina_vendas', label: 'Página de vendas' },
+  { value: 'checkout', label: 'Checkout' },
+  { value: 'instagram_direct', label: 'Instagram Direct' },
+  { value: 'ligacao', label: 'Ligação' },
+  { value: 'formulario', label: 'Formulário' },
+  { value: 'loja_fisica', label: 'Loja física' },
+  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'app_delivery', label: 'App delivery' },
+];
+
+export const primaryConversionMetrics: ValueLabel[] = [
+  { value: 'conversa_iniciada', label: 'Conversa iniciada' },
+  { value: 'lead_gerado', label: 'Lead gerado' },
+  { value: 'agendamento_realizado', label: 'Agendamento realizado' },
+  { value: 'compra_site', label: 'Compra no site' },
+  { value: 'compra_checkout', label: 'Compra no checkout' },
+  { value: 'pedido_realizado', label: 'Pedido realizado' },
+  { value: 'orcamento_solicitado', label: 'Orçamento solicitado' },
+  { value: 'ligacao_recebida', label: 'Ligação recebida' },
+  { value: 'rota_solicitada', label: 'Rota solicitada' },
+  { value: 'cadastro_preenchido', label: 'Cadastro preenchido' },
+  { value: 'mensagem_direct', label: 'Mensagem no direct' },
+  { value: 'adicionar_carrinho', label: 'Adicionar ao carrinho' },
+  { value: 'iniciar_checkout', label: 'Iniciar checkout' },
+  { value: 'visualizacao_produto', label: 'Visualização de produto' },
+];
 
 export const profileMetricOptions = [
   'cost_per_messaging_conversation',
@@ -44,23 +89,23 @@ export const profileMetricOptions = [
   'spend',
 ] as const;
 
-export type AnalysisVertical = typeof analysisVerticals[number] | string;
-export type BusinessModel = typeof businessModels[number] | string;
-export type PrimaryChannel = typeof primaryChannels[number] | string;
-export type PrimaryConversionMetric = typeof primaryConversionMetrics[number] | string;
 export type BudgetPeriod = 'daily' | 'weekly' | 'monthly';
 
 export interface ClientAnalysisProfile {
   userId?: string;
   clientId: string;
-  vertical: AnalysisVertical;
+  vertical: string;
   subsegment: string;
   customVertical: string | null;
   customSubsegment: string | null;
-  businessModel: BusinessModel;
-  primaryConversionMetric: PrimaryConversionMetric;
+  operationType: string | null;
+  salesModels: string[];
+  secondaryChannel: string | null;
+  secondaryConversionMetric: string | null;
+  businessModel: string; // kept for backwards compatibility if needed, but we rely on operationType & salesModels now
+  primaryConversionMetric: string;
   secondaryMetrics: string[];
-  primaryChannel: PrimaryChannel;
+  primaryChannel: string;
   budgetPeriod: BudgetPeriod;
   plannedBudget: number | null;
   minimumEvaluationSpend: number;
@@ -72,23 +117,62 @@ export interface ClientAnalysisProfile {
   updatedAt?: string;
 }
 
-export interface AnalysisTemplate {
-  id: string;
-  label: string;
-  vertical: AnalysisVertical;
-  subsegment: string;
-  businessModel: BusinessModel;
-  primaryConversionMetric: PrimaryConversionMetric;
-  secondaryMetrics: string[];
-  primaryChannel: PrimaryChannel;
-  budgetPeriod: BudgetPeriod;
-}
-
-export const subsegmentsByVertical: Record<string, string[]> = {
-  'Serviços locais': ['Saúde', 'Beleza', 'Odontologia', 'Estética', 'Clínica médica', 'Manutenção', 'Consultoria local', 'Outros'],
-  'E-commerce': ['Produtos físicos', 'Infoproduto', 'Assinatura', 'Vestuário', 'Calçados', 'Outros'],
-  'Venda direta': ['Imobiliário', 'Automóveis', 'Serviços B2B', 'Outros'],
-  Outros: ['Outros'],
+export const subsegmentsByVertical: Record<string, ValueLabel[]> = {
+  'saude': [
+    { value: 'clinica_odontologica', label: 'Clínica odontológica' },
+    { value: 'clinica_estetica', label: 'Clínica estética' },
+    { value: 'terapia', label: 'Terapia / atendimento individual' },
+    { value: 'fisioterapia', label: 'Fisioterapia' },
+    { value: 'nutricao', label: 'Nutrição' },
+    { value: 'psicologia', label: 'Psicologia' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'alimentacao': [
+    { value: 'pizzaria', label: 'Pizzaria' },
+    { value: 'hamburgueria', label: 'Hamburgueria' },
+    { value: 'restaurante', label: 'Restaurante' },
+    { value: 'delivery', label: 'Delivery' },
+    { value: 'acai_sorveteria', label: 'Açaí / Sorveteria' },
+    { value: 'padaria', label: 'Padaria' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'varejo': [
+    { value: 'loja_geek', label: 'Loja geek' },
+    { value: 'moda_feminina', label: 'Moda feminina' },
+    { value: 'calcados', label: 'Calçados' },
+    { value: 'cosmeticos', label: 'Cosméticos' },
+    { value: 'moda_infantil', label: 'Moda infantil' },
+    { value: 'otica', label: 'Ótica' },
+    { value: 'loja_presentes', label: 'Loja de presentes' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'educacao_infoproduto': [
+    { value: 'curso_online', label: 'Curso online' },
+    { value: 'mentoria', label: 'Mentoria' },
+    { value: 'comunidade', label: 'Comunidade' },
+    { value: 'produto_digital', label: 'Produto digital' },
+    { value: 'treinamento_presencial', label: 'Treinamento presencial' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'servicos_locais': [
+    { value: 'prestador_servico', label: 'Prestador de serviço' },
+    { value: 'manutencao', label: 'Manutenção' },
+    { value: 'limpeza', label: 'Limpeza' },
+    { value: 'beleza', label: 'Beleza' },
+    { value: 'consultoria_local', label: 'Consultoria local' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'b2b_atacado': [
+    { value: 'distribuidora', label: 'Distribuidora' },
+    { value: 'atacado_produtos', label: 'Atacado de produtos' },
+    { value: 'fornecedor_local', label: 'Fornecedor local' },
+    { value: 'industria', label: 'Indústria' },
+    { value: 'servico_empresarial', label: 'Serviço empresarial' },
+    { value: 'outros', label: 'Outros' },
+  ],
+  'outros': [
+    { value: 'outros', label: 'Outros' },
+  ],
 };
 
 export const metricLabels: Record<string, string> = {
@@ -112,14 +196,18 @@ export const metricLabels: Record<string, string> = {
 export function defaultAnalysisProfile(clientId: string, seed?: Partial<ClientAnalysisProfile>): ClientAnalysisProfile {
   return {
     clientId,
-    vertical: seed?.vertical || 'Serviços locais',
-    subsegment: seed?.subsegment || 'Outros',
+    vertical: seed?.vertical || 'servicos_locais',
+    subsegment: seed?.subsegment || 'outros',
     customVertical: seed?.customVertical ?? null,
     customSubsegment: seed?.customSubsegment ?? null,
-    businessModel: seed?.businessModel || 'Conversas pelo WhatsApp',
-    primaryConversionMetric: seed?.primaryConversionMetric || 'messaging_conversations_started_total',
-    secondaryMetrics: seed?.secondaryMetrics?.length ? seed.secondaryMetrics : ['messaging_conversations_started_total', 'leads', 'cost_per_lead', 'link_cpc', 'cpm', 'cost_per_purchase'],
-    primaryChannel: seed?.primaryChannel || 'WhatsApp',
+    operationType: seed?.operationType ?? null,
+    salesModels: seed?.salesModels ?? [],
+    secondaryChannel: seed?.secondaryChannel ?? null,
+    secondaryConversionMetric: seed?.secondaryConversionMetric ?? null,
+    businessModel: seed?.businessModel || '',
+    primaryConversionMetric: seed?.primaryConversionMetric || 'conversa_iniciada',
+    secondaryMetrics: seed?.secondaryMetrics?.length ? seed.secondaryMetrics : [],
+    primaryChannel: seed?.primaryChannel || 'whatsapp',
     budgetPeriod: seed?.budgetPeriod || 'monthly',
     plannedBudget: seed?.plannedBudget ?? null,
     minimumEvaluationSpend: seed?.minimumEvaluationSpend ?? 0,
@@ -134,14 +222,18 @@ export function mapClientProfileRow(row: Record<string, unknown>): ClientAnalysi
   return {
     userId: typeof row.user_id === 'string' ? row.user_id : undefined,
     clientId: String(row.client_id ?? ''),
-    vertical: String(row.vertical ?? 'Outros'),
-    subsegment: String(row.subsegment ?? 'Outros'),
+    vertical: typeof row.vertical === 'string' && row.vertical.trim() ? row.vertical : 'outros',
+    subsegment: typeof row.subsegment === 'string' && row.subsegment.trim() ? row.subsegment : 'outros',
     customVertical: typeof row.custom_vertical === 'string' && row.custom_vertical.trim() ? row.custom_vertical : null,
     customSubsegment: typeof row.custom_subsegment === 'string' && row.custom_subsegment.trim() ? row.custom_subsegment : null,
-    businessModel: String(row.business_model ?? 'Conversas pelo WhatsApp'),
-    primaryConversionMetric: String(row.primary_conversion_metric ?? 'messaging_conversations_started_total'),
+    operationType: typeof row.operation_type === 'string' && row.operation_type.trim() ? row.operation_type : null,
+    salesModels: Array.isArray(row.sales_models) ? row.sales_models.filter((item): item is string => typeof item === 'string') : [],
+    secondaryChannel: typeof row.secondary_channel === 'string' && row.secondary_channel.trim() ? row.secondary_channel : null,
+    secondaryConversionMetric: typeof row.secondary_conversion_metric === 'string' && row.secondary_conversion_metric.trim() ? row.secondary_conversion_metric : null,
+    businessModel: typeof row.business_model === 'string' && row.business_model.trim() ? row.business_model : '',
+    primaryConversionMetric: typeof row.primary_conversion_metric === 'string' && row.primary_conversion_metric.trim() ? row.primary_conversion_metric : 'conversa_iniciada',
     secondaryMetrics: Array.isArray(row.secondary_metrics) ? row.secondary_metrics.filter((item): item is string => typeof item === 'string') : [],
-    primaryChannel: String(row.primary_channel ?? 'WhatsApp'),
+    primaryChannel: typeof row.primary_channel === 'string' && row.primary_channel.trim() ? row.primary_channel : 'whatsapp',
     budgetPeriod: (row.budget_period === 'daily' || row.budget_period === 'weekly' || row.budget_period === 'monthly') ? row.budget_period : 'monthly',
     plannedBudget: typeof row.planned_budget === 'number' ? row.planned_budget : row.planned_budget == null ? null : Number(row.planned_budget),
     minimumEvaluationSpend: Number(row.minimum_evaluation_spend ?? 0),
@@ -203,6 +295,10 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
     p_minimum_impressions: profile.minimumImpressions,
     p_minimum_results: profile.minimumResults,
     p_attribution_delay_hours: profile.attributionDelayHours,
+    p_operation_type: profile.operationType,
+    p_sales_models: profile.salesModels,
+    p_secondary_channel: profile.secondaryChannel,
+    p_secondary_conversion_metric: profile.secondaryConversionMetric,
   });
   if (error) throw new Error('Não foi possível salvar o perfil de análise no banco.');
   return mapClientProfileRow(data as Record<string, unknown>);

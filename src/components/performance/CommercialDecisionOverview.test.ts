@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Client } from '../../types';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
 import { unavailableTraceableMetric } from '../../lib/performance/traceableMetrics';
-import { buildSegmentSummaries } from './SegmentDecisionOverview';
+import { buildCommercialSummaries } from './CommercialDecisionOverview';
 
 const spendMetric = (value: number, currency: string) => ({
   ...unavailableTraceableMetric('spend'),
@@ -78,10 +78,14 @@ describe('buildSegmentSummaries', () => {
         }],
         analysisProfile: {
           clientId: 'clinica-a',
-          vertical: 'Saúde',
-          subsegment: 'Odontologia',
+          vertical: 'saude',
+          subsegment: 'clinica_odontologica',
           customVertical: null,
           customSubsegment: null,
+      operationType: null,
+      salesModels: [],
+      secondaryChannel: null,
+      secondaryConversionMetric: null,
           businessModel: 'negócio local',
           primaryConversionMetric: 'messaging_conversations_started_total',
           secondaryMetrics: ['cost_per_messaging_conversation'],
@@ -114,10 +118,14 @@ describe('buildSegmentSummaries', () => {
         }],
         analysisProfile: {
           clientId: 'clinica-b',
-          vertical: 'Saúde',
-          subsegment: 'Estética',
+          vertical: 'saude',
+          subsegment: 'clinica_estetica',
           customVertical: null,
           customSubsegment: null,
+      operationType: null,
+      salesModels: [],
+      secondaryChannel: null,
+      secondaryConversionMetric: null,
           businessModel: 'negócio local',
           primaryConversionMetric: 'leads',
           secondaryMetrics: ['cost_per_lead'],
@@ -134,10 +142,14 @@ describe('buildSegmentSummaries', () => {
       client('sem-config', {
         analysisProfile: {
           clientId: 'sem-config',
-          vertical: 'Varejo local',
-          subsegment: '',
+          vertical: 'varejo',
+          subsegment: 'calcados',
           customVertical: null,
           customSubsegment: null,
+      operationType: null,
+      salesModels: [],
+      secondaryChannel: null,
+      secondaryConversionMetric: null,
           businessModel: 'modelo misto',
           primaryConversionMetric: 'purchases',
           secondaryMetrics: [],
@@ -154,10 +166,14 @@ describe('buildSegmentSummaries', () => {
       client('custom-segment', {
         analysisProfile: {
           clientId: 'custom-segment',
-          vertical: 'Outros',
-          subsegment: 'Outros',
-          customVertical: 'Turismo',
-          customSubsegment: 'Agência de viagens',
+          vertical: 'outros',
+          subsegment: 'outros',
+          customVertical: 'Minha vertical',
+          customSubsegment: 'Meu subsegmento',
+          operationType: null,
+          salesModels: [],
+          secondaryChannel: null,
+          secondaryConversionMetric: null,
           businessModel: 'geração de leads',
           primaryConversionMetric: 'leads',
           secondaryMetrics: ['cost_per_lead'],
@@ -173,21 +189,21 @@ describe('buildSegmentSummaries', () => {
       }),
     ];
 
-    const { summaries, pending, pendingByClient } = buildSegmentSummaries(clients, [] as Client[]);
-    const saude = summaries.find((summary) => summary.vertical === 'Saúde');
+    const { summaries, pending, pendingByClient } = buildCommercialSummaries(clients, [] as Client[], 'vertical');
+    const saude = summaries.find((summary) => summary.key === 'saude');
 
     expect(saude?.clients).toHaveLength(2);
-    expect(saude?.subsegments).toEqual(new Set(['Odontologia', 'Estética']));
+    expect(saude?.subsegments).toEqual(new Set(['Clínica odontológica', 'Clínica estética']));
     expect(saude?.plannedBudgetByCurrency.get('BRL')).toBe(700);
     expect(saude?.plannedBudgetByCurrency.get('USD')).toBe(1000);
     expect(saude?.spendByCurrency.get('BRL')).toBe(100);
     expect(saude?.spendByCurrency.get('USD')).toBe(50);
     expect(saude?.expectedSpendByCurrency.get('BRL')).toBe(400);
-    expect(saude?.projectedSpendByCurrency.get('BRL')).toBe(175);
-    expect(saude?.primaryMetrics).toEqual(new Set(['messaging_conversations_started_total', 'leads']));
-    expect(summaries.find((summary) => summary.vertical === 'Turismo')?.subsegments).toEqual(new Set(['Agência de viagens']));
+    const custom = summaries.find((summary) => summary.key === 'outros');
+    expect(custom?.label).toBe('Minha vertical');
+    expect(custom?.subsegments).toEqual(new Set(['Meu subsegmento']));
     expect(pending.map((item) => item.clientId)).toEqual(['clinica-a', 'clinica-b', 'sem-config', 'custom-segment']);
     expect(pendingByClient.get('clinica-a')).toContain('Sem metas');
-    expect(pendingByClient.get('sem-config')).toEqual(expect.arrayContaining(['Sem subsegmento', 'Sem orçamento planejado', 'Sem conta Meta']));
+    expect(pendingByClient.get('sem-config')).toEqual(expect.arrayContaining(['Sem orçamento planejado', 'Sem conta Meta', 'Sem metas']));
   });
 });

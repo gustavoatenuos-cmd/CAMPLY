@@ -25,7 +25,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
-import { SegmentDecisionOverview, buildSegmentSummaries, clientSeverity } from './performance/SegmentDecisionOverview';
+import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
 
@@ -282,14 +282,14 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
-    const { summaries, pending } = buildSegmentSummaries(clients, data.clients);
+    const { summaries, pending } = buildCommercialSummaries(clients, data.clients, 'vertical');
     const selectedSummary = summaries.find((summary) => summary.key === segmentFilter);
     const segmentClientIds = segmentFilter === 'all'
       ? null
       : segmentFilter === '__pending__'
         ? new Set(pending.map((client) => client.clientId))
         : subsegmentFilter !== 'all'
-          ? new Set((selectedSummary?.clientsBySubsegment.get(subsegmentFilter) || []).map((client) => client.clientId))
+          ? new Set((selectedSummary?.clients || []).filter(c => effectiveClientProfile(c)?.subsegment === subsegmentFilter).map((client) => client.clientId))
           : new Set((selectedSummary?.clients || []).map((client) => client.clientId));
     return clients.filter((client) => {
       if (segmentClientIds && !segmentClientIds.has(client.clientId)) return false;
@@ -427,7 +427,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </div>
         ) : (
           <>
-            <SegmentDecisionOverview
+            <CommercialDecisionOverview
               clients={clients}
               workspaceClients={data.clients}
               selectedSegment={segmentFilter}
