@@ -3,7 +3,6 @@ import type React from 'react';
 import type { Client } from '../../types';
 import type { GlobalClientPerformance, MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import { analysisVerticals, metricLabels, type ClientAnalysisProfile } from '../../lib/analysis/clientAnalysisProfile';
-import { resolveClientProfile, type ResolvedClientProfile } from '../../lib/analysis/clientProfileResolver';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -23,11 +22,7 @@ export function effectiveClientProfile(client: GlobalClientPerformance): ClientA
 }
 
 export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
-  if (
-    client.score.status === 'unavailable'
-    || client.dataQuality.status === 'unavailable'
-    || ['not_connected', 'never_synced', 'failed', 'no_delivery'].includes(client.clientStatus)
-  ) return 'no_data';
+  if (client.dataQuality.status === 'unavailable' || ['not_connected', 'never_synced', 'failed', 'no_delivery'].includes(client.clientStatus)) return 'no_data';
   if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
   if (
     client.dataQuality.status === 'partial'
@@ -76,90 +71,93 @@ function emptySegmentSummary(key: string): SegmentSummary {
   };
 }
 
-function verticalLabel(profile: ClientAnalysisProfile | ResolvedClientProfile): string | null {
-  if ('detectedSegment' in profile) return profile.detectedSegment;
+function verticalLabel(profile: ClientAnalysisProfile): string {
   return profile.vertical === 'Outros' && profile.customVertical ? profile.customVertical : profile.vertical;
 }
 
-function subsegmentLabel(profile: ClientAnalysisProfile | ResolvedClientProfile): string | null {
-  if ('detectedSubsegment' in profile) return profile.detectedSubsegment;
+function subsegmentLabel(profile: ClientAnalysisProfile): string {
   return profile.subsegment === 'Outros' && profile.customSubsegment ? profile.customSubsegment : profile.subsegment;
 }
 
-function pendingReasons(
-  client: GlobalClientPerformance,
-  profile: ClientAnalysisProfile | null,
-  resolvedProfile: ResolvedClientProfile
-): string[] {
+function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null): string[] {
   const reasons: string[] = [];
-  if (!client.analysisProfile) reasons.push('Sem perfil de análise');
-  else if (!client.analysisProfile.analysisEnabled) reasons.push('Análise desativada');
-  if (!profile?.vertical && !resolvedProfile.detectedSegment) reasons.push('Sem segmento');
-  if (!profile?.subsegment && !resolvedProfile.detectedSubsegment) reasons.push('Sem subsegmento');
-  if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
-  if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
+  if (!profile) {
+    reasons.push('Sem perfil de análise');
+  } else {
+    if (!profile.vertical) reasons.push('Sem segmento');
+    if (!profile.subsegment) reasons.push('Sem subsegmento');
+    if (!profile.primaryConversionMetric) reasons.push('Sem conversão principal');
+    if (!profile.plannedBudget) reasons.push('Sem orçamento planejado');
+  }
   if (client.accounts.length === 0) reasons.push('Sem conta Meta');
   if (client.resolvedTargets.length === 0) reasons.push('Sem metas');
   if (client.clientStatus === 'never_synced') reasons.push('Nunca sincronizado');
   if (client.clientStatus === 'partial') reasons.push('Sincronização parcial');
   if (client.clientStatus === 'failed') reasons.push('Falha de sincronização');
-  if (client.evaluations.some((evaluation) => evaluation.status === 'insufficient_data')) reasons.push('Dados insuficientes');
+  if (client.score.status === 'unavailable') reasons.push('Score não calculável');
   return Array.from(new Set(reasons));
 }
 
 export function buildSegmentSummaries(
   clients: GlobalClientPerformance[],
-  workspaceClients: Client[]
+  _workspaceClients: Client[]
 ): { summaries: SegmentSummary[]; pending: GlobalClientPerformance[]; pendingByClient: Map<string, string[]> } {
   const groups = new Map<string, SegmentSummary>(analysisVerticals.map((vertical) => [vertical, emptySegmentSummary(vertical)]));
-  const workspaceById = new Map(workspaceClients.map((client) => [client.id, client]));
   const pending: GlobalClientPerformance[] = [];
   const pendingByClient = new Map<string, string[]>();
 
   for (const client of clients) {
-    const resolvedProfile = resolveClientProfile(client, workspaceById.get(client.clientId));
     const profile = effectiveClientProfile(client);
-    const reasons = [...pendingReasons(client, profile, resolvedProfile), ...resolvedProfile.missingReasons];
+    const reasons = pendingReasons(client, profile);
+
+    // Add client to segment if they have vertical AND subsegment (not blocked by KPI/budget)
+    if (profile && profile.vertical && profile.subsegment) {
+      const key = verticalLabel(profile);
+      const subsegment = subsegmentLabel(profile);
+      const summary = groups.get(key) ?? emptySegmentSummary(key);
+      summary.clients.push(client);
+      summary.subsegments.add(subsegment);
+      summary.clientsBySubsegment.set(subsegment, [...(summary.clientsBySubsegment.get(subsegment) || []), client]);
+
+      // Add financial data if available
+      if (profile.plannedBudget) {
+        const accountCurrencies = new Set(client.accounts.map((account) => account.currency || 'SEM_MOEDA'));
+        const budgetCurrency = accountCurrencies.size === 1 ? Array.from(accountCurrencies)[0] : 'SEM_MOEDA';
+        summary.plannedBudgetByCurrency.set(
+          budgetCurrency,
+          (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + (profile.plannedBudget ?? 0)
+        );
+      }
+
+      if (profile.primaryConversionMetric) {
+        summary.primaryMetrics.add(profile.primaryConversionMetric);
+      }
+
+      for (const account of client.accounts) {
+        const spend = metricValue(account.metrics.spend);
+        if (spend === null) continue;
+        const currencyKey = account.currency || 'SEM_MOEDA';
+        summary.spendByCurrency.set(currencyKey, (summary.spendByCurrency.get(currencyKey) || 0) + spend);
+        if (account.budgetPacing) {
+          summary.expectedSpendByCurrency.set(currencyKey, (summary.expectedSpendByCurrency.get(currencyKey) || 0) + account.budgetPacing.expectedSpendUntilNow);
+          summary.projectedSpendByCurrency.set(currencyKey, (summary.projectedSpendByCurrency.get(currencyKey) || 0) + account.budgetPacing.projectedMonthlySpend);
+        }
+      }
+
+      const severity = clientSeverity(client);
+      if (severity === 'healthy') summary.healthy += 1;
+      if (severity === 'attention') summary.attention += 1;
+      if (severity === 'critical') summary.critical += 1;
+      if (severity === 'no_data') summary.noData += 1;
+      summary.pendingActions += client.score.signals.filter((signal) => ['critical', 'warning'].includes(signal.severity)).length;
+      groups.set(key, summary);
+    }
+
+    // Add to pending if reasons exist (separately from segment)
     if (reasons.length > 0) {
       pending.push(client);
-      pendingByClient.set(client.clientId, Array.from(new Set(reasons)));
+      pendingByClient.set(client.clientId, reasons);
     }
-    const groupingProfile = profile ?? resolvedProfile;
-    const key = verticalLabel(groupingProfile);
-    if (!key) {
-      continue;
-    }
-    const subsegment = subsegmentLabel(groupingProfile) || 'Subsegmento pendente';
-    const summary = groups.get(key) ?? emptySegmentSummary(key);
-    summary.clients.push(client);
-    summary.subsegments.add(subsegment);
-    summary.clientsBySubsegment.set(subsegment, [...(summary.clientsBySubsegment.get(subsegment) || []), client]);
-    const accountCurrencies = new Set(client.accounts.map((account) => account.currency || 'SEM_MOEDA'));
-    const budgetCurrency = accountCurrencies.size === 1 ? Array.from(accountCurrencies)[0] : 'SEM_MOEDA';
-    if (profile?.plannedBudget) {
-      summary.plannedBudgetByCurrency.set(
-        budgetCurrency,
-        (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + profile.plannedBudget
-      );
-    }
-    if (profile?.primaryConversionMetric) summary.primaryMetrics.add(profile.primaryConversionMetric);
-    for (const account of client.accounts) {
-      const spend = metricValue(account.metrics.spend);
-      if (spend === null) continue;
-      const currencyKey = account.currency || 'SEM_MOEDA';
-      summary.spendByCurrency.set(currencyKey, (summary.spendByCurrency.get(currencyKey) || 0) + spend);
-      if (account.budgetPacing) {
-        summary.expectedSpendByCurrency.set(currencyKey, (summary.expectedSpendByCurrency.get(currencyKey) || 0) + account.budgetPacing.expectedSpendUntilNow);
-        summary.projectedSpendByCurrency.set(currencyKey, (summary.projectedSpendByCurrency.get(currencyKey) || 0) + account.budgetPacing.projectedMonthlySpend);
-      }
-    }
-    const severity = clientSeverity(client);
-    if (severity === 'healthy') summary.healthy += 1;
-    if (severity === 'attention') summary.attention += 1;
-    if (severity === 'critical') summary.critical += 1;
-    if (severity === 'no_data') summary.noData += 1;
-    summary.pendingActions += client.score.signals.filter((signal) => ['critical', 'warning'].includes(signal.severity)).length;
-    groups.set(key, summary);
   }
 
   return {
@@ -203,125 +201,158 @@ export function SegmentDecisionOverview({
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central de decisão por segmento</p>
           <h2 className="mt-1 text-xl font-black text-white">O que eu esperava, o que aconteceu e onde agir primeiro</h2>
-          <p className="mt-1 text-sm text-brand-muted">Segmentos usam o perfil oficial ou a classificação resolvida do cliente. A prontidão analítica é avaliada separadamente.</p>
+          <p className="mt-1 text-sm text-brand-muted">Clientes com segmento/subsegmento aparecem no segmento. Pendências aparecem com motivo. Sem bloqueio por KPI ou orçamento.</p>
         </div>
-        <p className="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-brand-soft">{activeCount} cliente(s) no recorte</p>
+        <p className="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-brand-soft">{activeCount} cliente(s)</p>
       </div>
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-        <button data-testid="segment-filter-all" aria-pressed={selectedSegment === 'all'} type="button" onClick={() => selectSegment('all')} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === 'all' ? 'bg-brand-green text-brand-ink' : 'border border-brand-line text-brand-soft'}`}>Todos</button>
+        <button
+          data-testid="segment-filter-all"
+          aria-pressed={selectedSegment === 'all'}
+          type="button"
+          onClick={() => selectSegment('all')}
+          className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${
+            selectedSegment === 'all'
+              ? 'bg-brand-green text-brand-ink'
+              : 'bg-white/8 text-brand-muted hover:bg-white/12'
+          }`}
+        >
+          Todos
+        </button>
         {summaries.map((summary) => (
-          <button data-testid={`segment-filter-${summary.key}`} aria-pressed={selectedSegment === summary.key} key={summary.key} type="button" onClick={() => selectSegment(summary.key)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === summary.key ? 'bg-brand-green text-brand-ink' : 'border border-brand-line text-brand-soft'}`}>{summary.vertical}</button>
+          <button
+            data-testid={`segment-filter-${summary.key}`}
+            aria-pressed={selectedSegment === summary.key}
+            key={summary.key}
+            type="button"
+            onClick={() => selectSegment(summary.key)}
+            className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${
+              selectedSegment === summary.key
+                ? 'bg-brand-green text-brand-ink'
+                : 'bg-white/8 text-brand-muted hover:bg-white/12'
+            }`}
+          >
+            {summary.vertical}
+          </button>
         ))}
-        <button data-testid="segment-filter-pending" aria-pressed={selectedSegment === '__pending__'} type="button" onClick={() => selectSegment('__pending__')} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === '__pending__' ? 'bg-amber-300 text-brand-ink' : 'border border-amber-300/40 text-amber-100'}`}>Configurações pendentes ({pending.length})</button>
+        <button
+          data-testid="segment-filter-pending"
+          aria-pressed={selectedSegment === '__pending__'}
+          type="button"
+          onClick={() => selectSegment('__pending__')}
+          className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${
+            selectedSegment === '__pending__'
+              ? 'bg-brand-green text-brand-ink'
+              : 'bg-white/8 text-brand-muted hover:bg-white/12'
+          }`}
+        >
+          Pendências ({pending.length})
+        </button>
       </div>
 
       {selectedSummary && (
         <div data-testid="subsegment-filters" className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          <button aria-pressed={selectedSubsegment === 'all'} type="button" onClick={() => onSelectSubsegment('all')} className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${selectedSubsegment === 'all' ? 'bg-sky-300 text-brand-ink' : 'border border-sky-300/30 text-sky-100'}`}>Todos os subsegmentos</button>
-          {Array.from(selectedSummary.subsegments).sort().map((subsegment) => (
-            <button data-testid={`subsegment-filter-${subsegment}`} aria-pressed={selectedSubsegment === subsegment} key={subsegment} type="button" onClick={() => onSelectSubsegment(subsegment)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${selectedSubsegment === subsegment ? 'bg-sky-300 text-brand-ink' : 'border border-sky-300/30 text-sky-100'}`}>{subsegment}</button>
-          ))}
+          <button
+            aria-pressed={selectedSubsegment === 'all'}
+            type="button"
+            onClick={() => onSelectSubsegment('all')}
+            className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${
+              selectedSubsegment === 'all'
+                ? 'bg-brand-green text-brand-ink'
+                : 'bg-white/8 text-brand-muted hover:bg-white/12'
+            }`}
+          >
+            Todos
+          </button>
+          {Array.from(selectedSummary.subsegments)
+            .sort()
+            .map((subsegment) => (
+              <button
+                data-testid={`subsegment-filter-${subsegment}`}
+                aria-pressed={selectedSubsegment === subsegment}
+                key={subsegment}
+                type="button"
+                onClick={() => onSelectSubsegment(subsegment)}
+                className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${
+                  selectedSubsegment === subsegment
+                    ? 'bg-brand-green text-brand-ink'
+                    : 'bg-white/8 text-brand-muted hover:bg-white/12'
+                }`}
+              >
+                {subsegment}
+              </button>
+            ))}
         </div>
       )}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {summaries.map((summary) => {
-          const mainMetric = summary.primaryMetrics.size === 0
-            ? 'Sem clientes configurados'
-            : summary.primaryMetrics.size === 1
-              ? metricLabels[Array.from(summary.primaryMetrics)[0]] || Array.from(summary.primaryMetrics)[0]
-              : 'Múltiplos objetivos';
-          return (
-            <button key={summary.key} type="button" onClick={() => selectSegment(summary.key)} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4 text-left transition hover:border-brand-green/60">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-brand-green">{summary.vertical}</p>
-                  <h3 className="mt-1 font-black text-white">{summary.clients.length} cliente(s)</h3>
-                </div>
-                <Layers3 className="text-brand-green" size={18} />
-              </div>
-              <p className="mt-2 text-xs text-brand-muted">{Array.from(summary.subsegments).join(' · ')}</p>
-              <FinancialBreakdown summary={summary} />
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <Metric label="KPI principal" value={mainMetric} />
-                <Metric label="Sem dados" value={String(summary.noData)} />
-                <Metric label="Ações pendentes" value={String(summary.pendingActions)} />
-                <Metric label="Subsegmentos" value={String(summary.subsegments.size)} />
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-                <Badge icon={<CheckCircle2 size={13} />} label="Saudável" value={summary.healthy} tone="green" />
-                <Badge icon={<CircleDashed size={13} />} label="Atenção" value={summary.attention} tone="amber" />
-                <Badge icon={<AlertTriangle size={13} />} label="Crítico" value={summary.critical} tone="rose" />
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {pending.length > 0 && (
+      {selectedSegment === '__pending__' ? (
         <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-300/10 p-4">
           <p className="font-black text-amber-100">Configurações pendentes</p>
-          <p className="mt-1 text-sm text-amber-100/80">Esses clientes não entram na leitura saudável/crítica até terem segmento, subsegmento, conversão principal, orçamento, conta Meta e sync confiável.</p>
+          <p className="mt-1 text-sm text-amber-100/80">
+            Esses clientes não entram na leitura de segmento até terem: perfil de análise, segmento, subsegmento, conversão principal, orçamento planejado, conta Meta e metas.
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {pending.slice(0, 8).map((client) => <span key={client.clientId} title={(pendingByClient.get(client.clientId) || []).join(' · ')} className="rounded-lg bg-black/20 px-3 py-2 text-xs font-bold text-amber-50">{client.clientName}<span className="mt-1 block font-normal text-amber-100/70">{(pendingByClient.get(client.clientId) || []).join(' · ')}</span></span>)}
-            {pending.length > 8 && <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-bold text-amber-50">+{pending.length - 8}</span>}
+            {pending.slice(0, 12).map((client) => (
+              <div
+                key={client.clientId}
+                title={(pendingByClient.get(client.clientId) || []).join('; ')}
+                className="rounded-lg bg-black/20 px-3 py-2 text-xs text-amber-100"
+              >
+                {client.clientName}
+              </div>
+            ))}
+            {pending.length > 12 && <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-bold text-amber-50">+{pending.length - 12}</span>}
           </div>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {summaries.map((summary) => {
+            const mainMetric = summary.primaryMetrics.size === 0
+              ? 'Sem clientes configurados'
+              : summary.primaryMetrics.size === 1
+                ? metricLabels[Array.from(summary.primaryMetrics)[0]] || Array.from(summary.primaryMetrics)[0]
+                : 'Múltiplos objetivos';
+            return (
+              <button
+                key={summary.key}
+                type="button"
+                onClick={() => selectSegment(summary.key)}
+                className="rounded-xl border border-brand-line bg-brand-ink/50 p-4 text-left transition hover:border-brand-green/50 hover:bg-white/[0.03]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-brand-green">{summary.vertical}</p>
+                    <h3 className="mt-1 font-black text-white">{summary.clients.length} cliente(s)</h3>
+                  </div>
+                  <Layers3 className="text-brand-green" size={18} />
+                </div>
+                <p className="mt-2 text-xs text-brand-muted">{Array.from(summary.subsegments).join(' · ')}</p>
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-lg bg-black/20 p-2">
+                    <p className="text-[10px] uppercase text-brand-muted">KPI principal</p>
+                    <p className="mt-1 font-black text-white text-sm">{mainMetric}</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                  <div className="flex items-center justify-center gap-1 rounded-lg bg-emerald-400/10 px-2 py-1 font-bold text-emerald-200">
+                    <CheckCircle2 size={13} />
+                    {summary.healthy}
+                  </div>
+                  <div className="flex items-center justify-center gap-1 rounded-lg bg-amber-400/10 px-2 py-1 font-bold text-amber-200">
+                    <CircleDashed size={13} />
+                    {summary.attention}
+                  </div>
+                  <div className="flex items-center justify-center gap-1 rounded-lg bg-rose-400/10 px-2 py-1 font-bold text-rose-200">
+                    <AlertTriangle size={13} />
+                    {summary.critical}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </section>
   );
-}
-
-function FinancialBreakdown({ summary }: { summary: SegmentSummary }) {
-  const currencies = Array.from(new Set([
-    ...summary.plannedBudgetByCurrency.keys(),
-    ...summary.spendByCurrency.keys(),
-    ...summary.expectedSpendByCurrency.keys(),
-    ...summary.projectedSpendByCurrency.keys(),
-  ])).sort();
-  if (currencies.length === 0) return <div className="mt-4 rounded-lg bg-black/20 p-3 text-xs text-brand-muted">Sem valores financeiros confiáveis.</div>;
-  return (
-    <div className="mt-4 space-y-2">
-      {currencies.map((currencyCode) => {
-        const code = currencyCode === 'SEM_MOEDA' ? null : currencyCode;
-        const planned = summary.plannedBudgetByCurrency.get(currencyCode) ?? null;
-        const spent = summary.spendByCurrency.get(currencyCode) ?? null;
-        const expected = summary.expectedSpendByCurrency.get(currencyCode) ?? null;
-        const projected = summary.projectedSpendByCurrency.get(currencyCode) ?? null;
-        const balance = planned !== null && spent !== null ? planned - spent : null;
-        const consumed = planned && spent !== null ? spent / planned * 100 : null;
-        return (
-          <div key={currencyCode} className="rounded-lg border border-brand-line/70 bg-black/20 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-green">{code || 'Moeda não informada'}</p>
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <FinancialValue label="Planejado" value={planned === null ? '—' : currency(planned, code)} />
-              <FinancialValue label="Realizado" value={spent === null ? '—' : currency(spent, code)} />
-              <FinancialValue label="Saldo" value={balance === null ? '—' : currency(balance, code)} />
-              <FinancialValue label="Consumido" value={consumed === null ? '—' : `${consumed.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`} />
-              <FinancialValue label="Esperado agora" value={expected === null ? '—' : currency(expected, code)} />
-              <FinancialValue label="Projeção" value={projected === null ? '—' : currency(projected, code)} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function FinancialValue({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-[9px] uppercase text-brand-muted">{label}</p><p className="mt-0.5 font-black text-white">{value}</p></div>;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-black/20 p-2"><p className="text-[10px] uppercase text-brand-muted">{label}</p><p className="mt-1 font-black text-white">{value}</p></div>;
-}
-
-function Badge({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: 'green' | 'amber' | 'rose' }) {
-  const classes = tone === 'green'
-    ? 'bg-emerald-400/10 text-emerald-200'
-    : tone === 'amber'
-      ? 'bg-amber-400/10 text-amber-200'
-      : 'bg-rose-400/10 text-rose-200';
-  return <div className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1 font-bold ${classes}`}>{icon}{value} {label}</div>;
 }
