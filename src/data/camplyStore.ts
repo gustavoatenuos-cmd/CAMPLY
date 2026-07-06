@@ -116,6 +116,7 @@ export const sanitizeWorkspaceData = (data: CamplyData): CamplyData => ({
   campaigns: data.campaigns
     .filter((campaign) => !campaign.metaCampaignId)
     .map(stripMetaAnalyticsFromCampaign),
+  agentLogs: data.agentLogs?.slice(0, 100) ?? [],
 });
 
 export const loadData = (userId?: string | null): CamplyData => {
@@ -133,7 +134,11 @@ export const loadData = (userId?: string | null): CamplyData => {
 
 export const saveData = (data: CamplyData, userId?: string | null) => {
   if (!userId) return;
-  window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(sanitizeWorkspaceData(data)));
+  try {
+    window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(sanitizeWorkspaceData(data)));
+  } catch (error) {
+    console.warn('Camply localStorage save failed:', error instanceof Error ? error.message : String(error));
+  }
 };
 
 export const clearUserData = (userId?: string | null) => {
