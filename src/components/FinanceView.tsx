@@ -1,6 +1,6 @@
 import { money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { CamplyData, InvestmentPeriod } from '../types';
-import { clientDisplayName } from './ClientsView';
+import { clientDisplayName } from '../lib/clientUtils';
 
 interface FinanceViewProps {
   data: CamplyData;

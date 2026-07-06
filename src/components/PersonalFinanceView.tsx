@@ -3,7 +3,7 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
-import { clientDisplayName, clientOptionLabel } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from '../lib/clientUtils';
 import { ClientFormModal } from './ClientFormModal';
 
 interface PersonalFinanceViewProps {

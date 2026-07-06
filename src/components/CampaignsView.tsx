@@ -3,7 +3,7 @@ import { Edit3, Megaphone, Plus } from 'lucide-react';
 import { campaignColumns, campaignStatusLabels, createActivityLog, makeId, money } from '../data/camplyStore';
 import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import type { Campaign, CampaignStatus, CamplyData, Priority } from '../types';
-import { clientDisplayName, clientOptionLabel } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from '../lib/clientUtils';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { Modal } from './ui/Modal';
 

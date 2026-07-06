@@ -2,7 +2,7 @@ import { Activity, CalendarDays, Filter, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { money } from '../data/camplyStore';
 import { ActivityAction, ActivityLog, CamplyData } from '../types';
-import { clientDisplayName, clientOptionLabel } from './ClientsView';
+import { clientDisplayName, clientOptionLabel } from '../lib/clientUtils';
 
 interface ActivityViewProps {
   data: CamplyData;

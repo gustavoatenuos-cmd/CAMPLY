@@ -3,7 +3,7 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money, normalizeMonthlyInvestment, paymentStatusLabels, projectStatusLabels } from '../data/camplyStore';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Project, ProjectStatus, ProjectType } from '../types';
-import { clientOptionLabel } from './ClientsView';
+import { clientOptionLabel } from '../lib/clientUtils';
 
 interface ProjectsViewProps {
   data: CamplyData;

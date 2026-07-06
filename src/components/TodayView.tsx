@@ -4,7 +4,7 @@ import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
-import { clientDisplayName } from './ClientsView';
+import { clientDisplayName } from '../lib/clientUtils';
 import { syncClientMeta } from '../lib/meta/metaSyncService';
 import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';

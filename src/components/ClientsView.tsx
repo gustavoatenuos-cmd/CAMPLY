@@ -1,7 +1,8 @@
 import { Edit3, Mail, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { createActivityLog, money, normalizeMonthlyInvestment } from '../data/camplyStore';
-import type { CamplyData, Client, ClientStatus, Project } from '../types';
+import type { CamplyData, ClientStatus } from '../types';
+import { clientDisplayName } from '../lib/clientUtils';
 import { ClientFormModal } from './ClientFormModal';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 
@@ -99,14 +100,4 @@ export function ClientsView({ data, updateData, persistClientData }: ClientsView
       </div>
     </section>
   );
-}
-
-export function clientDisplayName(client?: Pick<Client, 'name' | 'company' | 'segment'>): string {
-  if (!client) return 'Cliente não encontrado';
-  return client.company || client.name || client.segment || 'Cliente sem nome';
-}
-
-export function clientOptionLabel(client: Pick<Client, 'name' | 'company' | 'segment'>, _projects: Project[]): string {
-  const displayName = clientDisplayName(client);
-  return client.name && client.name !== displayName ? `${displayName} · ${client.name}` : displayName;
 }
