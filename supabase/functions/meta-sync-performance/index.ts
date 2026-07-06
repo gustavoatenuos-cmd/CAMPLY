@@ -685,18 +685,18 @@ export async function handleRequest(req: Request) {
       appSecret,
       params: {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
-        limit: '100',
+        limit: '500',
       },
-    });
+    }, 20, 10000);
     const adsetsResult = await fetchMetaGraphPaginated<MetaAdSet>({
       endpoint: `/${adAccountId}/adsets`,
       accessToken,
       appSecret,
       params: {
         fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
-        limit: '100',
+        limit: '500',
       },
-    });
+    }, 20, 10000);
     let adsResult: PaginatedResult<MetaAd> = {
       data: [],
       pagesFetched: 0,
@@ -712,9 +712,9 @@ export async function handleRequest(req: Request) {
         params: {
           fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
           filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
-          limit: '100',
+          limit: '500',
         },
-      });
+      }, 20, 10000);
     }
 
     if (campaignsResult.errorMessage) collectionMessages.push(`Campaign collection: ${campaignsResult.errorMessage}`);
@@ -893,9 +893,9 @@ export async function handleRequest(req: Request) {
           level: 'account',
           fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
           ...insightPeriodParams(period, timezone),
-          limit: '100',
+          limit: '500',
         },
-      });
+      }, 20, 10000);
       totalPagesFetched += accountInsightsResult.pagesFetched;
       totalRecordsFetched += accountInsightsResult.recordsFetched;
       if (accountInsightsResult.errorMessage) {
@@ -929,9 +929,9 @@ export async function handleRequest(req: Request) {
           level: 'campaign',
           fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
           ...insightPeriodParams(period, timezone),
-          limit: '100',
+          limit: '500',
         },
-      });
+      }, 20, 10000);
       totalPagesFetched += campaignInsightsResult.pagesFetched;
       totalRecordsFetched += campaignInsightsResult.recordsFetched;
       if (campaignInsightsResult.errorMessage) {
@@ -954,9 +954,9 @@ export async function handleRequest(req: Request) {
             level: 'adset',
             fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
             ...insightPeriodParams(period, timezone),
-            limit: '100',
+            limit: '500',
           },
-        });
+        }, 20, 10000);
         totalPagesFetched += adsetInsightsResult.pagesFetched;
         totalRecordsFetched += adsetInsightsResult.recordsFetched;
         if (adsetInsightsResult.errorMessage) {
@@ -980,9 +980,9 @@ export async function handleRequest(req: Request) {
             level: 'ad',
             fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
             ...insightPeriodParams(period, timezone),
-            limit: '100',
+            limit: '500',
           },
-        });
+        }, 20, 10000);
         totalPagesFetched += adInsightsResult.pagesFetched;
         totalRecordsFetched += adInsightsResult.recordsFetched;
         if (adInsightsResult.errorMessage) {
