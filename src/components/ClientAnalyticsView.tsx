@@ -1,64 +1,204 @@
-/**
- * ClientAnalyticsView.tsx
- * Phase 1 — Main analytical view per client.
- * Shows KPIs by category/objective, campaign health scores, and cost alerts.
- */
-import React, { useState, useMemo } from 'react';
-import type { CamplyData, Campaign, Client, ClientCategory } from '../types';
+import { RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CamplyData, Client, ClientCategory } from '../types';
 import { CLIENT_CATEGORY_LABELS } from '../types';
+import {
+  compatibilityReasonMessage,
+  loadAnalyticsCapabilities,
+  type AnalyticsCapabilities,
+  type DashboardPeriod,
+} from '../lib/performance/analyticsCapabilities';
+import {
+  loadGlobalPerformanceDashboard,
+  type GlobalClientPerformance,
+  type GlobalPerformanceAccount,
+  type GlobalMetricGroup,
+  type MetricContract,
+} from '../lib/performance/globalPerformanceDashboard';
+import type { PerformanceScore } from '../lib/performance/performanceScore';
+import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
+import { clientDisplayName } from '../lib/clientUtils';
 import { CategoryBadge } from './CategoryBadge';
-import { HealthScoreGauge } from './HealthScoreGauge';
-import { AlertBadge } from './ui/AlertBadge';
-import { MetricCompareCard } from './performance/MetricCompareCard';
-import { selectMetricsForCampaign, formatMetricValue } from '../lib/meta/metricsSelector';
+import { PerformanceScoreBadge } from './performance/PerformanceScoreBadge';
+import { TraceableMetricValue } from './performance/TraceableMetricValue';
 
 interface ClientAnalyticsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
 }
 
-// Derives a simple health score for a campaign based on alerts + status
-function deriveCampaignHealthScore(campaign: Campaign, data: CamplyData): number {
-  const alerts = (data.agentAlerts || []).filter(
-    a => a.relatedEntityId === campaign.id && a.status === 'active'
+const periodLabels: Record<DashboardPeriod, string> = {
+  this_month: 'Mês atual',
+  this_week: 'Semana atual',
+  today: 'Hoje',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+};
+
+const emptyScore: PerformanceScore = {
+  value: null,
+  status: 'unavailable',
+  confidence: 0,
+  coveragePercent: 0,
+  summary: 'Score indisponível: ainda não há métricas confiáveis para este cliente.',
+  signals: [],
+};
+
+const statusLabels: Record<GlobalClientPerformance['clientStatus'], string> = {
+  not_connected: 'Conta Meta não vinculada',
+  never_synced: 'Sincronização pendente',
+  syncing: 'Sincronizando',
+  no_delivery: 'Sem entrega no período',
+  available: 'Dados confiáveis',
+  stale: 'Dados desatualizados',
+  partial: 'Dados parciais',
+  failed: 'Falha na sincronização',
+};
+
+const reasonLabels: Record<string, string> = {
+  account_not_connected: 'Cliente sem conta Meta vinculada.',
+  client_profile_missing: 'Cliente sem perfil de análise configurado.',
+  meta_account_not_linked: 'Cliente sem conta Meta vinculada.',
+  sync_not_started: 'A conta ainda não foi sincronizada neste período.',
+  sync_failed: 'A última sincronização falhou.',
+  period_not_synced: 'Este período ainda não foi sincronizado.',
+  no_delivery: 'A conta não teve entrega no período.',
+  target_not_configured: 'Nenhuma meta/KPI foi configurada para avaliação.',
+  metrics_unavailable: 'As métricas oficiais não estão disponíveis para este recorte.',
+  partial_data: 'A leitura mais recente está parcial.',
+};
+
+function reasonLabel(reason?: string | null): string {
+  if (!reason) return 'Aguardando dados confiáveis.';
+  return reasonLabels[reason] || reason.split('_').join(' ');
+}
+
+function metricValue(metric: MetricContract | undefined): number | null {
+  return metric?.available && typeof metric.value === 'number' && Number.isFinite(metric.value)
+    ? metric.value
+    : null;
+}
+
+function formatNumber(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+function formatCurrency(value: number | null, currency?: string | null): string {
+  if (value === null) return '—';
+  if (!currency) return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  try {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency} ${formatNumber(value)}`;
+  }
+}
+
+function formatRun(run: GlobalClientPerformance['lastAttempt']): string {
+  if (!run) return 'Nenhuma execução registrada';
+  const finishedAt = run.finishedAt || run.startedAt;
+  const timestamp = new Date(finishedAt);
+  const date = Number.isNaN(timestamp.getTime()) ? finishedAt : timestamp.toLocaleString('pt-BR');
+  return `${run.status} · ${date}${run.terminationReason ? ` · ${run.terminationReason}` : ''}`;
+}
+
+function OfficialScore({ score, compact = false }: { score: PerformanceScore; compact?: boolean }) {
+  if (score.status === 'unavailable') {
+    return (
+      <span
+        title={score.summary}
+        className="inline-flex items-center rounded-full border border-brand-line bg-white/5 px-2.5 py-1 text-[11px] font-bold text-brand-muted"
+      >
+        Score indisponível
+      </span>
+    );
+  }
+  return <PerformanceScoreBadge score={score} compact={compact} />;
+}
+
+function workspaceClientById(data: CamplyData): Map<string, Client> {
+  return new Map(data.clients.map((client) => [client.id, client]));
+}
+
+function missingClientPerformance(client: Client): GlobalClientPerformance {
+  return {
+    clientId: client.id,
+    clientName: clientDisplayName(client),
+    clientStatus: 'not_connected',
+    accounts: [],
+    metrics: {},
+    metricGroups: [],
+    resolvedTargets: [],
+    evaluations: [],
+    budgetPacing: null,
+    score: emptyScore,
+    dataQuality: { status: 'unavailable', reason: 'meta_account_not_linked' },
+    lastSuccessfulRun: null,
+    lastAttempt: null,
+    hasNewerPartial: false,
+    hasNewerFailure: false,
+    analysisProfile: null,
+  };
+}
+
+function combineOfficialAndPendingClients(
+  officialClients: GlobalClientPerformance[],
+  data: CamplyData
+): GlobalClientPerformance[] {
+  const seen = new Set(officialClients.map((client) => client.clientId));
+  const pending = data.clients
+    .filter((client) => client.status === 'active' && !seen.has(client.id))
+    .map(missingClientPerformance);
+  return [...officialClients, ...pending].sort((a, b) => a.clientName.localeCompare(b.clientName));
+}
+
+function mainCurrency(client: GlobalClientPerformance): string | null {
+  return client.accounts.find((account) => account.currency)?.currency || null;
+}
+
+function primaryMetricId(client: GlobalClientPerformance): string {
+  return client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
+}
+
+function metricBox(
+  label: string,
+  metric: MetricContract | undefined,
+  formatter: (value: number | null) => string = formatNumber
+) {
+  const value = metricValue(metric);
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/4 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="mt-2 text-lg font-black text-white">
+        <TraceableMetricValue metric={metric}>{formatter(value)}</TraceableMetricValue>
+      </p>
+      {!metric?.available && (
+        <p className="mt-1 text-xs text-amber-200">{reasonLabel(metric?.unavailableReason)}</p>
+      )}
+    </div>
   );
-  let score = 100;
-  score -= alerts.filter(a => a.severity === 'critical').length * 20;
-  score -= alerts.filter(a => a.severity === 'warning').length * 10;
-  if (campaign.status === 'paused') score -= 15;
-  if (campaign.status === 'waiting') score -= 10;
-  const budgetPct = campaign.budget > 0 ? (campaign.spent / campaign.budget) * 100 : 0;
-  if (budgetPct >= 90) score -= 15;
-  return Math.max(0, Math.min(100, score));
 }
 
-function deriveClientHealthScore(clientId: string, data: CamplyData): number {
-  const clientCampaigns = data.campaigns.filter(c => c.clientId === clientId);
-  if (clientCampaigns.length === 0) return 80;
-  const avg = clientCampaigns.reduce((s, c) => s + deriveCampaignHealthScore(c, data), 0) / clientCampaigns.length;
-  return Math.round(avg);
-}
-
-// ==================== CLIENT CARD ====================
-
-interface ClientCardProps {
-  client: Client;
-  data: CamplyData;
+function ClientCard({
+  client,
+  workspaceClient,
+  isSelected,
+  onSelect,
+}: {
+  client: GlobalClientPerformance;
+  workspaceClient?: Client;
   isSelected: boolean;
   onSelect: () => void;
-}
-
-function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
-  const healthScore = deriveClientHealthScore(client.id, data);
-  const activeCampaigns = data.campaigns.filter(
-    c => c.clientId === client.id && !['paused', 'setup'].includes(c.status)
-  ).length;
-  const criticalAlerts = (data.agentAlerts || []).filter(
-    a => a.clientId === client.id && a.status === 'active' && a.severity === 'critical'
-  ).length;
+}) {
+  const criticalSignals = client.score.signals.filter((signal) => signal.severity === 'critical').length;
+  const category = workspaceClient?.category;
 
   return (
     <button
+      type="button"
       onClick={onSelect}
       className={`w-full rounded-xl border p-4 text-left transition-all ${
         isSelected
@@ -68,354 +208,349 @@ function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{client.name}</p>
-          {client.company && (
-            <p className="truncate text-xs text-zinc-500">{client.company}</p>
-          )}
+          <p className="truncate text-sm font-semibold text-white">{client.clientName}</p>
+          <p className="truncate text-xs text-zinc-500">{statusLabels[client.clientStatus]}</p>
         </div>
-        <HealthScoreGauge score={healthScore} size="sm" showLabel={false} />
+        <OfficialScore score={client.score} compact />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <CategoryBadge category={client.category} size="sm" />
-        {activeCampaigns > 0 && (
+        <CategoryBadge category={category} size="sm" />
+        {client.accounts.length > 0 && (
           <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-            {activeCampaigns} campanha{activeCampaigns !== 1 ? 's' : ''} ativa{activeCampaigns !== 1 ? 's' : ''}
+            {client.accounts.length} conta{client.accounts.length !== 1 ? 's' : ''}
           </span>
         )}
-        {criticalAlerts > 0 && (
-          <AlertBadge severity="critical" label={`${criticalAlerts} crítico${criticalAlerts > 1 ? 's' : ''}`} />
+        {criticalSignals > 0 && (
+          <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-200">
+            {criticalSignals} crítico{criticalSignals > 1 ? 's' : ''}
+          </span>
         )}
       </div>
     </button>
   );
 }
 
-// ==================== CAMPAIGN METRICS PANEL ====================
-
-interface CampaignPanelProps {
-  campaign: Campaign;
-  client: Client;
-  data: CamplyData;
-}
-
-function CampaignPanel({ campaign, client, data }: CampaignPanelProps) {
-  const healthScore = deriveCampaignHealthScore(campaign, data);
-  const metrics = selectMetricsForCampaign(campaign.objective, client.category, 6);
-  const alerts = (data.agentAlerts || []).filter(
-    a => a.relatedEntityId === campaign.id && a.status === 'active'
-  );
-
-  // Build metric value map from campaign data
-  const metricValues: Record<string, number | undefined> = {
-    spent: campaign.spent,
-    ctr: campaign.ctr,
-    cpc: campaign.cpc,
-    cpr: campaign.cpr,
-    impressions: campaign.impressions,
-    pageViews: campaign.pageViews,
-    checkouts: campaign.checkouts,
-    purchases: campaign.purchases,
-    results: campaign.results,
-  };
-
-  const budgetPct = campaign.budget > 0 ? Math.round((campaign.spent / campaign.budget) * 100) : 0;
-  const daysSinceOptimized = campaign.lastOptimizedAt
-    ? Math.floor((Date.now() - new Date(campaign.lastOptimizedAt).getTime()) / 86400000)
-    : null;
-
-  const statusColors: Record<string, string> = {
-    live:     'bg-emerald-500/20 text-emerald-300',
-    optimize: 'bg-amber-500/20 text-amber-300',
-    launching:'bg-sky-500/20 text-sky-300',
-    setup:    'bg-zinc-500/20 text-zinc-300',
-    waiting:  'bg-orange-500/20 text-orange-300',
-    paused:   'bg-zinc-500/20 text-zinc-400',
-  };
+function CampaignPanel({ group }: { group: GlobalMetricGroup }) {
+  const spendMetric = group.metrics.spend;
+  const conversationsMetric = group.metrics.messaging_conversations_started_total;
+  const leadsMetric = group.metrics.leads;
+  const purchasesMetric = group.metrics.purchases;
+  const cpmMetric = group.metrics.cpm;
+  const primaryCurrency = group.currency;
 
   return (
     <div className="rounded-xl border border-white/8 bg-white/4 p-5">
-      {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-bold text-white">{campaign.name}</h3>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[campaign.status] ?? 'bg-zinc-500/20 text-zinc-300'}`}>
-              {campaign.status === 'live' ? 'No ar' :
-               campaign.status === 'optimize' ? 'Otimizar' :
-               campaign.status === 'launching' ? 'Subindo' :
-               campaign.status === 'setup' ? 'Setup' :
-               campaign.status === 'waiting' ? 'Aguardando' : 'Pausada'}
-            </span>
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-              {campaign.platform}
-            </span>
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-              {campaign.objective}
-            </span>
-          </div>
-          {daysSinceOptimized !== null && (
-            <p className={`text-xs ${daysSinceOptimized >= 3 ? 'text-amber-400' : 'text-zinc-500'}`}>
-              {daysSinceOptimized === 0
-                ? 'Otimizada hoje'
-                : `Última otimização: ${daysSinceOptimized}d atrás`}
-            </p>
-          )}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-white">{group.campaignName}</h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            {group.classifiedObjective || 'Objetivo não classificado'} · {group.destinationType || 'Destino não informado'} · {group.attributionSetting || 'Atribuição não informada'}
+          </p>
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <HealthScoreGauge score={healthScore} size="md" />
-        </div>
+        <span className="rounded-full bg-white/8 px-2 py-1 text-[11px] font-bold text-zinc-300">
+          {group.completenessStatus || 'sem status'}
+        </span>
       </div>
-
-      {/* Budget bar */}
-      {campaign.budget > 0 && (
-        <div className="mb-4">
-          <div className="mb-1 flex justify-between text-xs text-zinc-400">
-            <span>Budget {campaign.budget >= 1000 ? `R$ ${(campaign.budget / 1000).toFixed(1)}k` : `R$ ${campaign.budget.toFixed(0)}`}</span>
-            <span className={budgetPct >= 90 ? 'text-rose-400 font-semibold' : budgetPct >= 70 ? 'text-amber-400' : 'text-zinc-400'}>
-              {budgetPct}% consumido
-            </span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/8">
-            <div
-              className={`h-full rounded-full transition-all ${
-                budgetPct >= 90 ? 'bg-rose-500' : budgetPct >= 70 ? 'bg-amber-500' : 'bg-violet-500'
-              }`}
-              style={{ width: `${Math.min(100, budgetPct)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Metrics grid */}
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {metrics.map(metric => (
-          <MetricCompareCard
-            key={metric.key}
-            metric={metric}
-            currentValue={metricValues[metric.key]}
-            benchmarkValue={client.benchmarks?.[metric.key as keyof typeof client.benchmarks]}
-            compact
-          />
-        ))}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {metricBox('Investimento', spendMetric, (value) => formatCurrency(value, primaryCurrency))}
+        {metricBox('Conversas', conversationsMetric)}
+        {metricBox('Leads', leadsMetric)}
+        {metricBox('Compras', purchasesMetric)}
+        {metricBox('CPM', cpmMetric, (value) => formatCurrency(value, primaryCurrency))}
       </div>
-
-      {/* Active alerts */}
-      {alerts.length > 0 && (
-        <div className="space-y-1.5">
-          {alerts.map(alert => (
-            <div
-              key={alert.id}
-              className={`flex items-start gap-2 rounded-lg p-2.5 text-xs ${
-                alert.severity === 'critical' ? 'bg-rose-500/10 text-rose-200' :
-                alert.severity === 'warning' ? 'bg-amber-500/10 text-amber-200' :
-                'bg-sky-500/10 text-sky-200'
-              }`}
-            >
-              <AlertBadge severity={alert.severity as any} showDot size="sm" />
-              <div>
-                <p className="font-medium">{alert.title}</p>
-                <p className="text-zinc-400">{alert.message}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-// ==================== MAIN VIEW ====================
+function AccountPanel({ account, primaryMetricId }: { account: GlobalPerformanceAccount; primaryMetricId: string }) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-black/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-white">{account.accountName}</p>
+          <p className="mt-1 text-xs text-zinc-500">{account.adAccountId} · {account.currency || 'Moeda não informada'}</p>
+        </div>
+        <span className="rounded-full bg-white/8 px-2 py-1 text-[11px] font-bold text-zinc-300">
+          {account.dataQuality.status}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {metricBox('Investimento', account.metrics.spend, (value) => formatCurrency(value, account.currency))}
+        {metricBox(metricLabels[primaryMetricId] || 'KPI principal', account.metrics[primaryMetricId])}
+        {metricBox('CPM', account.metrics.cpm, (value) => formatCurrency(value, account.currency))}
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-zinc-400 lg:grid-cols-2">
+        <p><span className="font-bold text-zinc-300">Último sync confiável:</span> {formatRun(account.lastSuccessfulRun)}</p>
+        <p><span className="font-bold text-zinc-300">Última tentativa:</span> {formatRun(account.lastAttempt)}</p>
+      </div>
+      {account.dataQuality.reason && <p className="mt-2 text-xs text-amber-100">{reasonLabel(account.dataQuality.reason)}</p>}
+    </div>
+  );
+}
 
 export function ClientAnalyticsView({ data }: ClientAnalyticsViewProps) {
+  const [period, setPeriod] = useState<DashboardPeriod>('this_month');
+  const [capabilities, setCapabilities] = useState<AnalyticsCapabilities | null>(null);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<ClientCategory | 'all'>('all');
 
-  const activeClients = useMemo(
-    () => data.clients.filter(c => c.status === 'active'),
-    [data.clients]
-  );
+  const workspaceClients = useMemo(() => workspaceClientById(data), [data]);
+
+  const loadCapabilities = useCallback(async () => {
+    setCapabilityError(null);
+    const state = await loadAnalyticsCapabilities();
+    if (state.mode === 'analytics') {
+      setCapabilities(state.capabilities);
+      return;
+    }
+    setCapabilityError(compatibilityReasonMessage(state.reason));
+    setCapabilities(null);
+    setLoading(false);
+  }, []);
+
+  const loadDashboard = useCallback(async () => {
+    if (!capabilities) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const official = await loadGlobalPerformanceDashboard({
+        period,
+        dashboardRpc: capabilities.dashboardRpc,
+      });
+      setClients(combineOfficialAndPendingClients(official, data));
+      setLastLoadedAt(new Date());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar analytics oficial.');
+    } finally {
+      setLoading(false);
+    }
+  }, [capabilities, data, period]);
+
+  useEffect(() => {
+    void loadCapabilities();
+  }, [loadCapabilities]);
+
+  useEffect(() => {
+    if (capabilities) void loadDashboard();
+  }, [capabilities, loadDashboard]);
 
   const filteredClients = useMemo(() => {
-    return activeClients.filter(c => {
-      const matchSearch =
-        !search ||
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.company.toLowerCase().includes(search.toLowerCase());
-      const matchCategory =
-        filterCategory === 'all' || c.category === filterCategory;
+    const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
+    return clients.filter((client) => {
+      const workspaceClient = workspaceClients.get(client.clientId);
+      const matchSearch = !normalizedSearch
+        || client.clientName.toLocaleLowerCase('pt-BR').includes(normalizedSearch)
+        || client.accounts.some((account) => account.accountName.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
+      const matchCategory = filterCategory === 'all' || workspaceClient?.category === filterCategory;
       return matchSearch && matchCategory;
     });
-  }, [activeClients, search, filterCategory]);
+  }, [clients, filterCategory, search, workspaceClients]);
 
-  const selectedClient = useMemo(
-    () => activeClients.find(c => c.id === selectedClientId) ?? (filteredClients[0] || null),
-    [selectedClientId, activeClients, filteredClients]
-  );
+  const selectedClient = useMemo(() => (
+    filteredClients.find((client) => client.clientId === selectedClientId)
+    || filteredClients[0]
+    || null
+  ), [filteredClients, selectedClientId]);
 
-  const selectedClientCampaigns = useMemo(() => {
-    if (!selectedClient) return [];
-    return data.campaigns
-      .filter(c => c.clientId === selectedClient.id)
-      .sort((a, b) => {
-        const order = { live: 0, optimize: 1, launching: 2, waiting: 3, setup: 4, paused: 5 };
-        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
-      });
-  }, [selectedClient, data.campaigns]);
+  const categories = useMemo(() => (
+    Array.from(new Set(data.clients.map((client) => client.category).filter(Boolean))) as ClientCategory[]
+  ), [data.clients]);
 
-  const categories = useMemo(() => {
-    const used = new Set(activeClients.map(c => c.category).filter(Boolean));
-    return Array.from(used) as ClientCategory[];
-  }, [activeClients]);
-
-  // Summary stats
-  const totalSpent = useMemo(() => {
-    if (!selectedClient) return 0;
-    return selectedClientCampaigns.reduce((s, c) => s + (c.spent || 0), 0);
-  }, [selectedClient, selectedClientCampaigns]);
-
-  const totalAlerts = useMemo(() => {
-    if (!selectedClient) return 0;
-    return (data.agentAlerts || []).filter(
-      a => a.clientId === selectedClient.id && a.status === 'active'
-    ).length;
-  }, [selectedClient, data.agentAlerts]);
+  const selectedPrimaryMetricId = selectedClient ? primaryMetricId(selectedClient) : 'messaging_conversations_started_total';
+  const selectedCurrency = selectedClient ? mainCurrency(selectedClient) : null;
+  const selectedSpend = selectedClient ? metricValue(selectedClient.metrics.spend) : null;
+  const selectedPrimaryMetric = selectedClient?.metrics[selectedPrimaryMetricId];
+  const selectedSignals = selectedClient?.score.signals ?? [];
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden">
-      {/* ── Sidebar: client list ── */}
-      <aside className="flex h-full w-72 flex-shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/8 p-4">
+    <div className="flex h-full min-h-0 overflow-hidden bg-brand-ink">
+      <aside className="flex h-full w-80 flex-shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/8 p-4">
         <div className="flex-shrink-0">
-          <h2 className="mb-3 text-lg font-bold text-white">Analytics por Cliente</h2>
+          <h2 className="mb-1 text-lg font-bold text-white">Analytics por Cliente</h2>
+          <p className="mb-3 text-xs text-zinc-500">Fonte oficial: banco analítico, conta Meta, período e métricas rastreáveis.</p>
 
-          {/* Search */}
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar cliente..."
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar cliente ou conta..."
             className="mb-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
           />
 
-          {/* Category filter */}
           {categories.length > 1 && (
             <div className="mb-3 flex flex-wrap gap-1">
-              <button
-                onClick={() => setFilterCategory('all')}
-                className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-                  filterCategory === 'all'
-                    ? 'bg-violet-500 text-white'
-                    : 'bg-white/8 text-zinc-400 hover:bg-white/12'
-                }`}
-              >
-                Todos
-              </button>
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setFilterCategory(cat)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-                    filterCategory === cat
-                      ? 'bg-violet-500 text-white'
-                      : 'bg-white/8 text-zinc-400 hover:bg-white/12'
-                  }`}
-                >
-                  {CLIENT_CATEGORY_LABELS[cat]}
+              <button type="button" onClick={() => setFilterCategory('all')} className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${filterCategory === 'all' ? 'bg-violet-500 text-white' : 'bg-white/8 text-zinc-400 hover:bg-white/12'}`}>Todos</button>
+              {categories.map((category) => (
+                <button key={category} type="button" onClick={() => setFilterCategory(category)} className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${filterCategory === category ? 'bg-violet-500 text-white' : 'bg-white/8 text-zinc-400 hover:bg-white/12'}`}>
+                  {CLIENT_CATEGORY_LABELS[category]}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Client list */}
         <div className="flex flex-col gap-2">
-          {filteredClients.length === 0 ? (
-            <p className="py-8 text-center text-sm text-zinc-500">
-              {search ? 'Nenhum cliente encontrado' : 'Nenhum cliente ativo'}
-            </p>
+          {capabilityError && (
+            <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100">
+              {capabilityError}
+            </div>
+          )}
+          {loading ? (
+            <div className="rounded-xl border border-white/8 bg-white/4 p-5 text-sm text-zinc-400">Carregando analytics oficial...</div>
+          ) : filteredClients.length === 0 ? (
+            <p className="py-8 text-center text-sm text-zinc-500">{search ? 'Nenhum cliente encontrado' : 'Nenhum cliente ativo ou analítico encontrado'}</p>
           ) : (
-            filteredClients.map(client => (
+            filteredClients.map((client) => (
               <ClientCard
-                key={client.id}
+                key={client.clientId}
                 client={client}
-                data={data}
-                isSelected={selectedClient?.id === client.id}
-                onSelect={() => setSelectedClientId(client.id)}
+                workspaceClient={workspaceClients.get(client.clientId)}
+                isSelected={selectedClient?.clientId === client.clientId}
+                onSelect={() => setSelectedClientId(client.clientId)}
               />
             ))
           )}
         </div>
       </aside>
 
-      {/* ── Main content ── */}
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+        <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-white/8 bg-white/4 p-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Contrato oficial</p>
+            <h1 className="mt-1 text-2xl font-black text-white">Analytics oficial por cliente</h1>
+            <p className="mt-1 text-sm text-zinc-400">Score só aparece quando há dado confiável; métrica ausente mostra motivo.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="text-xs font-bold text-zinc-400">
+              Período
+              <select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)} className="mt-1 rounded-lg border border-white/10 bg-brand-ink px-3 py-2 text-sm text-white">
+                {Object.entries(periodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => void loadDashboard()} disabled={!capabilities || loading} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+              <RefreshCw size={15} /> Atualizar leitura
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
+            {error}
+          </div>
+        )}
+
         {!selectedClient ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-zinc-500">Selecione um cliente para ver as métricas</p>
+          <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-white/10 p-12">
+            <p className="text-zinc-500">Selecione um cliente para ver as métricas oficiais.</p>
           </div>
         ) : (
           <>
-            {/* Client header */}
-            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-bold text-white">{selectedClient.name}</h1>
-                  <CategoryBadge category={selectedClient.category} size="md" />
+            <section className="mb-5 rounded-2xl border border-white/8 bg-white/4 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-black text-white">{selectedClient.clientName}</h2>
+                    <span className="rounded-full bg-white/8 px-2 py-1 text-[11px] font-bold text-zinc-300">{statusLabels[selectedClient.clientStatus]}</span>
+                  </div>
+                  <p className="text-sm text-zinc-400">
+                    {selectedClient.accounts.length > 0
+                      ? selectedClient.accounts.map((account) => account.accountName).join(' · ')
+                      : reasonLabel(selectedClient.dataQuality.reason)}
+                  </p>
+                  {lastLoadedAt && <p className="mt-1 text-xs text-zinc-500">Leitura carregada em {lastLoadedAt.toLocaleString('pt-BR')}</p>}
                 </div>
-                {selectedClient.company && (
-                  <p className="text-sm text-zinc-400">{selectedClient.company}</p>
-                )}
+                <OfficialScore score={selectedClient.score} />
               </div>
 
-              {/* Summary stats */}
-              <div className="flex gap-4">
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Gasto Total</p>
-                  <p className="text-lg font-bold text-white">
-                    {formatMetricValue('spent', totalSpent)}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Campanhas</p>
-                  <p className="text-lg font-bold text-white">{selectedClientCampaigns.length}</p>
-                </div>
-                {totalAlerts > 0 && (
-                  <div className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-center">
-                    <p className="text-xs text-rose-400">Alertas</p>
-                    <p className="text-lg font-bold text-rose-300">{totalAlerts}</p>
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {metricBox('Investimento oficial', selectedClient.metrics.spend, (value) => formatCurrency(value, selectedCurrency))}
+                {metricBox(metricLabels[selectedPrimaryMetricId] || 'KPI principal', selectedPrimaryMetric)}
+                {metricBox('CPM', selectedClient.metrics.cpm, (value) => formatCurrency(value, selectedCurrency))}
+                {metricBox('Compras', selectedClient.metrics.purchases)}
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/8 bg-black/20 p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Diagnóstico</p>
+                <p className="mt-2 text-sm text-white">{selectedClient.score.summary}</p>
+                {selectedClient.score.status === 'unavailable' && (
+                  <p className="mt-1 text-sm text-amber-100">Motivo: {reasonLabel(selectedClient.dataQuality.reason || selectedClient.clientStatus)}</p>
+                )}
+                {selectedSignals.length > 0 && (
+                  <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                    {selectedSignals.slice(0, 4).map((signal, index) => (
+                      <div key={`${signal.kind}:${signal.metricId || index}`} className="rounded-lg border border-white/8 bg-white/4 p-3">
+                        <p className={`text-xs font-bold ${signal.severity === 'critical' ? 'text-rose-300' : signal.severity === 'warning' ? 'text-amber-200' : 'text-sky-200'}`}>{signal.title}</p>
+                        <p className="mt-1 text-xs text-zinc-400">{signal.evidence}</p>
+                        <p className="mt-1 text-xs text-brand-green">{signal.nextAction}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Benchmarks (if set) */}
-            {selectedClient.benchmarks && Object.keys(selectedClient.benchmarks).length > 0 && (
-              <div className="mb-4 flex flex-wrap gap-2">
-                <span className="text-xs text-zinc-500">Benchmarks:</span>
-                {Object.entries(selectedClient.benchmarks).map(([k, v]) => (
-                  v !== undefined && (
-                    <span key={k} className="rounded-full bg-white/8 px-2.5 py-0.5 text-xs text-zinc-400">
-                      {k.toUpperCase()}: {formatMetricValue(k, v as number)}
-                    </span>
-                  )
-                ))}
+              <div className="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Status do cliente</p>
+                  <p className="mt-1 font-bold text-white">{statusLabels[selectedClient.clientStatus]}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Qualidade dos dados</p>
+                  <p className="mt-1 font-bold text-white">{selectedClient.dataQuality.status}</p>
+                  {selectedClient.dataQuality.reason && <p className="mt-1 text-xs text-amber-100">{reasonLabel(selectedClient.dataQuality.reason)}</p>}
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Último sync confiável</p>
+                  <p className="mt-1 text-xs text-white">{formatRun(selectedClient.lastSuccessfulRun)}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Última tentativa</p>
+                  <p className="mt-1 text-xs text-white">{formatRun(selectedClient.lastAttempt)}</p>
+                </div>
               </div>
+
+              {selectedClient.evaluations.length > 0 && (
+                <div className="mt-4 rounded-xl border border-white/8 bg-black/20 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Avaliações oficiais</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedClient.evaluations.map((evaluation) => (
+                      <span key={`${evaluation.metricId}:${evaluation.campaignId || 'account'}:${evaluation.targetKind}:${evaluation.targetValue}:${String(evaluation.effectiveFrom || '')}`} className="rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-300">
+                        {metricLabels[evaluation.metricId] || evaluation.metricId}: <strong>{evaluation.status}</strong> · {evaluation.reason}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {selectedClient.accounts.length > 0 && (
+              <section className="mb-5 space-y-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Contas oficiais</p>
+                  <h2 className="mt-1 text-lg font-black text-white">Métricas persistidas por conta Meta</h2>
+                </div>
+                {selectedClient.accounts.map((account) => (
+                  <AccountPanel key={account.clientMetaAssetId} account={account} primaryMetricId={selectedPrimaryMetricId} />
+                ))}
+              </section>
             )}
 
-            {/* Campaigns */}
-            {selectedClientCampaigns.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 p-12">
-                <p className="text-zinc-500">Nenhuma campanha encontrada para este cliente.</p>
+            {selectedClient.metricGroups.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/10 p-12 text-center">
+                <div>
+                  <p className="font-bold text-white">Nenhuma campanha confiável neste período.</p>
+                  <p className="mt-1 text-sm text-zinc-500">{reasonLabel(selectedClient.dataQuality.reason || selectedClient.clientStatus)}</p>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {selectedClientCampaigns.map(campaign => (
-                  <CampaignPanel
-                    key={campaign.id}
-                    campaign={campaign}
-                    client={selectedClient}
-                    data={data}
-                  />
+                {selectedClient.metricGroups.map((group) => (
+                  <CampaignPanel key={`${group.clientMetaAssetId}:${group.campaignId}`} group={group} />
                 ))}
               </div>
             )}
