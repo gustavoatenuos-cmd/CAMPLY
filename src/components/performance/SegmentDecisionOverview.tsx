@@ -164,7 +164,9 @@ export function buildSegmentSummaries(
   }
 
   return {
-    summaries: Array.from(groups.values()).sort((a, b) => b.critical - a.critical || b.attention - a.attention || b.clients.length - a.clients.length || a.vertical.localeCompare(b.vertical)),
+    summaries: Array.from(groups.values())
+      .filter((summary) => summary.clients.length > 0)
+      .sort((a, b) => b.critical - a.critical || b.attention - a.attention || b.clients.length - a.clients.length || a.vertical.localeCompare(b.vertical)),
     pending,
     pendingByClient,
   };
