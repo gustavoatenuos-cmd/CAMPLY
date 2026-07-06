@@ -32,17 +32,31 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
       'A leitura do workspace demorou mais que o esperado.'
     );
   } catch (error) {
-    console.warn('Camply Supabase load skipped:', error instanceof Error ? error.message : String(error));
-    return null;
+    remoteVersion = null;
+    console.error('Camply Supabase load failed:', error instanceof Error ? error.message : String(error));
+    throw error;
   }
   const { data, error } = response;
 
   if (error) {
-    console.warn('Camply Supabase load skipped:', error.message);
+    remoteVersion = null;
+    console.error('Camply Supabase load failed:', error.message);
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    remoteVersion = null;
     return null;
   }
 
-  remoteVersion = data?.version ?? null;
+  const parsedVersion = Number(data.version);
+  if (!Number.isFinite(parsedVersion)) {
+    remoteVersion = null;
+    console.error('Invalid loaded remote workspace version:', data.version);
+    throw new Error('A versão do workspace remoto é inválida.');
+  }
+
+  remoteVersion = parsedVersion;
   return data?.data ? normalizeData(data.data) : null;
 };
 
@@ -68,17 +82,26 @@ const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
       'A gravação do workspace demorou mais que o esperado.'
     );
   } catch (error) {
+    remoteVersion = null;
     console.error('Camply Supabase save failed:', error instanceof Error ? error.message : String(error));
     return false;
   }
   const { data: nextVersion, error } = response;
 
   if (error) {
+    remoteVersion = null;
     console.error('Camply Supabase save failed:', error.message);
     return false;
   }
 
-  remoteVersion = Number(nextVersion);
+  const parsedVersion = Number(nextVersion);
+  if (!Number.isFinite(parsedVersion)) {
+    remoteVersion = null;
+    console.error('Invalid remote workspace version:', nextVersion);
+    return false;
+  }
+
+  remoteVersion = parsedVersion;
   return true;
 };
 

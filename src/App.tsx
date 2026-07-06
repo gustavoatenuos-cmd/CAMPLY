@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
@@ -55,6 +55,8 @@ export default function App() {
       if (new URLSearchParams(window.location.search).get('e2eReset') === '1') {
         resetMetaE2EState();
         resetE2EAnalysisProfiles();
+        clearUserData(E2E_USER_ID);
+        setData(metaE2EWorkspace);
         window.history.replaceState({}, '', window.location.pathname);
       } else {
         restoreMetaE2EState();
@@ -86,13 +88,14 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSupabaseSession(nextSession);
       const nextUserId = nextSession?.user.id || null;
-      if (sessionUserIdRef.current !== nextUserId) {
+      const userChanged = sessionUserIdRef.current !== nextUserId;
+      if (userChanged) {
         resetRemoteWorkspaceState();
         setRemoteLoaded(false);
         sessionUserIdRef.current = nextUserId;
+        setData(nextSession ? loadData(nextSession.user.id) : initialData);
       }
       setSession(nextSession);
-      setData(nextSession ? loadData(nextSession.user.id) : initialData);
       setAuthReady(true);
     });
 
@@ -119,11 +122,21 @@ export default function App() {
 
     let active = true;
 
-    loadRemoteData().then((remoteData) => {
-      if (!active) return;
-      if (remoteData) setData(remoteData);
-      setRemoteLoaded(true);
-    });
+    setSyncError(null);
+    loadRemoteData()
+      .then((remoteData) => {
+        if (!active) return;
+        if (remoteData) setData(remoteData);
+        setRemoteLoaded(true);
+        setSyncError(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setRemoteLoaded(false);
+        setSyncError(
+          `Não foi possível carregar o workspace salvo no banco. Nenhuma alteração local foi enviada. ${error instanceof Error ? error.message : String(error)}`
+        );
+      });
 
     return () => {
       active = false;
@@ -131,8 +144,9 @@ export default function App() {
   }, [authenticated, session?.user.id]);
 
   useEffect(() => {
+    if (authenticated && !remoteLoaded && !isMetaE2EMode) return;
     saveData(data, session?.user.id);
-  }, [data, session?.user.id]);
+  }, [authenticated, data, remoteLoaded, session?.user.id]);
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
@@ -193,7 +207,7 @@ export default function App() {
 
   const insights = useMemo(() => buildInsights(data), [data]);
 
-  const updateData = (updater: (data: CamplyData) => CamplyData) => {
+  const updateData = useCallback((updater: (data: CamplyData) => CamplyData) => {
     setData((current) => {
       const next = updater(current);
       const { newAlerts, newLogs } = runAgentEngine(next);
@@ -206,9 +220,9 @@ export default function App() {
       }
       return next;
     });
-  };
+  }, []);
 
-  const persistClientData = async (nextData: CamplyData, clientId: string) => {
+  const persistClientData = useCallback(async (nextData: CamplyData, clientId: string) => {
     if (!authenticated || isMetaE2EMode) {
       skipNextRemoteSaveRef.current = true;
       setData(nextData);
@@ -219,7 +233,7 @@ export default function App() {
     skipNextRemoteSaveRef.current = true;
     setData(nextData);
     setSyncError(null);
-  };
+  }, [authenticated]);
 
   if (!authReady) {
     return <div className="grid min-h-screen place-items-center bg-brand-ink text-brand-soft">Validando sessão...</div>;
@@ -228,7 +242,8 @@ export default function App() {
   if (!authenticated) {
     return <AuthGate onMockLogin={isMetaE2EMode ? () => {
       sessionUserIdRef.current = E2E_USER_ID;
-      setData(metaE2EWorkspace);
+      const storedE2EData = loadData(E2E_USER_ID);
+      setData(storedE2EData.clients.length > 0 ? storedE2EData : metaE2EWorkspace);
       setSession({ user: { id: E2E_USER_ID } } as Session);
       setRemoteLoaded(true);
     } : undefined} />;
@@ -294,7 +309,13 @@ export default function App() {
           </ErrorBoundary>
         </div>
       </main>
-      <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
+      <StartupModal
+        data={data}
+        setActiveView={setActiveView}
+        claudeSummary={claudeSummary}
+        claudeLoading={claudeLoading}
+        userName={session?.user.user_metadata?.name || session?.user.email || 'usuário'}
+      />
     </div>
   );
 }

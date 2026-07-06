@@ -21,6 +21,17 @@ export function getSupabaseAccessToken(): string | null {
   return activeAccessToken;
 }
 
+export async function waitForSupabaseAccessToken(timeoutMs = 1500): Promise<string | null> {
+  if (activeAccessToken) return activeAccessToken;
+
+  const startedAt = Date.now();
+  while (!activeAccessToken && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  return activeAccessToken;
+}
+
 export function getSupabaseFunctionUrl(name: string): string | null {
   if (!supabaseUrl) return null;
   return `${String(supabaseUrl).replace(/\/+$/, '')}/functions/v1/${name}`;
@@ -44,7 +55,7 @@ export const supabase = isSupabaseConfigured
 // current through App's onAuthStateChange listener.
 export const supabaseData = isSupabaseConfigured
   ? createClient(supabaseUrl as string, supabasePublishableKey as string, {
-      accessToken: async () => activeAccessToken,
+      accessToken: async () => waitForSupabaseAccessToken(),
       auth: {
         persistSession: false,
         autoRefreshToken: false,
