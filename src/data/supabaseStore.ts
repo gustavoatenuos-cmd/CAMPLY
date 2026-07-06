@@ -8,6 +8,23 @@ type WorkspaceRow = {
   version: number;
 };
 
+export type RemoteLoadResult =
+  | { status: 'ok'; data: CamplyData }
+  | { status: 'empty' }
+  | { status: 'unavailable' }
+  | { status: 'error'; message: string };
+
+export type RemoteSaveResult =
+  | { status: 'saved' }
+  | { status: 'skipped' }
+  | { status: 'conflict'; remoteData: CamplyData | null }
+  | { status: 'error'; message: string };
+
+const VERSION_CONFLICT_CODE = '40001';
+const LOAD_TIMEOUT_MS = 12_000;
+const SAVE_TIMEOUT_MS = 15_000;
+const CONFIRM_TIMEOUT_MS = 10_000;
+
 let remoteVersion: number | null = null;
 let saveQueue: Promise<unknown> = Promise.resolve();
 
@@ -15,10 +32,10 @@ export const resetRemoteWorkspaceState = (): void => {
   remoteVersion = null;
 };
 
-export const loadRemoteData = async (): Promise<CamplyData | null> => {
-  if (!isSupabaseConfigured || !supabaseData) return null;
+export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
+  if (!isSupabaseConfigured || !supabaseData) return { status: 'unavailable' };
   const userId = getSupabaseSessionUserId();
-  if (!userId) return null;
+  if (!userId) return { status: 'unavailable' };
 
   let response;
   try {
@@ -28,34 +45,77 @@ export const loadRemoteData = async (): Promise<CamplyData | null> => {
         .select('data, version')
         .eq('id', userId)
         .maybeSingle<WorkspaceRow>(),
-      12_000,
+      LOAD_TIMEOUT_MS,
       'A leitura do workspace demorou mais que o esperado.'
     );
   } catch (error) {
-    console.warn('Camply Supabase load skipped:', error instanceof Error ? error.message : String(error));
-    return null;
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('Camply Supabase load failed:', message);
+    return { status: 'error', message };
   }
   const { data, error } = response;
 
   if (error) {
-    console.warn('Camply Supabase load skipped:', error.message);
-    return null;
+    console.warn('Camply Supabase load failed:', error.message);
+    return { status: 'error', message: error.message };
   }
 
-  remoteVersion = data?.version ?? null;
-  return data?.data ? normalizeData(data.data) : null;
+  if (!data?.data) {
+    remoteVersion = data?.version ?? null;
+    return { status: 'empty' };
+  }
+
+  remoteVersion = data.version;
+  return { status: 'ok', data: normalizeData(data.data) };
 };
 
-export const saveRemoteData = async (data: CamplyData): Promise<boolean> => {
+// Consulta leve usada ao voltar o foco para a aba: compara apenas a versão,
+// sem baixar o workspace inteiro.
+export const hasNewerRemoteVersion = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured || !supabaseData) return false;
+  const userId = getSupabaseSessionUserId();
+  if (!userId) return false;
+
+  let response;
+  try {
+    response = await withTimeout(
+      supabaseData
+        .from('camply_workspace')
+        .select('version')
+        .eq('id', userId)
+        .maybeSingle<{ version: number }>(),
+      LOAD_TIMEOUT_MS,
+      'A verificação de versão do workspace demorou mais que o esperado.'
+    );
+  } catch {
+    return false;
+  }
+  const { data, error } = response;
+  if (error || !data) return false;
+  return remoteVersion === null || data.version > remoteVersion;
+};
+
+export const saveRemoteData = async (data: CamplyData): Promise<RemoteSaveResult> => {
   const operation = saveQueue.then(() => saveRemoteDataNow(data));
   saveQueue = operation.catch(() => undefined);
   return operation;
 };
 
-const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
-  if (!isSupabaseConfigured || !supabaseData) return false;
+const fetchRemoteWorkspaceRow = async (userId: string): Promise<WorkspaceRow | null> => {
+  if (!supabaseData) return null;
+  const { data, error } = await supabaseData
+    .from('camply_workspace')
+    .select('data, version')
+    .eq('id', userId)
+    .maybeSingle<WorkspaceRow>();
+  if (error || !data) return null;
+  return data;
+};
+
+const saveRemoteDataNow = async (data: CamplyData): Promise<RemoteSaveResult> => {
+  if (!isSupabaseConfigured || !supabaseData) return { status: 'skipped' };
   const userId = getSupabaseSessionUserId();
-  if (!userId) return false;
+  if (!userId) return { status: 'skipped' };
 
   let response;
   try {
@@ -64,30 +124,34 @@ const saveRemoteDataNow = async (data: CamplyData): Promise<boolean> => {
         p_data: sanitizeWorkspaceData(data),
         p_expected_version: remoteVersion,
       }),
-      15_000,
+      SAVE_TIMEOUT_MS,
       'A gravação do workspace demorou mais que o esperado.'
     );
   } catch (error) {
-    console.error('Camply Supabase save failed:', error instanceof Error ? error.message : String(error));
-    return false;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Camply Supabase save failed:', message);
+    return { status: 'error', message };
   }
   const { data: nextVersion, error } = response;
 
   if (error) {
     console.error('Camply Supabase save failed:', error.message);
-    if (error.code === '40001') {
-      const { data: row } = await supabaseData
-        .from('camply_workspace')
-        .select('version')
-        .eq('id', userId)
-        .single<{ version: number }>();
-      if (row) remoteVersion = row.version;
+    if (error.code === VERSION_CONFLICT_CODE) {
+      // Outro dispositivo gravou primeiro. Adotamos a versão remota e a
+      // devolvemos ao chamador para que a UI recarregue os dados em vez de
+      // sobrescrever silenciosamente o trabalho feito no outro dispositivo.
+      const row = await fetchRemoteWorkspaceRow(userId);
+      if (row) {
+        remoteVersion = row.version;
+        return { status: 'conflict', remoteData: row.data ? normalizeData(row.data) : null };
+      }
+      return { status: 'conflict', remoteData: null };
     }
-    return false;
+    return { status: 'error', message: error.message };
   }
 
   remoteVersion = Number(nextVersion);
-  return true;
+  return { status: 'saved' };
 };
 
 export const confirmClientIdentity = async (clientId: string): Promise<boolean> => {
@@ -105,7 +169,7 @@ export const confirmClientIdentity = async (clientId: string): Promise<boolean> 
         .eq('client_id', clientId)
         .is('archived_at', null)
         .maybeSingle<{ client_id: string }>(),
-      10_000,
+      CONFIRM_TIMEOUT_MS,
       'A confirmação do cliente demorou mais que o esperado.'
     );
   } catch (error) {
@@ -126,8 +190,11 @@ export const saveRemoteDataAndConfirmClient = async (
   data: CamplyData,
   clientId: string
 ): Promise<void> => {
-  const saved = await saveRemoteData(data);
-  if (!saved) {
+  const result = await saveRemoteData(data);
+  if (result.status === 'conflict') {
+    throw new Error('Os dados foram alterados em outro dispositivo. Recarregue a página antes de salvar o cliente.');
+  }
+  if (result.status !== 'saved') {
     throw new Error('Não foi possível salvar o cliente no banco. Recarregue e tente novamente.');
   }
 

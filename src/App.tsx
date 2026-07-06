@@ -5,7 +5,7 @@ import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
-import { loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
+import { hasNewerRemoteVersion, loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
 import { setSupabaseSession, supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
@@ -47,8 +47,11 @@ export default function App() {
   const [claudeSummary, setClaudeSummary] = useState<string | null>(null);
   const [claudeLoading, setClaudeLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [remoteLoadError, setRemoteLoadError] = useState<string | null>(null);
+  const [remoteLoadAttempt, setRemoteLoadAttempt] = useState(0);
   const sessionUserIdRef = useRef<string | null>(null);
   const skipNextRemoteSaveRef = useRef(false);
+  const focusRefreshRunningRef = useRef(false);
 
   useEffect(() => {
     if (isMetaE2EMode) {
@@ -118,17 +121,64 @@ export default function App() {
     if (!authenticated || isMetaE2EMode) return;
 
     let active = true;
+    let retryTimeout: number | undefined;
 
-    loadRemoteData().then((remoteData) => {
+    loadRemoteData().then((result) => {
       if (!active) return;
-      if (remoteData) setData(remoteData);
-      setRemoteLoaded(true);
+      if (result.status === 'ok') {
+        skipNextRemoteSaveRef.current = true;
+        setData(result.data);
+        setRemoteLoaded(true);
+        setRemoteLoadError(null);
+        return;
+      }
+      if (result.status === 'empty' || result.status === 'unavailable') {
+        setRemoteLoaded(true);
+        setRemoteLoadError(null);
+        return;
+      }
+      // Falha de rede/banco: NÃO liberamos o salvamento remoto, senão este
+      // dispositivo (com dados possivelmente velhos) sobrescreveria o banco.
+      setRemoteLoadError('Não foi possível carregar seus dados mais recentes do banco. Você está vendo a cópia local deste dispositivo — evite editar até a conexão voltar, pois alterações feitas agora podem ser perdidas.');
+      retryTimeout = window.setTimeout(() => setRemoteLoadAttempt(a => a + 1), 8_000);
     });
 
     return () => {
       active = false;
+      if (retryTimeout) window.clearTimeout(retryTimeout);
     };
-  }, [authenticated, session?.user.id]);
+  }, [authenticated, session?.user.id, remoteLoadAttempt]);
+
+  // Ao voltar para a aba/app, verifica se outro dispositivo gravou uma versão
+  // mais nova e, se sim, recarrega — sem isso o app só busca dados no login.
+  useEffect(() => {
+    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
+
+    const refresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (focusRefreshRunningRef.current) return;
+      focusRefreshRunningRef.current = true;
+      void hasNewerRemoteVersion()
+        .then(async (newer) => {
+          if (!newer) return;
+          const result = await loadRemoteData();
+          if (result.status === 'ok') {
+            skipNextRemoteSaveRef.current = true;
+            setData(result.data);
+          }
+        })
+        .finally(() => {
+          focusRefreshRunningRef.current = false;
+        });
+    };
+
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [authenticated, remoteLoaded]);
 
   useEffect(() => {
     saveData(data, session?.user.id);
@@ -143,10 +193,24 @@ export default function App() {
     }
 
     const timeout = window.setTimeout(() => {
-      void saveRemoteData(data).then((saved) => {
-        setSyncError(saved
-          ? null
-          : 'Não foi possível salvar uma alteração do CRM no banco. Recarregue antes de editar novamente. A sincronização das contas Meta não foi alterada.');
+      void saveRemoteData(data).then((result) => {
+        if (result.status === 'saved' || result.status === 'skipped') {
+          setSyncError(null);
+          return;
+        }
+        if (result.status === 'conflict') {
+          if (result.remoteData) {
+            // Outro dispositivo salvou primeiro: adota a versão do banco em vez
+            // de sobrescrevê-la com os dados desatualizados deste dispositivo.
+            skipNextRemoteSaveRef.current = true;
+            setData(result.remoteData);
+            setSyncError('Este dispositivo estava com dados desatualizados. Carregamos a versão mais recente do banco — confira sua última alteração e refaça se necessário.');
+          } else {
+            setSyncError('Os dados foram alterados em outro dispositivo. Recarregue a página antes de continuar editando.');
+          }
+          return;
+        }
+        setSyncError('Não foi possível salvar uma alteração do CRM no banco. Recarregue antes de editar novamente. A sincronização das contas Meta não foi alterada.');
       });
     }, 500);
 
@@ -259,6 +323,18 @@ export default function App() {
         }}
       />
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {remoteLoadError && (
+          <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+            <span className="flex-1">{remoteLoadError}</span>
+            <button
+              type="button"
+              onClick={() => setRemoteLoadAttempt(a => a + 1)}
+              className="shrink-0 rounded-lg border border-amber-400/40 px-3 py-1 text-xs font-medium text-amber-100 transition hover:bg-amber-400/10"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
         {syncError && (
           <div role="alert" className="border-b border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
             {syncError}
