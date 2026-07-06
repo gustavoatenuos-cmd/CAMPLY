@@ -96,8 +96,9 @@ assert_js '(() => { const segment=document.querySelector("[data-testid=\"segment
 
 step "analysis profile persistence"
 "${BROWSER[@]}" find role button click --name "Clientes"
-"${BROWSER[@]}" wait 200
-"${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 700
+assert_js 'document.body.innerText.includes("Clínica Mock")' 'client list did not render before opening analysis profile editor'
+assert_js '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' 'client edit button was not available before opening analysis profile editor'
 "${BROWSER[@]}" wait 250
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
 "${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); const input=label?.querySelector("input"); if (!input) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,"1650"); input.dispatchEvent(new Event("input",{bubbles:true})); return true; })()' >/dev/null
@@ -114,8 +115,9 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 "${BROWSER[@]}" find role button click --name "Clientes"
-"${BROWSER[@]}" wait 200
-"${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 700
+assert_js 'document.body.innerText.includes("Clínica Mock")' 'client list did not render after reload before reopening analysis profile editor'
+assert_js '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' 'client edit button was not available after reload before reopening analysis profile editor'
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile did not survive reload'
 "${BROWSER[@]}" find role button click --name "Cancelar"
@@ -130,6 +132,14 @@ step "Meta link and official metrics"
 assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("métricas mensais oficiais") && text.includes("conversas iniciadas") && text.includes("custo por conversa") && text.includes("valor de compras") && text.includes("visualizações da página de destino"); })()' 'required monthly metrics did not render'
 assert_js 'document.body.innerText.includes("2026-07-01 a 2026-07-01")' 'exact monthly interval did not render'
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'mock account was not linked'
+
+step "client analytics uses official contract"
+"${BROWSER[@]}" find role button click --name "Analytics"
+"${BROWSER[@]}" wait 700
+assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("analytics oficial por cliente") && text.includes("fonte oficial") && text.includes("clínica mock") && text.includes("conta meta mock") && text.includes("score") && text.includes("investimento oficial"); })()' 'Client Analytics did not render official dashboard contract'
+assert_js '!document.body.innerText.includes("Score indisponível: ainda não há métricas confiáveis para este cliente.")' 'Client Analytics reported unavailable score despite reliable mock metrics'
+"${BROWSER[@]}" find role button click --name "Dashboard"
+"${BROWSER[@]}" wait 500
 
 step "health retail and delivery decisions"
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]").click(); true' >/dev/null
@@ -237,7 +247,7 @@ assert_js 'document.body.innerText.includes("Período ainda não sincronizado")'
 assert_js 'document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Período ainda não sincronizado") && !document.body.innerText.includes("Campanha histórica pausada")' 'period synchronization did not refresh active-only hierarchy'
 
 "${BROWSER[@]}" find role button click --name "Clientes"
-"${BROWSER[@]}" wait 200
+"${BROWSER[@]}" wait 700
 assert_js 'document.body.innerText.includes("Base operacional e Meta Ads") && document.querySelectorAll("[data-testid=meta-operational-workspace]").length === 1' 'Clients did not reuse the official workspace'
 "${BROWSER[@]}" find role button click --name "Campanhas"
 "${BROWSER[@]}" wait 400

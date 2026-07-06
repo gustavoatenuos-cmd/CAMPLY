@@ -177,6 +177,72 @@ describe('resolveTarget', () => {
   });
 });
 
+describe('performance score availability', () => {
+  it('does not mark clients as healthy without a reliable decision basis', () => {
+    const base: GlobalClientPerformance = {
+      clientId: 'client_without_data',
+      clientName: 'Cliente sem dados',
+      clientStatus: 'never_synced',
+      accounts: [],
+      metrics: {},
+      metricGroups: [],
+      resolvedTargets: [],
+      evaluations: [],
+      budgetPacing: null,
+      score: {
+        value: 85,
+        status: 'healthy',
+        confidence: 90,
+        coveragePercent: 100,
+        summary: 'Valor legado que não deve sobreviver ao enriquecimento.',
+        signals: [],
+      },
+      dataQuality: { status: 'unavailable', reason: 'sync_not_started' },
+      lastSuccessfulRun: null,
+      lastAttempt: null,
+      hasNewerPartial: false,
+      hasNewerFailure: false,
+      analysisProfile: null,
+    };
+
+    const cases: Array<Pick<GlobalClientPerformance, 'clientStatus' | 'dataQuality' | 'resolvedTargets' | 'analysisProfile'>> = [
+      {
+        clientStatus: 'not_connected',
+        dataQuality: { status: 'unavailable', reason: 'meta_account_not_linked' },
+        resolvedTargets: [],
+        analysisProfile: null,
+      },
+      {
+        clientStatus: 'never_synced',
+        dataQuality: { status: 'unavailable', reason: 'sync_not_started' },
+        resolvedTargets: [],
+        analysisProfile: null,
+      },
+      {
+        clientStatus: 'no_delivery',
+        dataQuality: { status: 'unavailable', reason: 'no_delivery' },
+        resolvedTargets: [],
+        analysisProfile: null,
+      },
+      {
+        clientStatus: 'available',
+        dataQuality: { status: 'complete', reason: null },
+        resolvedTargets: [],
+        analysisProfile: null,
+      },
+    ];
+
+    for (const item of cases) {
+      const [result] = enrichGlobalPerformanceDashboard([{ ...base, ...item }], 'this_month');
+      expect(result.score).toMatchObject({
+        value: null,
+        status: 'unavailable',
+      });
+      expect(result.score.summary).not.toContain('saudável');
+    }
+  });
+});
+
 describe('calculateBudgetPacing', () => {
   it('calculates expected spend, projection and status in the account timezone', () => {
     const pacing = calculateBudgetPacing({

@@ -190,4 +190,120 @@ describe('buildSegmentSummaries', () => {
     expect(pendingByClient.get('clinica-a')).toContain('Sem metas');
     expect(pendingByClient.get('sem-config')).toEqual(expect.arrayContaining(['Sem subsegmento', 'Sem orçamento planejado', 'Sem conta Meta']));
   });
+
+  it('uses manual client segment as a resolver fallback without hiding pending configuration', () => {
+    const clients = [
+      client('manual-clinic', {
+        clientStatus: 'not_connected',
+        dataQuality: { status: 'unavailable', reason: 'meta_account_not_linked' },
+        score: {
+          value: null,
+          status: 'unavailable',
+          confidence: 0,
+          coveragePercent: 0,
+          summary: 'Score indisponível.',
+          signals: [],
+        },
+      }),
+    ];
+    const workspaceClients = [{
+      id: 'manual-clinic',
+      projectId: '',
+      name: 'Dra. Ana',
+      company: 'Clínica Odonto Sorriso',
+      segment: 'Saúde',
+      structure: 'WhatsApp',
+      hasProject: false,
+      contact: '',
+      monthlyFee: 0,
+      managementFeeType: 'recurring',
+      dueDay: 10,
+      adInvestmentPeriod: 'monthly',
+      adInvestmentMeta: 0,
+      adInvestmentGoogle: 0,
+      adInvestmentYoutube: 0,
+      adInvestmentTikTok: 0,
+      status: 'active',
+      notes: '',
+    }] as Client[];
+
+    const { summaries, pending, pendingByClient } = buildSegmentSummaries(clients, workspaceClients);
+    const saude = summaries.find((summary) => summary.vertical === 'Saúde');
+
+    expect(saude?.clients.map((item) => item.clientId)).toEqual(['manual-clinic']);
+    expect(saude?.subsegments).toEqual(new Set(['Odontologia']));
+    expect(saude?.noData).toBe(1);
+    expect(pending.map((item) => item.clientId)).toEqual(['manual-clinic']);
+    expect(pendingByClient.get('manual-clinic')).toEqual(expect.arrayContaining([
+      'Sem perfil de análise',
+      'Sem conta Meta',
+      'Sem metas',
+    ]));
+    expect(pendingByClient.get('manual-clinic')).not.toEqual(expect.arrayContaining([
+      'Sem segmento',
+      'Sem subsegmento',
+    ]));
+  });
+
+  it('keeps an unclassified client exclusively in pending configuration', () => {
+    const unclassified = client('unclassified', {
+      clientStatus: 'not_connected',
+      dataQuality: { status: 'unavailable', reason: 'meta_account_not_linked' },
+      score: {
+        value: null,
+        status: 'unavailable',
+        confidence: 0,
+        coveragePercent: 0,
+        summary: 'Score indisponível.',
+        signals: [],
+      },
+    });
+
+    const { summaries, pending, pendingByClient } = buildSegmentSummaries([unclassified], []);
+
+    expect(summaries.flatMap((summary) => summary.clients)).not.toContain(unclassified);
+    expect(summaries.some((summary) => summary.key === 'Configuração pendente')).toBe(false);
+    expect(pending.map((item) => item.clientId)).toEqual(['unclassified']);
+    expect(pendingByClient.get('unclassified')).toEqual(expect.arrayContaining([
+      'Sem segmento',
+      'Sem subsegmento',
+    ]));
+  });
+
+  it('never classifies an unavailable score as healthy', () => {
+    const unavailable = client('no-score', {
+      score: {
+        value: null,
+        status: 'unavailable',
+        confidence: 0,
+        coveragePercent: 0,
+        summary: 'Score indisponível.',
+        signals: [],
+      },
+      analysisProfile: {
+        clientId: 'no-score',
+        vertical: 'Saúde',
+        subsegment: 'Odontologia',
+        customVertical: null,
+        customSubsegment: null,
+        businessModel: 'negócio local',
+        primaryConversionMetric: 'leads',
+        secondaryMetrics: [],
+        primaryChannel: 'Site',
+        budgetPeriod: 'monthly',
+        plannedBudget: 1000,
+        minimumEvaluationSpend: 0,
+        minimumImpressions: 0,
+        minimumResults: 0,
+        attributionDelayHours: 24,
+        analysisEnabled: true,
+      },
+    });
+
+    const { summaries } = buildSegmentSummaries([unavailable], []);
+    const saude = summaries.find((summary) => summary.key === 'Saúde');
+
+    expect(saude?.healthy).toBe(0);
+    expect(saude?.noData).toBe(1);
+  });
 });
