@@ -214,7 +214,7 @@ function DashboardUnavailable({
   );
 }
 
-export function OverviewView({ data, setActiveView }: OverviewViewProps) {
+export function OverviewView({ data, insights, updateData, setActiveView }: OverviewViewProps) {
   const storedFilters = useMemo(loadStoredFilters, []);
   const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'this_month');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
@@ -311,13 +311,42 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     .slice(0, 6), [filteredClients]);
 
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
-  const openTasks = data.tasks.filter((task) => !task.done).length;
+  const openTaskItems = data.tasks.filter((task) => !task.done);
+  const openTasks = openTaskItems.length;
   const openProjects = data.projects.filter((project) => project.status !== 'done').length;
   const activeClients = data.clients.filter((client) => client.status === 'active').length;
   const pendingReceivables = data.receivables
     .filter((receivable) => receivable.status !== 'paid')
     .reduce((total, receivable) => total + receivable.amount, 0);
-  const activeAlerts = data.agentAlerts.filter((alert) => alert.status === 'active').length;
+  const activeAgentAlerts = data.agentAlerts.filter((alert) => alert.status === 'active');
+  const activeAlerts = activeAgentAlerts.length;
+  const actionableInsights = insights.filter((insight) => insight.level !== 'good').slice(0, 3);
+  const firstOpenTask = openTaskItems[0];
+  const firstActiveAlert = activeAgentAlerts[0];
+
+  const completeFirstTask = () => {
+    if (!firstOpenTask) return;
+    updateData((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) => (
+        task.id === firstOpenTask.id
+          ? { ...task, done: true, updatedAt: new Date().toISOString(), lastActivityAt: new Date().toISOString() }
+          : task
+      )),
+    }));
+  };
+
+  const resolveFirstAlert = () => {
+    if (!firstActiveAlert) return;
+    updateData((current) => ({
+      ...current,
+      agentAlerts: current.agentAlerts.map((alert) => (
+        alert.id === firstActiveAlert.id
+          ? { ...alert, status: 'resolved' as const, readAt: alert.readAt || new Date().toISOString() }
+          : alert
+      )),
+    }));
+  };
 
   if (capabilitiesLoading || !capabilityState) {
     return (
@@ -510,6 +539,46 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                   <QuickMetric icon={BriefcaseBusiness} label="Projetos abertos" value={openProjects} onClick={() => setActiveView('projects')} />
                   <QuickMetric icon={AlertTriangle} label="Alertas ativos" value={activeAlerts} onClick={() => setActiveView('intelligence')} />
                   <QuickMetric icon={Banknote} label="A receber" value={formatCurrency(pendingReceivables)} onClick={() => setActiveView('personalFinance')} />
+                </div>
+                <div className="mt-5 space-y-3 border-t border-brand-line pt-4">
+                  <div className="rounded-xl border border-brand-line bg-brand-ink/50 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Alertas calculados</p>
+                    {actionableInsights.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {actionableInsights.map((insight) => (
+                          <div key={insight.id} className="rounded-lg bg-brand-surface/70 p-3">
+                            <p className="text-sm font-black text-white">{insight.title}</p>
+                            <p className="mt-1 text-xs text-brand-muted">{insight.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-brand-muted">Nenhum insight crítico calculado agora.</p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={completeFirstTask}
+                      disabled={!firstOpenTask}
+                      className="rounded-xl border border-brand-line bg-brand-ink/50 p-4 text-left transition hover:border-brand-green/50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Tarefa aberta</p>
+                      <p className="mt-2 text-sm font-black text-white">{firstOpenTask?.title || 'Nenhuma tarefa aberta'}</p>
+                      <p className="mt-1 text-xs text-brand-muted">{firstOpenTask ? 'Clique para concluir a primeira tarefa.' : 'Tudo resolvido por aqui.'}</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resolveFirstAlert}
+                      disabled={!firstActiveAlert}
+                      className="rounded-xl border border-brand-line bg-brand-ink/50 p-4 text-left transition hover:border-brand-green/50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Ação rápida</p>
+                      <p className="mt-2 text-sm font-black text-white">{firstActiveAlert?.title || 'Nenhum alerta ativo'}</p>
+                      <p className="mt-1 text-xs text-brand-muted">{firstActiveAlert ? 'Clique para resolver o primeiro alerta.' : 'Sem alertas pendentes.'}</p>
+                    </button>
+                  </div>
                 </div>
               </article>
             </div>
