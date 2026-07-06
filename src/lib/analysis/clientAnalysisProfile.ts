@@ -2,34 +2,20 @@ import { supabaseData } from '../supabase';
 import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 
 export const analysisVerticals = [
-  'Saúde',
-  'Alimentação',
-  'Varejo local',
   'Serviços locais',
   'E-commerce',
-  'Imobiliário',
-  'Educação',
-  'Outros',
+  'Venda direta',
 ] as const;
 
 export const businessModels = [
-  'negócio local',
-  'delivery',
-  'geração de leads',
-  'venda pelo WhatsApp',
-  'venda pelo site',
-  'e-commerce',
-  'modelo misto',
+  'Conversas pelo WhatsApp',
+  'Vendas pelo site',
 ] as const;
 
 export const primaryChannels = [
   'WhatsApp',
   'Site',
   'Loja física',
-  'Messenger',
-  'Instagram Direct',
-  'Telefone',
-  'Misto',
 ] as const;
 
 export const primaryConversionMetrics = [
@@ -99,62 +85,11 @@ export interface AnalysisTemplate {
 }
 
 export const subsegmentsByVertical: Record<string, string[]> = {
-  Saúde: ['Odontologia', 'Estética', 'Clínica médica', 'Outros'],
-  Alimentação: ['Delivery', 'Restaurante', 'Produto alimentício', 'Outros'],
-  'Varejo local': ['Calçados', 'Vestuário', 'Produtos físicos', 'Loja especializada', 'Outros'],
-  'Serviços locais': ['Beleza', 'Manutenção', 'Consultoria local', 'Outros'],
-  'E-commerce': ['Produtos físicos', 'Infoproduto', 'Assinatura', 'Outros'],
-  Imobiliário: ['Captação de leads', 'Venda direta', 'Lançamento', 'Outros'],
-  Educação: ['Curso presencial', 'Curso online', 'Escola local', 'Outros'],
+  'Serviços locais': ['Saúde', 'Beleza', 'Odontologia', 'Estética', 'Clínica médica', 'Manutenção', 'Consultoria local', 'Outros'],
+  'E-commerce': ['Produtos físicos', 'Infoproduto', 'Assinatura', 'Vestuário', 'Calçados', 'Outros'],
+  'Venda direta': ['Imobiliário', 'Automóveis', 'Serviços B2B', 'Outros'],
   Outros: ['Outros'],
 };
-
-export const analysisTemplates: AnalysisTemplate[] = [
-  {
-    id: 'clinica-odontologica',
-    label: 'Clínica odontológica',
-    vertical: 'Saúde',
-    subsegment: 'Odontologia',
-    businessModel: 'negócio local',
-    primaryConversionMetric: 'messaging_conversations_started_total',
-    secondaryMetrics: ['cost_per_messaging_conversation', 'cpm', 'link_ctr', 'frequency', 'spend'],
-    primaryChannel: 'WhatsApp',
-    budgetPeriod: 'monthly',
-  },
-  {
-    id: 'delivery',
-    label: 'Delivery',
-    vertical: 'Alimentação',
-    subsegment: 'Delivery',
-    businessModel: 'delivery',
-    primaryConversionMetric: 'purchases',
-    secondaryMetrics: ['cost_per_purchase', 'purchase_roas', 'purchase_value', 'cpm', 'frequency', 'spend'],
-    primaryChannel: 'Site',
-    budgetPeriod: 'weekly',
-  },
-  {
-    id: 'loja-calcados',
-    label: 'Loja local de calçados',
-    vertical: 'Varejo local',
-    subsegment: 'Calçados',
-    businessModel: 'venda pelo WhatsApp',
-    primaryConversionMetric: 'messaging_conversations_started_total',
-    secondaryMetrics: ['cost_per_messaging_conversation', 'purchases', 'purchase_roas', 'landing_page_views', 'link_ctr', 'frequency'],
-    primaryChannel: 'WhatsApp',
-    budgetPeriod: 'weekly',
-  },
-  {
-    id: 'produtos-fisicos',
-    label: 'Loja de produtos físicos',
-    vertical: 'Varejo local',
-    subsegment: 'Produtos físicos',
-    businessModel: 'modelo misto',
-    primaryConversionMetric: 'purchases',
-    secondaryMetrics: ['cost_per_purchase', 'cpm', 'link_ctr', 'landing_page_views', 'spend'],
-    primaryChannel: 'Misto',
-    budgetPeriod: 'monthly',
-  },
-];
 
 export const metricLabels: Record<string, string> = {
   messaging_conversations_started_total: 'Conversas iniciadas',
@@ -175,22 +110,17 @@ export const metricLabels: Record<string, string> = {
 };
 
 export function defaultAnalysisProfile(clientId: string, seed?: Partial<ClientAnalysisProfile>): ClientAnalysisProfile {
-  const template = analysisTemplates.find((item) => (
-    item.vertical === seed?.vertical
-    || item.subsegment === seed?.subsegment
-  )) ?? analysisTemplates[0];
-
   return {
     clientId,
-    vertical: seed?.vertical || template.vertical,
-    subsegment: seed?.subsegment || template.subsegment,
+    vertical: seed?.vertical || 'Serviços locais',
+    subsegment: seed?.subsegment || 'Outros',
     customVertical: seed?.customVertical ?? null,
     customSubsegment: seed?.customSubsegment ?? null,
-    businessModel: seed?.businessModel || template.businessModel,
-    primaryConversionMetric: seed?.primaryConversionMetric || template.primaryConversionMetric,
-    secondaryMetrics: seed?.secondaryMetrics?.length ? seed.secondaryMetrics : template.secondaryMetrics,
-    primaryChannel: seed?.primaryChannel || template.primaryChannel,
-    budgetPeriod: seed?.budgetPeriod || template.budgetPeriod,
+    businessModel: seed?.businessModel || 'Conversas pelo WhatsApp',
+    primaryConversionMetric: seed?.primaryConversionMetric || 'messaging_conversations_started_total',
+    secondaryMetrics: seed?.secondaryMetrics?.length ? seed.secondaryMetrics : ['messaging_conversations_started_total', 'leads', 'cost_per_lead', 'link_cpc', 'cpm', 'cost_per_purchase'],
+    primaryChannel: seed?.primaryChannel || 'WhatsApp',
+    budgetPeriod: seed?.budgetPeriod || 'monthly',
     plannedBudget: seed?.plannedBudget ?? null,
     minimumEvaluationSpend: seed?.minimumEvaluationSpend ?? 0,
     minimumImpressions: seed?.minimumImpressions ?? 0,
@@ -208,10 +138,10 @@ export function mapClientProfileRow(row: Record<string, unknown>): ClientAnalysi
     subsegment: String(row.subsegment ?? 'Outros'),
     customVertical: typeof row.custom_vertical === 'string' && row.custom_vertical.trim() ? row.custom_vertical : null,
     customSubsegment: typeof row.custom_subsegment === 'string' && row.custom_subsegment.trim() ? row.custom_subsegment : null,
-    businessModel: String(row.business_model ?? 'modelo misto'),
+    businessModel: String(row.business_model ?? 'Conversas pelo WhatsApp'),
     primaryConversionMetric: String(row.primary_conversion_metric ?? 'messaging_conversations_started_total'),
     secondaryMetrics: Array.isArray(row.secondary_metrics) ? row.secondary_metrics.filter((item): item is string => typeof item === 'string') : [],
-    primaryChannel: String(row.primary_channel ?? 'Misto'),
+    primaryChannel: String(row.primary_channel ?? 'WhatsApp'),
     budgetPeriod: (row.budget_period === 'daily' || row.budget_period === 'weekly' || row.budget_period === 'monthly') ? row.budget_period : 'monthly',
     plannedBudget: typeof row.planned_budget === 'number' ? row.planned_budget : row.planned_budget == null ? null : Number(row.planned_budget),
     minimumEvaluationSpend: Number(row.minimum_evaluation_spend ?? 0),

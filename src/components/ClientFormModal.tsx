@@ -5,7 +5,6 @@ import { createActivityLog, makeId } from '../data/camplyStore';
 import React from 'react';
 import { Modal } from './ui/Modal';
 import {
-  analysisTemplates,
   analysisVerticals,
   businessModels,
   defaultAnalysisProfile,
@@ -73,7 +72,6 @@ export function ClientFormModal({
       plannedBudget: editingClient?.adInvestmentMeta || null,
     });
     setProfileDraft(fallback);
-    setTemplateId('custom');
     // Reset analytics fields
     setCategory(editingClient?.category ?? '');
     setBenchmarks(editingClient?.benchmarks ?? {});
@@ -102,19 +100,20 @@ export function ClientFormModal({
     setProfileDraft((current) => ({ ...current, ...patch }));
   };
 
-  const applyTemplate = (id: string) => {
-    setTemplateId(id);
-    const template = analysisTemplates.find((item) => item.id === id);
-    if (!template) return;
-    updateProfile({
-      vertical: template.vertical,
-      subsegment: template.subsegment,
-      businessModel: template.businessModel,
-      primaryConversionMetric: template.primaryConversionMetric,
-      secondaryMetrics: template.secondaryMetrics,
-      primaryChannel: template.primaryChannel,
-      budgetPeriod: template.budgetPeriod,
-    });
+  const handleBusinessModelChange = (businessModel: string) => {
+    if (businessModel === 'Conversas pelo WhatsApp') {
+      updateProfile({
+        businessModel,
+        primaryConversionMetric: 'messaging_conversations_started_total',
+        secondaryMetrics: ['messaging_conversations_started_total', 'leads', 'cost_per_lead', 'link_cpc', 'cpm', 'cost_per_purchase'],
+      });
+    } else {
+      updateProfile({
+        businessModel,
+        primaryConversionMetric: 'purchases',
+        secondaryMetrics: ['purchases', 'cost_per_purchase', 'purchase_roas', 'purchase_value', 'link_cpc', 'cpm', 'landing_page_views'],
+      });
+    }
   };
 
   const closeIfIdle = () => {
@@ -232,18 +231,8 @@ export function ClientFormModal({
         <section className="rounded-2xl border border-brand-line bg-brand-surface/70 p-4">
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Perfil de análise</p>
-            <p className="mt-1 text-sm text-brand-muted">O template sugere uma leitura inicial, mas todos os campos podem ser editados antes de salvar.</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo sugerido</span>
-              <select value={templateId} onChange={(event) => applyTemplate(event.target.value)} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                <option value="custom">Personalizado / manter edição</option>
-                {analysisTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>{template.label}</option>
-                ))}
-              </select>
-            </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Segmento principal</span>
               <select value={profileDraft.vertical} onChange={(event) => updateProfile({ vertical: event.target.value, subsegment: subsegmentsByVertical[event.target.value]?.[0] || 'Outros', customVertical: null, customSubsegment: null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
@@ -271,7 +260,7 @@ export function ClientFormModal({
             )}
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Modelo de negócio</span>
-              <select value={profileDraft.businessModel} onChange={(event) => updateProfile({ businessModel: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
+              <select value={profileDraft.businessModel} onChange={(event) => handleBusinessModelChange(event.target.value)} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 {businessModels.map((model) => <option key={model} value={model}>{model}</option>)}
               </select>
             </label>
@@ -298,22 +287,6 @@ export function ClientFormModal({
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Orçamento planejado Meta</span>
               <input value={profileDraft.plannedBudget ?? ''} onChange={(event) => updateProfile({ plannedBudget: event.target.value === '' ? null : Number(event.target.value) })} type="number" min="0" step="0.01" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Investimento mínimo para análise</span>
-              <input value={profileDraft.minimumEvaluationSpend} onChange={(event) => updateProfile({ minimumEvaluationSpend: Number(event.target.value) })} type="number" min="0" step="0.01" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Impressões mínimas</span>
-              <input value={profileDraft.minimumImpressions} onChange={(event) => updateProfile({ minimumImpressions: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Resultados mínimos</span>
-              <input value={profileDraft.minimumResults} onChange={(event) => updateProfile({ minimumResults: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Atraso de atribuição tolerado (horas)</span>
-              <input value={profileDraft.attributionDelayHours} onChange={(event) => updateProfile({ attributionDelayHours: Number(event.target.value) })} type="number" min="0" step="1" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
             </label>
           </div>
           <div className="mt-4">

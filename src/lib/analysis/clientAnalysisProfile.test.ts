@@ -1,20 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  analysisTemplates,
   defaultAnalysisProfile,
   mapClientProfileRow,
 } from './clientAnalysisProfile';
 
 describe('client analysis profile', () => {
-  it('provides editable templates for health, delivery and local retail', () => {
-    expect(analysisTemplates.map((template) => template.id)).toEqual(expect.arrayContaining([
-      'clinica-odontologica',
-      'delivery',
-      'loja-calcados',
-      'produtos-fisicos',
-    ]));
-  });
-
   it('keeps decision gates explicit in the default profile', () => {
     expect(defaultAnalysisProfile('client-1')).toMatchObject({
       clientId: 'client-1',
