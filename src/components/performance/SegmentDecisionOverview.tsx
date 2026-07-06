@@ -3,6 +3,7 @@ import type React from 'react';
 import type { Client } from '../../types';
 import type { GlobalClientPerformance, MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import { analysisVerticals, metricLabels, type ClientAnalysisProfile } from '../../lib/analysis/clientAnalysisProfile';
+import { resolveClientProfile, type ResolvedClientProfile } from '../../lib/analysis/clientProfileResolver';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -22,7 +23,11 @@ export function effectiveClientProfile(client: GlobalClientPerformance): ClientA
 }
 
 export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
-  if (client.dataQuality.status === 'unavailable' || ['not_connected', 'never_synced', 'failed', 'no_delivery'].includes(client.clientStatus)) return 'no_data';
+  if (
+    client.score.status === 'unavailable'
+    || client.dataQuality.status === 'unavailable'
+    || ['not_connected', 'never_synced', 'failed', 'no_delivery'].includes(client.clientStatus)
+  ) return 'no_data';
   if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
   if (
     client.dataQuality.status === 'partial'
@@ -71,20 +76,26 @@ function emptySegmentSummary(key: string): SegmentSummary {
   };
 }
 
-function verticalLabel(profile: ClientAnalysisProfile): string {
+function verticalLabel(profile: ClientAnalysisProfile | ResolvedClientProfile): string | null {
+  if ('detectedSegment' in profile) return profile.detectedSegment;
   return profile.vertical === 'Outros' && profile.customVertical ? profile.customVertical : profile.vertical;
 }
 
-function subsegmentLabel(profile: ClientAnalysisProfile): string {
+function subsegmentLabel(profile: ClientAnalysisProfile | ResolvedClientProfile): string | null {
+  if ('detectedSubsegment' in profile) return profile.detectedSubsegment;
   return profile.subsegment === 'Outros' && profile.customSubsegment ? profile.customSubsegment : profile.subsegment;
 }
 
-function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null): string[] {
+function pendingReasons(
+  client: GlobalClientPerformance,
+  profile: ClientAnalysisProfile | null,
+  resolvedProfile: ResolvedClientProfile
+): string[] {
   const reasons: string[] = [];
   if (!client.analysisProfile) reasons.push('Sem perfil de análise');
   else if (!client.analysisProfile.analysisEnabled) reasons.push('Análise desativada');
-  if (!profile?.vertical) reasons.push('Sem segmento');
-  if (!profile?.subsegment) reasons.push('Sem subsegmento');
+  if (!profile?.vertical && !resolvedProfile.detectedSegment) reasons.push('Sem segmento');
+  if (!profile?.subsegment && !resolvedProfile.detectedSubsegment) reasons.push('Sem subsegmento');
   if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
   if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
   if (client.accounts.length === 0) reasons.push('Sem conta Meta');
@@ -98,35 +109,40 @@ function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysis
 
 export function buildSegmentSummaries(
   clients: GlobalClientPerformance[],
-  _workspaceClients: Client[]
+  workspaceClients: Client[]
 ): { summaries: SegmentSummary[]; pending: GlobalClientPerformance[]; pendingByClient: Map<string, string[]> } {
   const groups = new Map<string, SegmentSummary>(analysisVerticals.map((vertical) => [vertical, emptySegmentSummary(vertical)]));
+  const workspaceById = new Map(workspaceClients.map((client) => [client.id, client]));
   const pending: GlobalClientPerformance[] = [];
   const pendingByClient = new Map<string, string[]>();
 
   for (const client of clients) {
+    const resolvedProfile = resolveClientProfile(client, workspaceById.get(client.clientId));
     const profile = effectiveClientProfile(client);
-    const reasons = pendingReasons(client, profile);
+    const reasons = [...pendingReasons(client, profile, resolvedProfile), ...resolvedProfile.missingReasons];
     if (reasons.length > 0) {
       pending.push(client);
-      pendingByClient.set(client.clientId, reasons);
+      pendingByClient.set(client.clientId, Array.from(new Set(reasons)));
     }
-    if (!profile || !profile.vertical || !profile.subsegment || !profile.primaryConversionMetric || !profile.plannedBudget) {
+    const groupingProfile = profile ?? resolvedProfile;
+    const key = verticalLabel(groupingProfile);
+    if (!key) {
       continue;
     }
-    const key = verticalLabel(profile);
-    const subsegment = subsegmentLabel(profile);
+    const subsegment = subsegmentLabel(groupingProfile) || 'Subsegmento pendente';
     const summary = groups.get(key) ?? emptySegmentSummary(key);
     summary.clients.push(client);
     summary.subsegments.add(subsegment);
     summary.clientsBySubsegment.set(subsegment, [...(summary.clientsBySubsegment.get(subsegment) || []), client]);
     const accountCurrencies = new Set(client.accounts.map((account) => account.currency || 'SEM_MOEDA'));
     const budgetCurrency = accountCurrencies.size === 1 ? Array.from(accountCurrencies)[0] : 'SEM_MOEDA';
-    summary.plannedBudgetByCurrency.set(
-      budgetCurrency,
-      (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + (profile.plannedBudget ?? 0)
-    );
-    summary.primaryMetrics.add(profile.primaryConversionMetric);
+    if (profile?.plannedBudget) {
+      summary.plannedBudgetByCurrency.set(
+        budgetCurrency,
+        (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + profile.plannedBudget
+      );
+    }
+    if (profile?.primaryConversionMetric) summary.primaryMetrics.add(profile.primaryConversionMetric);
     for (const account of client.accounts) {
       const spend = metricValue(account.metrics.spend);
       if (spend === null) continue;
@@ -187,7 +203,7 @@ export function SegmentDecisionOverview({
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central de decisão por segmento</p>
           <h2 className="mt-1 text-xl font-black text-white">O que eu esperava, o que aconteceu e onde agir primeiro</h2>
-          <p className="mt-1 text-sm text-brand-muted">Segmentos usam o perfil oficial do cliente. Clientes incompletos ficam separados para não contaminarem a leitura saudável.</p>
+          <p className="mt-1 text-sm text-brand-muted">Segmentos usam o perfil oficial ou a classificação resolvida do cliente. A prontidão analítica é avaliada separadamente.</p>
         </div>
         <p className="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-brand-soft">{activeCount} cliente(s) no recorte</p>
       </div>
