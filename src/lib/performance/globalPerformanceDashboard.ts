@@ -12,6 +12,7 @@ import {
   metaE2EState,
 } from '../meta/metaE2ERuntime';
 import { loadClientAnalysisProfile, mapClientProfileRow, type ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
+import { traceDashboardClient } from './dashboardTrace';
 import { exactPeriodRange } from '../meta/periodRange';
 import { withTimeout } from '../withTimeout';
 import { invokeFunction } from '../invokeFunction';
@@ -26,6 +27,8 @@ export type GlobalClientStatus =
   | 'not_connected'
   | 'never_synced'
   | 'syncing'
+  | 'period_not_synced'
+  | 'sync_without_metrics'
   | 'no_delivery'
   | 'available'
   | 'stale'
@@ -730,10 +733,31 @@ export async function loadGlobalPerformanceDashboard(options: {
         rows.forEach((row) => {
           row.analysisProfile = profiles.get(row.clientId) ?? null;
         });
+      } else {
+        console.warn('Client analysis profiles failed:', profileError.message);
       }
     } catch (error) {
       console.warn('Client analysis profiles skipped:', error instanceof Error ? error.message : String(error));
     }
   }
+
+  // Frontend traceability: do not mask actual state, trace out whatever the RPC returned
+  rows.forEach((row) => {
+    traceDashboardClient({
+      clientId: row.clientId,
+      clientName: row.clientName,
+      hasIdentity: true, // RPC starts from client_identity
+      hasProfile: !!row.analysisProfile,
+      hasMetaLink: row.clientStatus !== 'not_connected',
+      hasMetaAsset: row.clientStatus !== 'not_connected', // simplified
+      hasIntegration: row.clientStatus !== 'not_connected', // simplified
+      lastSyncRunId: row.lastAttempt?.id || undefined,
+      lastSuccessfulRunId: row.lastSuccessfulRun?.id || undefined,
+      metricLevelsAvailable: row.metrics ? Object.keys(row.metrics) : [],
+      dashboardStatus: row.clientStatus,
+      missingReason: row.clientStatus !== 'available' ? `Returned status: ${row.clientStatus}` : undefined,
+    });
+  });
+
   return enrichGlobalPerformanceDashboard(rows, options.period);
 }

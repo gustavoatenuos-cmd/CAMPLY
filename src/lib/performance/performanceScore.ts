@@ -34,6 +34,8 @@ export interface PerformanceScoreInput {
     | 'not_connected'
     | 'never_synced'
     | 'syncing'
+    | 'period_not_synced'
+    | 'sync_without_metrics'
     | 'no_delivery'
     | 'available'
     | 'stale'
@@ -74,6 +76,8 @@ const syncPoints: Record<PerformanceScoreInput['clientStatus'], number> = {
   syncing: 6,
   stale: 5,
   partial: 3,
+  period_not_synced: 2,
+  sync_without_metrics: 2,
   no_delivery: 2,
   never_synced: 1,
   not_connected: 0,
@@ -232,14 +236,18 @@ function buildSignals(input: PerformanceScoreInput): DecisionSignal[] {
     });
   }
 
-  if (['failed', 'stale', 'never_synced', 'not_connected'].includes(input.clientStatus)) {
+  if (['failed', 'stale', 'never_synced', 'period_not_synced', 'sync_without_metrics', 'not_connected'].includes(input.clientStatus)) {
     const title = input.clientStatus === 'not_connected'
       ? 'Conta Meta não vinculada'
       : input.clientStatus === 'never_synced'
         ? 'Conta nunca sincronizada'
-        : input.clientStatus === 'stale'
-          ? 'Dados desatualizados'
-          : 'Última sincronização falhou';
+        : input.clientStatus === 'period_not_synced'
+          ? 'Período atual não sincronizado'
+          : input.clientStatus === 'sync_without_metrics'
+            ? 'Sincronização sem métricas'
+            : input.clientStatus === 'stale'
+              ? 'Dados desatualizados'
+              : 'Última sincronização falhou';
     signals.push({
       kind: 'sync',
       severity: input.clientStatus === 'stale' ? 'warning' : 'critical',

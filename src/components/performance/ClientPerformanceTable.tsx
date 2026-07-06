@@ -55,6 +55,8 @@ function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
     not_connected: 'Conta não conectada',
     never_synced: 'Nunca sincronizado',
     syncing: 'Sincronizando',
+    period_not_synced: 'Período não sincronizado',
+    sync_without_metrics: 'Sync sem métricas',
     no_delivery: 'Sem entrega',
     available: 'Atualizado',
     stale: 'Desatualizado',

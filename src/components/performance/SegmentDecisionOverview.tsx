@@ -22,7 +22,7 @@ export function effectiveClientProfile(client: GlobalClientPerformance): ClientA
 }
 
 export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
-  if (client.dataQuality.status === 'unavailable' || ['not_connected', 'never_synced', 'failed', 'no_delivery'].includes(client.clientStatus)) return 'no_data';
+  if (client.dataQuality.status === 'unavailable' || ['not_connected', 'never_synced', 'period_not_synced', 'sync_without_metrics', 'failed', 'no_delivery'].includes(client.clientStatus)) return 'no_data';
   if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
   if (
     client.dataQuality.status === 'partial'
@@ -87,9 +87,11 @@ function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysis
   if (!profile?.subsegment) reasons.push('Sem subsegmento');
   if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
   if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
-  if (client.accounts.length === 0) reasons.push('Sem conta Meta');
+  if (client.clientStatus === 'not_connected') reasons.push('Sem conta Meta');
   if (client.resolvedTargets.length === 0) reasons.push('Sem metas');
   if (client.clientStatus === 'never_synced') reasons.push('Nunca sincronizado');
+  if (client.clientStatus === 'period_not_synced') reasons.push('Período não sincronizado');
+  if (client.clientStatus === 'sync_without_metrics') reasons.push('Sync sem métricas');
   if (client.clientStatus === 'partial') reasons.push('Sincronização parcial');
   if (client.clientStatus === 'failed') reasons.push('Falha de sincronização');
   if (client.evaluations.some((evaluation) => evaluation.status === 'insufficient_data')) reasons.push('Dados insuficientes');

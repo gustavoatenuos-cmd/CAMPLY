@@ -83,6 +83,19 @@ BEGIN
       ON mi.id = ma.integration_id
      AND mi.user_id::text = v_user_id::text
   ),
+  any_sync AS (
+    SELECT DISTINCT ON (a.client_meta_asset_id)
+      a.client_meta_asset_id,
+      a.client_id,
+      r.id,
+      r.requested_period
+    FROM accounts a
+    JOIN public.meta_sync_runs r
+      ON r.user_id = v_user_id
+     AND r.integration_id = a.integration_id
+     AND r.ad_account_id = a.ad_account_id
+    ORDER BY a.client_meta_asset_id, r.started_at DESC, r.created_at DESC
+  ),
   latest_attempt AS (
     SELECT DISTINCT ON (a.client_meta_asset_id)
       a.client_meta_asset_id,
@@ -479,7 +492,10 @@ BEGIN
           CASE
             WHEN NOT EXISTS (SELECT 1 FROM accounts a WHERE a.client_id = ac.client_id) THEN 'not_connected'
             WHEN EXISTS (SELECT 1 FROM latest_attempt la WHERE la.client_id = ac.client_id AND la.status = 'running') THEN 'syncing'
+            WHEN NOT EXISTS (SELECT 1 FROM latest_attempt la WHERE la.client_id = ac.client_id) AND EXISTS (SELECT 1 FROM any_sync a_s WHERE a_s.client_id = ac.client_id) THEN 'period_not_synced'
             WHEN NOT EXISTS (SELECT 1 FROM latest_attempt la WHERE la.client_id = ac.client_id) THEN 'never_synced'
+            WHEN NOT EXISTS (SELECT 1 FROM latest_success ls WHERE ls.client_id = ac.client_id)
+             AND EXISTS (SELECT 1 FROM latest_attempt la WHERE la.client_id = ac.client_id AND la.status = 'success') THEN 'sync_without_metrics'
             WHEN NOT EXISTS (SELECT 1 FROM latest_success ls WHERE ls.client_id = ac.client_id)
              AND EXISTS (SELECT 1 FROM latest_attempt la WHERE la.client_id = ac.client_id AND la.status = 'failed') THEN 'failed'
             WHEN NOT EXISTS (SELECT 1 FROM latest_success ls WHERE ls.client_id = ac.client_id)
