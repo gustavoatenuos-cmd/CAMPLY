@@ -91,7 +91,12 @@ export async function handleRequest(req: Request) {
       })
     }
 
-    const accessToken = await decryptToken(integration.access_token_encrypted)
+    const encryptedToken = typeof integration.access_token_encrypted === 'string'
+      ? integration.access_token_encrypted
+      : ''
+    if (!encryptedToken) throw new HttpError('A integração Meta salva está sem token válido.', 500)
+
+    const accessToken = await decryptToken(encryptedToken)
     const appSecret = Deno.env.get('META_APP_SECRET')
     const appId = Deno.env.get('META_APP_ID')
     if (!appSecret || !appId) throw new HttpError('A validação Meta não está configurada.', 503)

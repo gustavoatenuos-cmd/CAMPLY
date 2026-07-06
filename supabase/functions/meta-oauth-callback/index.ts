@@ -143,7 +143,7 @@ async function persistIntegrationViaPostgrest(
       .eq('provider', 'meta')
       .eq('meta_user_id', meData.id)
       .neq('id', existingInt.id)
-      .then(({ error }) => {
+      .then(({ error }: { error?: { message?: string } | null }) => {
         if (error) console.warn('Duplicate Meta integration cleanup skipped', error.message)
       })
     return

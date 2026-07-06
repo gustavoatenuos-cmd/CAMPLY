@@ -202,33 +202,36 @@ export const validateReturnedPeriodRange = (
     return { status: 'validation_error', warnings, errors, metadata };
   }
 
-  if (dateStart > dateStop) {
+  const validDateStart = dateStart as string;
+  const validDateStop = dateStop as string;
+
+  if (validDateStart > validDateStop) {
     errors.push('Meta returned date_start after date_stop.');
   }
-  if (today && dateStop > today) {
+  if (today && validDateStop > today) {
     errors.push('Meta returned a future date_stop for the account timezone.');
   }
 
   if (period === 'this_month') {
     metadata.expectedDateStart = expectedThisMonthStart;
     metadata.expectedDateStop = today;
-    if (dateStart !== expectedThisMonthStart) {
+    if (validDateStart !== expectedThisMonthStart) {
       errors.push('Meta this_month date_start does not match the account month start.');
     }
-    if (today && dateStop !== today) {
+    if (today && validDateStop !== today) {
       warnings.push('Meta this_month date_stop differs from the local expectation; using returned range.');
     }
   } else if (period === 'today') {
     metadata.expectedDateStart = today;
     metadata.expectedDateStop = today;
-    if (today && (dateStart !== today || dateStop !== today)) {
+    if (today && (validDateStart !== today || validDateStop !== today)) {
       errors.push('Meta today range does not match the account local date.');
     }
   } else if (period === 'this_week') {
     metadata.expectedDateStart = expectedThisWeekStart;
     metadata.expectedDateStop = today;
-    if (expectedThisWeekStart && today && (dateStart !== expectedThisWeekStart || dateStop !== today)) {
-      const validRelatedRange = dateStart >= expectedThisWeekStart && dateStart <= dateStop && dateStop <= today;
+    if (expectedThisWeekStart && today && (validDateStart !== expectedThisWeekStart || validDateStop !== today)) {
+      const validRelatedRange = validDateStart >= expectedThisWeekStart && validDateStart <= validDateStop && validDateStop <= today;
       if (validRelatedRange) {
         warnings.push('Meta this_week range differs from local expectation; using returned range.');
       } else {
@@ -239,8 +242,8 @@ export const validateReturnedPeriodRange = (
     const expectedStart = today ? shiftIsoDate(today, -6) : null;
     metadata.expectedDateStart = expectedStart;
     metadata.expectedDateStop = today;
-    if (expectedStart && today && (dateStart !== expectedStart || dateStop !== today)) {
-      const validRelatedRange = dateStart >= expectedStart && dateStart <= dateStop && dateStop <= today;
+    if (expectedStart && today && (validDateStart !== expectedStart || validDateStop !== today)) {
+      const validRelatedRange = validDateStart >= expectedStart && validDateStart <= validDateStop && validDateStop <= today;
       if (validRelatedRange) {
         warnings.push('Meta last_7d range differs from local expectation; using returned range.');
       } else {
@@ -251,8 +254,8 @@ export const validateReturnedPeriodRange = (
     const expectedStart = today ? shiftIsoDate(today, -29) : null;
     metadata.expectedDateStart = expectedStart;
     metadata.expectedDateStop = today;
-    if (expectedStart && today && (dateStart !== expectedStart || dateStop !== today)) {
-      const validRelatedRange = dateStart >= expectedStart && dateStart <= dateStop && dateStop <= today;
+    if (expectedStart && today && (validDateStart !== expectedStart || validDateStop !== today)) {
+      const validRelatedRange = validDateStart >= expectedStart && validDateStart <= validDateStop && validDateStop <= today;
       if (validRelatedRange) {
         warnings.push('Meta last_30d range differs from local expectation; using returned range.');
       } else {

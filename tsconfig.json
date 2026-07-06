@@ -22,6 +22,10 @@
       "@shared/*": ["./supabase/functions/_shared/*"]
     }
   },
-  "include": ["src", "supabase/functions/_shared/meta"],
+  "include": [
+    "src",
+    "supabase/functions/_shared",
+    "supabase/functions/**/*.ts"
+  ],
   "references": []
 }

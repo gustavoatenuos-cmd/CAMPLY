@@ -66,8 +66,8 @@ export function ReconciliationModal({ isOpen, onClose, syncRunId }: Props) {
         setRunInfo(typedRun);
 
         const [metricsResult, snapshotsResult, campaignsResult, adsetsResult] = await Promise.all([
-          supabaseData.from('meta_normalized_metrics').select('*').eq('sync_run_id', syncRunId),
-          supabaseData.from('meta_raw_snapshots').select('*').eq('sync_run_id', syncRunId),
+          supabaseData.from('meta_normalized_metrics').select('*').eq('sync_run_id', syncRunId).limit(1000),
+          supabaseData.from('meta_raw_snapshots').select('*').eq('sync_run_id', syncRunId).limit(1000),
           supabaseData.from('meta_campaign_entities').select('campaign_id,campaign_name,classified_objective').eq('ad_account_id', typedRun.ad_account_id),
           supabaseData.from('meta_adset_entities').select('adset_id,campaign_id,attribution_setting').eq('ad_account_id', typedRun.ad_account_id),
         ]);
