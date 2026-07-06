@@ -26,7 +26,10 @@ import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
 import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
+import { ExecutiveSummary } from './performance/ExecutiveSummary';
+import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
+import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
 
 interface OverviewViewProps {
@@ -308,6 +311,19 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     });
   }, [clients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
 
+  // Ordena a central por gravidade (críticos primeiro) e, dentro do mesmo
+  // nível, por investimento — quem gasta mais aparece antes.
+  const severityOrder: Record<ReturnType<typeof clientSeverity>, number> = { critical: 0, attention: 1, healthy: 2, no_data: 3 };
+  const sortedClients = useMemo(() => [...filteredClients].sort((a, b) => {
+    const bySeverity = severityOrder[clientSeverity(a)] - severityOrder[clientSeverity(b)];
+    if (bySeverity !== 0) return bySeverity;
+    const spendOf = (client: GlobalClientPerformance) => client.accounts.reduce((total, account) => {
+      const metric = account.metrics.spend;
+      return total + (metric?.available && typeof metric.value === 'number' ? metric.value : 0);
+    }, 0);
+    return spendOf(b) - spendOf(a);
+  }), [filteredClients]);
+
   const priorities = useMemo(() => filteredClients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
     .filter(({ evaluation }) => ['critical', 'attention', 'partial_data'].includes(evaluation.status))
@@ -415,8 +431,6 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
             <span>Clientes exibidos: <strong className="text-white">{filteredClients.length}</strong> de <strong className="text-white">{clients.length}</strong></span>
-            <span>•</span>
-            <span>Contrato: <strong className="text-white">v{capabilityState.capabilities.contractVersion} rastreável</strong></span>
           </div>
         </header>
 
@@ -435,45 +449,50 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </div>
         ) : (
           <>
-            <CommercialDecisionOverview
+            <ExecutiveSummary
               clients={clients}
-              workspaceClients={data.clients}
-              selectedSegment={segmentFilter}
-              selectedSubsegment={subsegmentFilter}
-              onSelectSegment={setSegmentFilter}
-              onSelectSubsegment={setSubsegmentFilter}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
             />
 
-            <GlobalSummaryCards clients={filteredClients} />
+            <ClientPerformanceTable clients={sortedClients} />
 
-            <div className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-bold text-white">Filtrar a central</p>
-                <p className="text-xs text-brand-muted">Situação, segmento e subsegmento permanecem selecionados ao atualizar ou recarregar o Dashboard.</p>
-              </div>
-              <select
-                aria-label="Filtrar por situação"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-                className="rounded-xl border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white outline-none focus:border-brand-green"
-              >
-                <option value="all">Todas as situações</option>
-                <option value="healthy">Saudáveis</option>
-                <option value="attention">Atenção</option>
-                <option value="critical">Críticos</option>
-                <option value="no_data">Sem dados</option>
-              </select>
-            </div>
+            <CollapsibleSection
+              title="Análise comercial por segmento"
+              subtitle="Decisão comercial por vertical e subsegmento — a seleção também filtra a central acima."
+              defaultOpen={isMetaE2EMode || segmentFilter !== 'all'}
+            >
+              <CommercialDecisionOverview
+                clients={clients}
+                workspaceClients={data.clients}
+                selectedSegment={segmentFilter}
+                selectedSubsegment={subsegmentFilter}
+                onSelectSegment={setSegmentFilter}
+                onSelectSubsegment={setSubsegmentFilter}
+              />
+            </CollapsibleSection>
 
-            <ClientPerformanceTable clients={filteredClients} />
+            <CollapsibleSection
+              title="Métricas detalhadas do recorte"
+              subtitle="CPM, ROAS, frequência, alcance, qualidade da sincronização e sinais priorizados."
+              defaultOpen={isMetaE2EMode}
+            >
+              <GlobalSummaryCards clients={filteredClients} />
+            </CollapsibleSection>
 
-            <MetaOperationalWorkspace
-              data={data}
-              compact
-              period={period}
-              onPeriodChange={setPeriod}
-              onDataChanged={() => void loadDashboard()}
-            />
+            <CollapsibleSection
+              title="Workspace Meta"
+              subtitle="Sincronização das contas, metas e reconciliação de métricas."
+              defaultOpen={isMetaE2EMode}
+            >
+              <MetaOperationalWorkspace
+                data={data}
+                compact
+                period={period}
+                onPeriodChange={setPeriod}
+                onDataChanged={() => void loadDashboard()}
+              />
+            </CollapsibleSection>
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
