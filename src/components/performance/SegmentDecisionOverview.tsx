@@ -22,7 +22,11 @@ export function effectiveClientProfile(client: GlobalClientPerformance): ClientA
 }
 
 export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
-  if (client.dataQuality.status === 'unavailable' || ['not_connected', 'never_synced', 'period_not_synced', 'sync_without_metrics', 'failed', 'no_delivery'].includes(client.clientStatus)) return 'no_data';
+  if (
+    client.dataQuality.status === 'unavailable' ||
+    client.score.status === 'unavailable' ||
+    ['not_connected', 'never_synced', 'period_not_synced', 'sync_without_metrics', 'failed', 'no_delivery'].includes(client.clientStatus)
+  ) return 'no_data';
   if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
   if (
     client.dataQuality.status === 'partial'
@@ -79,15 +83,23 @@ function subsegmentLabel(profile: ClientAnalysisProfile): string {
   return profile.subsegment === 'Outros' && profile.customSubsegment ? profile.customSubsegment : profile.subsegment;
 }
 
-function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null): string[] {
+function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null, workspaceClient?: Client): string[] {
   const reasons: string[] = [];
-  if (!client.analysisProfile) reasons.push('Sem perfil de análise');
-  else if (!client.analysisProfile.analysisEnabled) reasons.push('Análise desativada');
-  if (!profile?.vertical) reasons.push('Sem segmento');
-  if (!profile?.subsegment) reasons.push('Sem subsegmento');
+  if (!client.analysisProfile) {
+    reasons.push('Sem perfil de análise');
+    reasons.push('Sem segmento');
+    reasons.push('Sem subsegmento');
+  } else if (!client.analysisProfile.analysisEnabled) {
+    reasons.push('Análise desativada');
+  }
+  
+  const vertical = profile?.vertical || workspaceClient?.category;
+  if (!vertical && client.analysisProfile) reasons.push('Sem segmento');
+  if (!profile?.subsegment && client.analysisProfile) reasons.push('Sem subsegmento');
+  
   if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
   if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
-  if (client.clientStatus === 'not_connected') reasons.push('Sem conta Meta');
+  if (client.clientStatus === 'not_connected' || client.accounts.length === 0) reasons.push('Sem conta Meta');
   if (client.resolvedTargets.length === 0) reasons.push('Sem metas');
   if (client.clientStatus === 'never_synced') reasons.push('Nunca sincronizado');
   if (client.clientStatus === 'period_not_synced') reasons.push('Período não sincronizado');
@@ -100,7 +112,7 @@ function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysis
 
 export function buildSegmentSummaries(
   clients: GlobalClientPerformance[],
-  _workspaceClients: Client[]
+  workspaceClients: Client[]
 ): { summaries: SegmentSummary[]; pending: GlobalClientPerformance[]; pendingByClient: Map<string, string[]> } {
   const groups = new Map<string, SegmentSummary>(analysisVerticals.map((vertical) => [vertical, emptySegmentSummary(vertical)]));
   const pending: GlobalClientPerformance[] = [];
@@ -108,15 +120,18 @@ export function buildSegmentSummaries(
 
   for (const client of clients) {
     const profile = effectiveClientProfile(client);
-    const reasons = pendingReasons(client, profile);
+    const workspaceClient = workspaceClients.find((w) => w.id === client.clientId);
+    const reasons = pendingReasons(client, profile, workspaceClient);
     if (reasons.length > 0) {
       pending.push(client);
       pendingByClient.set(client.clientId, reasons);
     }
-    if (!profile || !profile.vertical || !profile.subsegment || !profile.primaryConversionMetric || !profile.plannedBudget) {
+    
+    const vertical = profile?.vertical || workspaceClient?.category;
+    if (!profile || !vertical || !profile.subsegment || !profile.primaryConversionMetric || !profile.plannedBudget) {
       continue;
     }
-    const key = verticalLabel(profile);
+    const key = profile.vertical === 'Outros' && profile.customVertical ? profile.customVertical : vertical;
     const subsegment = subsegmentLabel(profile);
     const summary = groups.get(key) ?? emptySegmentSummary(key);
     summary.clients.push(client);
