@@ -300,7 +300,10 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
     p_secondary_channel: profile.secondaryChannel,
     p_secondary_conversion_metric: profile.secondaryConversionMetric,
   });
-  if (error) throw new Error('Não foi possível salvar o perfil de análise no banco.');
+  if (error) {
+    console.error('RPC upsert_client_analysis_profile error:', error);
+    throw new Error('Não foi possível salvar o perfil de análise no banco.');
+  }
   return mapClientProfileRow(data as Record<string, unknown>);
 }
 

@@ -8,28 +8,31 @@ ALTER TABLE public.client_analysis_profiles
 -- Atualiza a constraint de array (opcional, apenas garantindo tipo jsonb_typeof caso fosse jsonb, mas é text[])
 -- sales_models já é text[] então não precisa de jsonb_typeof.
 
+-- Remove a função errada caso tenha sido criada anteriormente (com text[] e integer)
+DROP FUNCTION IF EXISTS public.upsert_client_analysis_profile(text, text, text, text, text, text, text, text[], text, text, numeric, numeric, integer, integer, integer, boolean, text, text[], text, text);
+
 -- Atualiza a função upsert
 CREATE OR REPLACE FUNCTION public.upsert_client_analysis_profile(
-  p_client_id text,
-  p_vertical text,
-  p_subsegment text,
-  p_custom_vertical text,
-  p_custom_subsegment text,
-  p_business_model text,
-  p_primary_conversion_metric text,
-  p_secondary_metrics text[],
-  p_primary_channel text,
-  p_budget_period text,
-  p_planned_budget numeric,
-  p_minimum_evaluation_spend numeric,
-  p_minimum_impressions integer,
-  p_minimum_results integer,
-  p_attribution_delay_hours integer,
-  p_analysis_enabled boolean,
-  p_operation_type text DEFAULT NULL,
-  p_sales_models text[] DEFAULT '{}'::text[],
-  p_secondary_channel text DEFAULT NULL,
-  p_secondary_conversion_metric text DEFAULT NULL
+  p_client_id TEXT,
+  p_vertical TEXT DEFAULT 'Outros',
+  p_subsegment TEXT DEFAULT 'Outros',
+  p_business_model TEXT DEFAULT 'modelo misto',
+  p_primary_conversion_metric TEXT DEFAULT 'messaging_conversations_started_total',
+  p_secondary_metrics JSONB DEFAULT '[]'::jsonb,
+  p_primary_channel TEXT DEFAULT 'Misto',
+  p_budget_period TEXT DEFAULT 'monthly',
+  p_planned_budget NUMERIC DEFAULT NULL,
+  p_analysis_enabled BOOLEAN DEFAULT true,
+  p_custom_vertical TEXT DEFAULT NULL,
+  p_custom_subsegment TEXT DEFAULT NULL,
+  p_minimum_evaluation_spend NUMERIC DEFAULT 0,
+  p_minimum_impressions BIGINT DEFAULT 0,
+  p_minimum_results BIGINT DEFAULT 0,
+  p_attribution_delay_hours INTEGER DEFAULT 24,
+  p_operation_type TEXT DEFAULT NULL,
+  p_sales_models TEXT[] DEFAULT '{}'::text[],
+  p_secondary_channel TEXT DEFAULT NULL,
+  p_secondary_conversion_metric TEXT DEFAULT NULL
 )
 RETURNS public.client_analysis_profiles
 LANGUAGE plpgsql

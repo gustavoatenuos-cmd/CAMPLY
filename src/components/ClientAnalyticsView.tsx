@@ -68,9 +68,9 @@ function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{client.name}</p>
-          {client.company && (
-            <p className="truncate text-xs text-zinc-500">{client.company}</p>
+          <p className="truncate text-sm font-semibold text-white">{client.company || client.name}</p>
+          {client.company && client.name && (
+            <p className="truncate text-xs text-zinc-500">{client.name}</p>
           )}
         </div>
         <HealthScoreGauge score={healthScore} size="sm" showLabel={false} />
@@ -359,11 +359,11 @@ export function ClientAnalyticsView({ data }: ClientAnalyticsViewProps) {
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-bold text-white">{selectedClient.name}</h1>
+                  <h1 className="text-2xl font-bold text-white">{selectedClient.company || selectedClient.name}</h1>
                   <CategoryBadge category={selectedClient.category} size="md" />
                 </div>
-                {selectedClient.company && (
-                  <p className="text-sm text-zinc-400">{selectedClient.company}</p>
+                {selectedClient.company && selectedClient.name && (
+                  <p className="text-sm text-zinc-400">{selectedClient.name}</p>
                 )}
               </div>
 

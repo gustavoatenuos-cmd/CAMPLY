@@ -267,7 +267,15 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         period,
         dashboardRpc: capabilities.dashboardRpc,
       });
-      setClients(result);
+      
+      const enrichedResult = result.map(c => {
+        const workspaceClient = data.clients.find(w => w.id === c.clientId);
+        return workspaceClient 
+          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
+          : c;
+      });
+      
+      setClients(enrichedResult);
       setLastLoadedAt(new Date());
     } catch {
       setError('dashboard_unavailable');
