@@ -679,7 +679,7 @@ export async function handleRequest(req: Request) {
       throw new HttpError(`Failed to persist Meta account context: ${contextUpdateError.message}`, 500);
     }
 
-    const campaignsResult = await fetchMetaGraphPaginated<MetaCampaign>({
+    const fetchCampaigns = fetchMetaGraphPaginated<MetaCampaign>({
       endpoint: `/${adAccountId}/campaigns`,
       accessToken,
       appSecret,
@@ -688,7 +688,8 @@ export async function handleRequest(req: Request) {
         limit: '500',
       },
     }, 20, 10000);
-    const adsetsResult = await fetchMetaGraphPaginated<MetaAdSet>({
+
+    const fetchAdsets = fetchMetaGraphPaginated<MetaAdSet>({
       endpoint: `/${adAccountId}/adsets`,
       accessToken,
       appSecret,
@@ -697,25 +698,31 @@ export async function handleRequest(req: Request) {
         limit: '500',
       },
     }, 20, 10000);
-    let adsResult: PaginatedResult<MetaAd> = {
-      data: [],
-      pagesFetched: 0,
-      recordsFetched: 0,
-      isPartial: false,
-      completionStatus: 'complete',
-    };
-    if (shouldCollectAds) {
-      adsResult = await fetchMetaGraphPaginated<MetaAd>({
-        endpoint: `/${adAccountId}/ads`,
-        accessToken,
-        appSecret,
-        params: {
-          fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
-          filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
-          limit: '500',
-        },
-      }, 20, 10000);
-    }
+
+    const fetchAds = shouldCollectAds
+      ? fetchMetaGraphPaginated<MetaAd>({
+          endpoint: `/${adAccountId}/ads`,
+          accessToken,
+          appSecret,
+          params: {
+            fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
+            filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
+            limit: '500',
+          },
+        }, 20, 10000)
+      : Promise.resolve({
+          data: [],
+          pagesFetched: 0,
+          recordsFetched: 0,
+          isPartial: false,
+          completionStatus: 'complete' as const,
+        });
+
+    const [campaignsResult, adsetsResult, adsResult] = await Promise.all([
+      fetchCampaigns,
+      fetchAdsets,
+      fetchAds
+    ]);
 
     if (campaignsResult.errorMessage) collectionMessages.push(`Campaign collection: ${campaignsResult.errorMessage}`);
     if (adsetsResult.errorMessage) collectionMessages.push(`Ad Set collection: ${adsetsResult.errorMessage}`);
@@ -884,23 +891,123 @@ export async function handleRequest(req: Request) {
     let totalPagesFetched = campaignsResult.pagesFetched + adsetsResult.pagesFetched + adsResult.pagesFetched;
     let totalRecordsFetched = campaignsResult.recordsFetched + adsetsResult.recordsFetched + adsResult.recordsFetched;
 
-    for (const period of periods) {
-      const accountInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
-        endpoint: `/${adAccountId}/insights`,
-        accessToken,
-        appSecret,
-        params: {
-          level: 'account',
-          fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-          ...insightPeriodParams(period, timezone),
-          limit: '500',
-        },
-      }, 20, 10000);
-      totalPagesFetched += accountInsightsResult.pagesFetched;
-      totalRecordsFetched += accountInsightsResult.recordsFetched;
+    // --- PARALLEL INSIGHT COLLECTION WITH SERVER-SIDE FILTERING ---
+    // Build a filtering rule for the Graph API so that
+    // Facebook only computes insights for ACTIVE/PAUSED campaigns,
+    // drastically reducing response size and latency.
+    const activeStatusFilter = JSON.stringify([
+      { field: 'campaign.effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] },
+    ]);
+    const adsetStatusFilter = JSON.stringify([
+      { field: 'adset.effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] },
+    ]);
+
+    // Process each period concurrently using Promise.all
+    const periodResults = await Promise.all(periods.map(async (period) => {
+      const periodParams = insightPeriodParams(period, timezone);
+
+      // Within each period, fetch all levels concurrently
+      const [accountInsightsResult, campaignInsightsResult, adsetInsightsResult, adInsightsResult] =
+        await Promise.all([
+          // Account level (no filtering needed — always a single row)
+          fetchMetaGraphPaginated<MetaInsightRow>({
+            endpoint: `/${adAccountId}/insights`,
+            accessToken,
+            appSecret,
+            params: {
+              level: 'account',
+              fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+              ...periodParams,
+              limit: '500',
+            },
+          }, 20, 10000),
+
+          // Campaign level — filtered server-side
+          fetchMetaGraphPaginated<MetaInsightRow>({
+            endpoint: `/${adAccountId}/insights`,
+            accessToken,
+            appSecret,
+            params: {
+              level: 'campaign',
+              fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+              filtering: activeStatusFilter,
+              ...periodParams,
+              limit: '500',
+            },
+          }, 20, 10000),
+
+          // Ad set level — only if needed, filtered server-side
+          requiresAdsetInsights.size > 0
+            ? fetchMetaGraphPaginated<MetaInsightRow>({
+                endpoint: `/${adAccountId}/insights`,
+                accessToken,
+                appSecret,
+                params: {
+                  level: 'adset',
+                  fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+                  filtering: adsetStatusFilter,
+                  ...periodParams,
+                  limit: '500',
+                },
+              }, 20, 10000)
+            : Promise.resolve<PaginatedResult<MetaInsightRow>>({
+                data: [],
+                pagesFetched: 0,
+                recordsFetched: 0,
+                isPartial: false,
+                completionStatus: 'complete',
+              }),
+
+          // Ad level — only if needed, filtered server-side
+          shouldCollectAds && activeAds.length > 0
+            ? fetchMetaGraphPaginated<MetaInsightRow>({
+                endpoint: `/${adAccountId}/insights`,
+                accessToken,
+                appSecret,
+                params: {
+                  level: 'ad',
+                  fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
+                  filtering: activeStatusFilter,
+                  ...periodParams,
+                  limit: '500',
+                },
+              }, 20, 10000)
+            : Promise.resolve<PaginatedResult<MetaInsightRow>>({
+                data: [],
+                pagesFetched: 0,
+                recordsFetched: 0,
+                isPartial: false,
+                completionStatus: 'complete',
+              }),
+        ]);
+
+      return { period, accountInsightsResult, campaignInsightsResult, adsetInsightsResult, adInsightsResult };
+    }));
+
+    // Reassemble results from the parallel execution into the existing data structures
+    for (const { period, accountInsightsResult, campaignInsightsResult, adsetInsightsResult, adInsightsResult } of periodResults) {
+      totalPagesFetched += accountInsightsResult.pagesFetched
+        + campaignInsightsResult.pagesFetched
+        + adsetInsightsResult.pagesFetched
+        + adInsightsResult.pagesFetched;
+      totalRecordsFetched += accountInsightsResult.recordsFetched
+        + campaignInsightsResult.recordsFetched
+        + adsetInsightsResult.recordsFetched
+        + adInsightsResult.recordsFetched;
+
       if (accountInsightsResult.errorMessage) {
         collectionMessages.push(`Account insights ${period}: ${accountInsightsResult.errorMessage}`);
       }
+      if (campaignInsightsResult.errorMessage) {
+        collectionMessages.push(`Campaign insights ${period}: ${campaignInsightsResult.errorMessage}`);
+      }
+      if (adsetInsightsResult.errorMessage) {
+        collectionMessages.push(`Ad Set insights ${period}: ${adsetInsightsResult.errorMessage}`);
+      }
+      if (adInsightsResult.errorMessage) {
+        collectionMessages.push(`Ad insights ${period}: ${adInsightsResult.errorMessage}`);
+      }
+
       accountInsightsByPeriod[period] = accountInsightsResult.data;
       const accountRangeValidation = validateReturnedPeriodRange(
         period,
@@ -919,75 +1026,6 @@ export async function handleRequest(req: Request) {
         collectionErrors.push(message);
         collectionMessages.push(message);
         console.warn(message, accountRangeValidation.metadata);
-      }
-
-      const campaignInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
-        endpoint: `/${adAccountId}/insights`,
-        accessToken,
-        appSecret,
-        params: {
-          level: 'campaign',
-          fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-          ...insightPeriodParams(period, timezone),
-          limit: '500',
-        },
-      }, 20, 10000);
-      totalPagesFetched += campaignInsightsResult.pagesFetched;
-      totalRecordsFetched += campaignInsightsResult.recordsFetched;
-      if (campaignInsightsResult.errorMessage) {
-        collectionMessages.push(`Campaign insights ${period}: ${campaignInsightsResult.errorMessage}`);
-      }
-
-      let adsetInsightsResult: PaginatedResult<MetaInsightRow> = {
-        data: [],
-        pagesFetched: 0,
-        recordsFetched: 0,
-        isPartial: false,
-        completionStatus: 'complete',
-      };
-      if (requiresAdsetInsights.size > 0) {
-        adsetInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
-          endpoint: `/${adAccountId}/insights`,
-          accessToken,
-          appSecret,
-          params: {
-            level: 'adset',
-            fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-            ...insightPeriodParams(period, timezone),
-            limit: '500',
-          },
-        }, 20, 10000);
-        totalPagesFetched += adsetInsightsResult.pagesFetched;
-        totalRecordsFetched += adsetInsightsResult.recordsFetched;
-        if (adsetInsightsResult.errorMessage) {
-          collectionMessages.push(`Ad Set insights ${period}: ${adsetInsightsResult.errorMessage}`);
-        }
-      }
-
-      let adInsightsResult: PaginatedResult<MetaInsightRow> = {
-        data: [],
-        pagesFetched: 0,
-        recordsFetched: 0,
-        isPartial: false,
-        completionStatus: 'complete',
-      };
-      if (shouldCollectAds && activeAds.length > 0) {
-        adInsightsResult = await fetchMetaGraphPaginated<MetaInsightRow>({
-          endpoint: `/${adAccountId}/insights`,
-          accessToken,
-          appSecret,
-          params: {
-            level: 'ad',
-            fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
-            ...insightPeriodParams(period, timezone),
-            limit: '500',
-          },
-        }, 20, 10000);
-        totalPagesFetched += adInsightsResult.pagesFetched;
-        totalRecordsFetched += adInsightsResult.recordsFetched;
-        if (adInsightsResult.errorMessage) {
-          collectionMessages.push(`Ad insights ${period}: ${adInsightsResult.errorMessage}`);
-        }
       }
 
       const filteredCampaignInsights = campaignInsightsResult.data.filter((row) =>
