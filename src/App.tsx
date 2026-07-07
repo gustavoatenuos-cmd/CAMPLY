@@ -20,7 +20,7 @@ const CampaignsView = React.lazy(() => import('./components/CampaignsView').then
 const ClientsView = React.lazy(() => import('./components/ClientsView').then(m => ({ default: m.ClientsView })));
 const FinanceView = React.lazy(() => import('./components/FinanceView').then(m => ({ default: m.FinanceView })));
 const IntelligenceView = React.lazy(() => import('./components/IntelligenceView').then(m => ({ default: m.IntelligenceView })));
-const AgentChatView = React.lazy(() => import('./components/AgentChatView').then(m => ({ default: m.AgentChatView })));
+
 const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegrationView').then(m => ({ default: m.MetaIntegrationView })));
 const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
@@ -395,7 +395,7 @@ export default function App() {
               {activeView === 'activity' && <ActivityView data={data} />}
               {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
               {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
-              {activeView === 'agentChat' && <AgentChatView data={data} updateData={updateData} />}
+
               {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
               {/* Phase 1 — Analytics views */}

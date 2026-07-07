@@ -285,61 +285,6 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
       
       setClients(enrichedResult);
       setLastLoadedAt(new Date());
-
-      // Auto-sync: identify connected accounts that have never been synced
-      // or whose last sync was more than 6 hours ago, then sync them in background
-      if (!autoSyncInFlight.current) {
-        const staleThresholdMs = 6 * 60 * 60 * 1000; // 6 hours
-        const now = Date.now();
-        const accountsToSync: { metaAssetId: string; clientMetaAssetId: string }[] = [];
-
-        for (const client of enrichedResult) {
-          if (client.clientStatus === 'not_connected') continue;
-          for (const account of client.accounts) {
-            const lastFinished = account.lastSuccessfulRun?.finishedAt;
-            const isStale = !lastFinished || (now - new Date(lastFinished).getTime() > staleThresholdMs);
-            if (isStale) {
-              accountsToSync.push({
-                metaAssetId: account.metaAssetId,
-                clientMetaAssetId: account.clientMetaAssetId,
-              });
-            }
-          }
-        }
-
-        if (accountsToSync.length > 0) {
-          autoSyncInFlight.current = true;
-          // Fire syncs sequentially to avoid overwhelming the Edge Function
-          (async () => {
-            for (const { metaAssetId } of accountsToSync) {
-              try {
-                await syncMetaAsset({
-                  metaAssetId,
-                  period,
-                  requestedLevel: 'ad',
-                });
-                
-                // Incremental dashboard reload after each sync
-                const freshResult = await loadGlobalPerformanceDashboard({
-                  period,
-                  dashboardRpc: capabilities.dashboardRpc,
-                });
-                const freshEnriched = freshResult.map(c => {
-                  const workspaceClient = data.clients.find(w => w.id === c.clientId);
-                  return workspaceClient
-                    ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
-                    : c;
-                });
-                setClients(freshEnriched);
-              } catch (err) {
-                console.warn('[auto-sync]', metaAssetId, err);
-              }
-            }
-            autoSyncInFlight.current = false;
-            setLastLoadedAt(new Date());
-          })();
-        }
-      }
     } catch {
       setError('dashboard_unavailable');
     } finally {
@@ -520,7 +465,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               onStatusFilterChange={setStatusFilter}
             />
 
-            <ClientPerformanceTable clients={sortedClients} />
+            <ClientPerformanceTable clients={sortedClients} period={period} />
 
             <CollapsibleSection
               title="Análise comercial por segmento"

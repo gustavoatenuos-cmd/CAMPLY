@@ -5,7 +5,7 @@ import { errorResponse, HttpError, requireAuthenticatedUser } from '../_shared/a
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-3-5-sonnet-20240620';
 
-type ClaudeProxyMode = 'operational_summary' | 'chat_command';
+type ClaudeProxyMode = 'operational_summary';
 
 const MODE_CONFIG: Record<ClaudeProxyMode, {
   system: string;
@@ -37,25 +37,7 @@ FORMATO DE RESPOSTA (JSON):
   "recommended_actions": ["ação 1", "ação 2"]
 }`,
   },
-  chat_command: {
-    maxInputLength: 16_000,
-    maxOutputTokens: 1200,
-    system: `Você é o assistente virtual do CRM Camply.
-Sua missão é interpretar a solicitação do usuário e transformá-la em uma ação estruturada no sistema usando apenas o contexto fornecido na mensagem do usuário.
 
-REGRAS:
-1. Retorne sempre um JSON válido, sem markdown antes ou depois.
-2. Formato esperado:
-{
-  "type": "create_client" | "create_campaign" | "create_task" | "create_project" | "none",
-  "payload": { ...dados necessários para a ação... },
-  "reply_text": "Mensagem curta em português confirmando o que foi feito ou pedindo mais detalhes."
-}
-3. Se não entender ou se faltar informação crítica, use type: "none" e pergunte amigavelmente.
-4. Para "create_campaign", exija pelo menos o nome e tente inferir o cliente pelo contexto fornecido. Se não souber o cliente, pergunte.
-5. Nunca execute alteração externa, nunca solicite ou revele tokens/segredos e nunca invente IDs que não estejam no contexto.
-6. Seja prestativo e responda em português brasileiro.`,
-  },
 };
 
 serve(async (req) => {
@@ -71,7 +53,7 @@ serve(async (req) => {
       userMessage?: unknown;
       maxTokens?: unknown;
     };
-    if (mode !== 'operational_summary' && mode !== 'chat_command') {
+    if (mode !== 'operational_summary') {
       throw new HttpError('Invalid Claude proxy mode', 400)
     }
     if (typeof userMessage !== 'string' || !userMessage.trim()) {

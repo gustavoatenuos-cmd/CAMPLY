@@ -30,7 +30,7 @@ export function exactPeriodRange(
   }
   if (period === 'today') return { dateStart: dateStop, dateStop };
 
-  const days = period === 'last_7d' ? 7 : 30;
+  const days = period === 'last_7d' ? 7 : period === 'last_90d' ? 90 : 30;
   const utcStop = new Date(`${dateStop}T12:00:00.000Z`);
   utcStop.setUTCDate(utcStop.getUTCDate() - (days - 1));
   return { dateStart: utcStop.toISOString().slice(0, 10), dateStop };

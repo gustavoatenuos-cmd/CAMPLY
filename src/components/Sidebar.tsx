@@ -26,7 +26,7 @@ const navGroups: NavItem[][] = [
   [
     { id: 'today',           label: 'Dashboard',     icon: LayoutDashboard },
     { id: 'clientAnalytics', label: 'Analytics',     icon: BarChart3 },
-    { id: 'agentChat',       label: 'Chat IA',       icon: BotMessageSquare },
+
     { id: 'campaigns',       label: 'Campanhas',     icon: Columns3 },
     { id: 'creativeCritic',  label: 'Lab. Criativo', icon: Sparkles },
     { id: 'alertCenter',     label: 'Alertas',       icon: Bell },

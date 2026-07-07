@@ -31,18 +31,25 @@ export function effectiveClientProfile(client: GlobalClientPerformance): ClientA
 }
 
 export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
+  const reliableMetrics = ['spend', 'impressions', 'reach', 'purchases', 'messaging_conversations_started_total', 'leads'];
+  const hasReliableMetrics = reliableMetrics.some(m => client.metrics[m]?.available && typeof client.metrics[m]?.value === 'number' && (client.metrics[m]?.value as number) > 0);
+
   if (
-    client.dataQuality.status === 'unavailable' ||
+    !hasReliableMetrics &&
+    (client.dataQuality.status === 'unavailable' ||
     client.score.status === 'unavailable' ||
-    ['not_connected', 'never_synced', 'period_not_synced', 'sync_without_metrics', 'failed', 'no_delivery'].includes(client.clientStatus)
+    ['not_connected', 'never_synced', 'sync_without_metrics', 'no_delivery'].includes(client.clientStatus))
   ) return 'no_data';
+  
   if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
+  
   if (
     client.dataQuality.status === 'partial'
-    || ['partial', 'stale', 'syncing'].includes(client.clientStatus)
+    || ['partial', 'stale', 'syncing', 'failed', 'period_not_synced'].includes(client.clientStatus)
     || client.score.status === 'attention'
     || client.evaluations.some((item) => item.status === 'attention' || item.status === 'partial_data')
   ) return 'attention';
+  
   return 'healthy';
 }
 
@@ -60,13 +67,31 @@ function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysis
   if (!profile?.subsegment && client.analysisProfile) reasons.push('Sem subsegmento');
   if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
   if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
+  const reliableMetrics = ['spend', 'impressions', 'reach', 'purchases', 'messaging_conversations_started_total', 'leads'];
+  const hasReliableMetrics = reliableMetrics.some(m => client.metrics[m]?.available && typeof client.metrics[m]?.value === 'number' && (client.metrics[m]?.value as number) > 0);
+
   if (client.clientStatus === 'not_connected' || client.accounts.length === 0) reasons.push('Sem conta Meta');
   if (client.resolvedTargets.length === 0) reasons.push('Sem metas');
   if (client.clientStatus === 'never_synced') reasons.push('Nunca sincronizado');
-  if (client.clientStatus === 'period_not_synced') reasons.push('Período não sincronizado');
-  if (client.clientStatus === 'sync_without_metrics') reasons.push('Sync sem métricas');
+  
+  if (client.clientStatus === 'period_not_synced') {
+    reasons.push('Período atual não sincronizado');
+  }
+  
+  if (client.clientStatus === 'sync_without_metrics') {
+    reasons.push('Sync executado, mas sem métricas normalizadas');
+  }
+  
   if (client.clientStatus === 'partial') reasons.push('Sincronização parcial');
-  if (client.clientStatus === 'failed') reasons.push('Falha de sincronização');
+  
+  if (client.clientStatus === 'failed') {
+    if (hasReliableMetrics) {
+      reasons.push('Falha recente na sincronização, usando último dado confiável');
+    } else {
+      reasons.push('Falha de sincronização');
+    }
+  }
+  
   if (client.evaluations.some((evaluation) => evaluation.status === 'insufficient_data')) reasons.push('Dados insuficientes');
   return Array.from(new Set(reasons));
 }

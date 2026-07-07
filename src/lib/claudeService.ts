@@ -148,47 +148,7 @@ function generateLocalSummary(data: CamplyData): ClaudeAgentResponse {
 // CHAT & COMANDOS (VOZ/TEXTO)
 // ============================================================
 
-export interface ChatAction {
-  type: 'create_task' | 'create_campaign' | 'create_project' | 'create_client' | 'update_task' | 'none';
-  payload?: any;
-  reply_text: string;
-}
 
-export async function processChatCommand(userInput: string, data: CamplyData): Promise<ChatAction> {
-  const clientsCtx = data.clients.map(c => ({ id: c.id, name: c.name, status: c.status }));
-  const campaignsCtx = data.campaigns.map(c => ({ id: c.id, name: c.name, status: c.status }));
-
-  try {
-    const responseData = await invokeFunction<any>('claude-proxy', {
-      mode: 'chat_command',
-      userMessage: [
-        'Contexto atual do CRM:',
-        `Clientes: ${JSON.stringify(clientsCtx)}`,
-        `Campanhas: ${JSON.stringify(campaignsCtx)}`,
-        '',
-        'Solicitação do usuário:',
-        userInput,
-      ].join('\n'),
-      maxTokens: 1024,
-    });
-
-    const text = responseData.result?.content?.[0]?.text;
-    if (!text) throw new Error('No text returned');
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]) as ChatAction;
-    }
-
-    throw new Error('Could not parse JSON action');
-  } catch (error) {
-    console.error('[ClaudeService] Chat error:', error);
-    return {
-      type: 'none',
-      reply_text: 'Desculpe, tive um problema ao processar seu comando (verifique se a API Key da Anthropic está configurada nos secrets). Tente novamente em instantes.',
-    };
-  }
-}
 // ============================================================
 // CAMPAIGN DEEP ANALYSIS (Phase 1)
 // ============================================================

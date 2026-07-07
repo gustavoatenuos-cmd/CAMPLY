@@ -12,7 +12,8 @@ import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
-import { supabase } from '../../lib/supabase';
+import { syncMetaAsset } from '../../lib/meta/metaSyncService';
+import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { RefreshCw } from 'lucide-react';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
@@ -148,23 +149,17 @@ function accountRowKey(clientId: string, account: GlobalPerformanceAccount): str
   return `${clientId}:${account.clientMetaAssetId}`;
 }
 
-function SyncAction({ account }: { account: GlobalPerformanceAccount }) {
+function SyncAction({ account, period }: { account: GlobalPerformanceAccount, period: DashboardPeriod }) {
   const [syncing, setSyncing] = useState(false);
   
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (syncing) return;
-    if (!supabase) {
-      alert('Serviço indisponível no momento.');
-      return;
-    }
     setSyncing(true);
     try {
-      const { error } = await supabase.functions.invoke('meta-sync-performance', {
-        body: { metaAssetId: account.clientMetaAssetId },
-      });
-      if (error) {
-        alert('Erro ao sincronizar: ' + error.message);
+      const result = await syncMetaAsset({ metaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' });
+      if (!result.success) {
+        alert('Erro ao sincronizar: ' + (result.message || 'Erro desconhecido'));
       } else {
         alert('Sincronização iniciada com sucesso. Pode levar alguns minutos.');
       }
@@ -189,7 +184,7 @@ function SyncAction({ account }: { account: GlobalPerformanceAccount }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerformance[] }) {
+export function ClientPerformanceTable({ clients, period }: { clients: GlobalClientPerformance[], period: DashboardPeriod }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const rows = useMemo(() => clients.flatMap((client) => {
@@ -331,7 +326,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted mb-2">Campanhas da conta</p>
                     {account ? (
-                      <CampaignHierarchicalTable account={account} period="last_90d" />
+                      <CampaignHierarchicalTable account={account} period={period} />
                     ) : (
                       <p className="mt-1 text-xs text-brand-soft">Nenhuma conta selecionada.</p>
                     )}
@@ -480,10 +475,8 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                             : 'Sem sync confiável'}
                         </p>
                         {/* Botão fantasma — aparece no hover da linha */}
-                        {account && client.clientStatus === 'failed' ? (
-                          <SyncAction account={account} />
-                        ) : account && client.clientStatus === 'period_not_synced' ? (
-                          <SyncAction account={account} />
+                        {account && (client.clientStatus === 'failed' || client.clientStatus === 'period_not_synced') ? (
+                          <SyncAction account={account} period={period} />
                         ) : account ? (
                           <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
                             Ver campanhas
