@@ -314,7 +314,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                 await syncMetaAsset({
                   metaAssetId,
                   period,
-                  requestedLevel: 'campaign',
+                  requestedLevel: 'ad',
                 });
                 
                 // Incremental dashboard reload after each sync

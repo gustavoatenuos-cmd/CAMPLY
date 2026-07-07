@@ -24,7 +24,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
     return {
       adAccountId: legacyAdAccountId || undefined,
       periods: ['this_month'],
-      requestedLevel: 'campaign',
+      requestedLevel: 'ad',
     };
   }
 
@@ -32,7 +32,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   return {
     ...options,
     periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['this_month'],
-    requestedLevel: options.requestedLevel ?? 'campaign',
+    requestedLevel: options.requestedLevel ?? 'ad',
   };
 }
 

@@ -11,6 +11,7 @@ import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
+import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -111,36 +112,6 @@ function PacingBar({ pct }: { pct: number }) {
   );
 }
 
-// ─── Linha de campanha (expandida) ────────────────────────────────────────────
-
-function CampaignGroupRow({ group }: { group: GlobalMetricGroup }) {
-  const spendMetric = group.metrics.spend;
-  const conversationsMetric = group.metrics.messaging_conversations_started_total;
-  const leadsMetric = group.metrics.leads;
-  const purchasesMetric = group.metrics.purchases;
-
-  return (
-    <div className="grid gap-3 rounded-xl border border-brand-line/70 bg-brand-ink/40 p-4 md:grid-cols-[minmax(240px,1.7fr)_repeat(4,minmax(90px,0.7fr))] md:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-bold text-white">{group.campaignName}</span>
-          {group.classifiedObjective && (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-brand-soft">
-              {group.classifiedObjective}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 truncate text-xs text-brand-muted">
-          {group.destinationType || 'Destino não informado'} · {group.attributionSetting || 'Atribuição não informada'}
-        </p>
-      </div>
-      <MetricCell label="Investido"  value={formatCurrency(metricValue(spendMetric), group.currency)}           metric={spendMetric} />
-      <MetricCell label="Conversas"  value={formatNumber(metricValue(conversationsMetric))}                      metric={conversationsMetric} />
-      <MetricCell label="Leads"      value={formatNumber(metricValue(leadsMetric))}                              metric={leadsMetric} />
-      <MetricCell label="Compras"    value={formatNumber(metricValue(purchasesMetric))}                          metric={purchasesMetric} />
-    </div>
-  );
-}
 
 function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
   return (
@@ -317,12 +288,12 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                     }
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">Campanhas da conta</p>
-                    <p className="mt-1 text-xs text-brand-soft">
-                      {groups.length > 0
-                        ? groups.map((g) => g.campaignName).join(' · ')
-                        : 'Nenhuma campanha confiável neste recorte.'}
-                    </p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted mb-2">Campanhas da conta</p>
+                    {account ? (
+                      <CampaignHierarchicalTable account={account} period="this_month" />
+                    ) : (
+                      <p className="mt-1 text-xs text-brand-soft">Nenhuma conta selecionada.</p>
+                    )}
                   </div>
                   <p className="text-xs text-brand-muted">
                     Qualidade: {account?.dataQuality.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}
@@ -494,19 +465,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                           </div>
                         </div>
                         <div className="space-y-3">
-                          {groups.length > 0
-                            ? groups.map((group, i) => (
-                              <CampaignGroupRow
-                                key={`${group.campaignId}:${group.attributionSetting || 'none'}:${i}`}
-                                group={group}
-                              />
-                            ))
-                            : (
-                              <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
-                                Nenhuma campanha confiável foi retornada para este período.
-                              </div>
-                            )
-                          }
+                          <CampaignHierarchicalTable account={account} period="this_month" />
                         </div>
                       </div>
                     )}
