@@ -75,12 +75,18 @@ function mockSavedConnection() {
 
 describe('meta-validate-token persisted status', () => {
   beforeAll(async () => {
+    // Os caminhos ficam em variáveis de propósito: import() com literal faria
+    // o tsc seguir estes módulos Deno (imports https/globals Deno) e quebrar o
+    // typecheck. Em runtime o vitest resolve normalmente e aplica os mocks.
     const functionPath = '../../../supabase/functions/meta-validate-token/index.ts';
+    const authPath = '../../../supabase/functions/_shared/auth.ts';
+    const cryptoPath = '../../../supabase/functions/_shared/crypto.ts';
+    const directPostgresPath = '../../../supabase/functions/_shared/direct-postgres.ts';
     const module = await import(functionPath);
     handleRequest = module.handleRequest;
-    ({ requireAuthenticatedUser } = await import('../../../supabase/functions/_shared/auth.ts'));
-    ({ decryptToken } = await import('../../../supabase/functions/_shared/crypto.ts'));
-    ({ withDirectPostgres } = await import('../../../supabase/functions/_shared/direct-postgres.ts'));
+    ({ requireAuthenticatedUser } = await import(authPath));
+    ({ decryptToken } = await import(cryptoPath));
+    ({ withDirectPostgres } = await import(directPostgresPath));
     vi.stubGlobal('Deno', { env: { get: (key: string) => key === 'META_APP_ID' ? 'app-id' : key === 'META_APP_SECRET' ? 'app-secret' : '' } });
   });
 
