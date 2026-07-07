@@ -5,7 +5,7 @@ BEGIN;
 -- 1. Limpa syncs travados
 UPDATE public.meta_sync_runs
 SET status = 'failed', termination_reason = 'timeout_cleared_by_system'
-WHERE status = 'running' OR status = 'pending';
+WHERE status = 'running';
 
 -- 2. Atualiza a função get_global_performance_dashboard_v2 para permitir last_90d
 CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2(
