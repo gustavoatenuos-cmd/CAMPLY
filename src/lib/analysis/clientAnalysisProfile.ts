@@ -302,7 +302,8 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
   });
   if (error) {
     console.error('RPC upsert_client_analysis_profile error:', error);
-    throw new Error('Não foi possível salvar o perfil de análise no banco.');
+    const msg = error.message || error.details || error.hint || 'Erro desconhecido na gravação.';
+    throw new Error(`Não foi possível salvar o perfil de análise no banco: ${msg}`);
   }
   return mapClientProfileRow(data as Record<string, unknown>);
 }
