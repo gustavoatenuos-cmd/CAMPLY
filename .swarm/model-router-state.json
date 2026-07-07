@@ -1,0 +1,117 @@
+{
+  "totalDecisions": 10,
+  "modelDistribution": {
+    "haiku": 6,
+    "sonnet": 3,
+    "opus": 1,
+    "inherit": 0
+  },
+  "avgComplexity": 0.23123152493574223,
+  "avgConfidence": 0.7040138675286598,
+  "circuitBreakerTrips": 0,
+  "lastUpdated": "2026-07-07T15:05:18.248Z",
+  "learningHistory": [
+    {
+      "task": "add a console.log to cache",
+      "model": "haiku",
+      "complexity": 0.20199999999999999,
+      "outcome": "success",
+      "timestamp": "2026-07-07T15:04:02.843Z"
+    },
+    {
+      "task": "add a console.log to cache",
+      "model": "haiku",
+      "complexity": 0.20199999999999999,
+      "outcome": "success",
+      "timestamp": "2026-07-07T15:04:02.844Z"
+    },
+    {
+      "task": "add a console.log to cache",
+      "model": "haiku",
+      "complexity": 0.20199999999999999,
+      "outcome": "success",
+      "timestamp": "2026-07-07T15:04:02.846Z"
+    },
+    {
+      "task": "add a console.log to cache",
+      "model": "haiku",
+      "complexity": 0.20199999999999999,
+      "outcome": "success",
+      "timestamp": "2026-07-07T15:04:02.847Z"
+    },
+    {
+      "task": "add a console.log to cache",
+      "model": "haiku",
+      "complexity": 0.20199999999999999,
+      "outcome": "success",
+      "timestamp": "2026-07-07T15:04:02.848Z"
+    }
+  ],
+  "version": 2,
+  "priors": {
+    "low": {
+      "haiku": {
+        "alpha": 6,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    },
+    "med": {
+      "haiku": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    },
+    "high": {
+      "haiku": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    }
+  },
+  "priorsById": {
+    "low": {
+      "inclusionai/ling-2.6-flash": {
+        "alpha": 12,
+        "beta": 1
+      }
+    },
+    "med": {},
+    "high": {}
+  }
+}

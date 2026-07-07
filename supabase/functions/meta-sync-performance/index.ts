@@ -648,6 +648,8 @@ export async function handleRequest(req: Request) {
         endpoint: `/${adAccountId}`,
         accessToken,
         appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
         params: { fields: 'timezone_name,currency' },
       });
       timezone = typeof account?.timezone_name === 'string' && account.timezone_name
@@ -683,6 +685,8 @@ export async function handleRequest(req: Request) {
       endpoint: `/${adAccountId}/campaigns`,
       accessToken,
       appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
       params: {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
         limit: '100',
@@ -693,6 +697,8 @@ export async function handleRequest(req: Request) {
       endpoint: `/${adAccountId}/adsets`,
       accessToken,
       appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
       params: {
         fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
         limit: '100',
@@ -704,6 +710,8 @@ export async function handleRequest(req: Request) {
           endpoint: `/${adAccountId}/ads`,
           accessToken,
           appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
           params: {
             fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
@@ -716,6 +724,7 @@ export async function handleRequest(req: Request) {
           recordsFetched: 0,
           isPartial: false,
           completionStatus: 'complete' as const,
+          errorMessage: undefined,
         });
 
     const [campaignsResult, adsetsResult, adsResult] = await Promise.all([
@@ -914,6 +923,8 @@ export async function handleRequest(req: Request) {
             endpoint: `/${adAccountId}/insights`,
             accessToken,
             appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
             params: {
               level: 'account',
               fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -927,6 +938,8 @@ export async function handleRequest(req: Request) {
             endpoint: `/${adAccountId}/insights`,
             accessToken,
             appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
             params: {
               level: 'campaign',
               fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -942,6 +955,8 @@ export async function handleRequest(req: Request) {
                 endpoint: `/${adAccountId}/insights`,
                 accessToken,
                 appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
                 params: {
                   level: 'adset',
                   fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -964,6 +979,8 @@ export async function handleRequest(req: Request) {
                 endpoint: `/${adAccountId}/insights`,
                 accessToken,
                 appSecret,
+        timeoutMs: 40000,
+        maxRetries: 0,
                 params: {
                   level: 'ad',
                   fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',

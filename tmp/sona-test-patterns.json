@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "patterns": {},
+  "stats": {
+    "trajectoriesProcessed": 0,
+    "successfulRoutings": 0,
+    "failedRoutings": 0,
+    "lastUpdate": null
+  },
+  "metadata": {
+    "createdAt": "2026-07-07T15:04:02.923Z",
+    "savedAt": "2026-07-07T15:04:02.923Z"
+  }
+}

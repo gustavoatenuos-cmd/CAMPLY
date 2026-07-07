@@ -1,0 +1,36 @@
+{
+  "swarmId": "swarm-mras4wcr",
+  "objective": "Test project",
+  "strategy": "testing",
+  "status": "stopped",
+  "agents": 6,
+  "agentPlan": [
+    {
+      "role": "Test Lead",
+      "type": "tester",
+      "count": 1,
+      "purpose": "Test strategy"
+    },
+    {
+      "role": "Unit Tester",
+      "type": "tester",
+      "count": 2,
+      "purpose": "Unit tests"
+    },
+    {
+      "role": "Integration Tester",
+      "type": "tester",
+      "count": 2,
+      "purpose": "Integration tests"
+    },
+    {
+      "role": "QA Reviewer",
+      "type": "reviewer",
+      "count": 1,
+      "purpose": "Quality review"
+    }
+  ],
+  "startedAt": "2026-07-07T15:04:12.748Z",
+  "parallel": true,
+  "stoppedAt": "2026-07-07T15:04:12.756Z"
+}

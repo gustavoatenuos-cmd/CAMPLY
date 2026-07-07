@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "encoderVersion": 2,
+  "config": {
+    "learningRate": 0.1,
+    "gamma": 0.99,
+    "explorationDecayType": "exponential",
+    "numActions": 8
+  },
+  "qTable": {
+    "fstate_2bkd0d": {
+      "qValues": [
+        5.010432243347168,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "visits": 32008
+    }
+  },
+  "stats": {
+    "stepCount": 1000,
+    "updateCount": 1000,
+    "avgTDError": 2.5739070037804157,
+    "epsilon": 0.6346478335001402
+  },
+  "metadata": {
+    "savedAt": "2026-07-07T15:04:35.500Z",
+    "totalExperiences": 1000
+  }
+}

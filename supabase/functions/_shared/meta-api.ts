@@ -32,6 +32,7 @@ export interface MetaApiOptions {
   params?: Record<string, string>;
   body?: any;
   timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export interface PaginatedResult<T> {
@@ -41,6 +42,7 @@ export interface PaginatedResult<T> {
   isPartial: boolean;
   completionStatus: 'complete' | 'partial_page' | 'timeout' | 'api_error';
   errorMessage?: string;
+  maxRetries?: number;
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -85,7 +87,7 @@ export async function fetchMetaGraph(options: MetaApiOptions) {
 
   let retries = 0;
   const maxRetriesOverride = getEnvVar('TEST_MAX_RETRIES');
-  const maxRetries = maxRetriesOverride ? parseInt(maxRetriesOverride, 10) : 4;
+  const maxRetries = options.maxRetries ?? (maxRetriesOverride ? parseInt(maxRetriesOverride, 10) : 4);
   
   const timeoutOverride = getEnvVar('TEST_TIMEOUT_MS');
   const actualTimeoutMs = timeoutOverride ? parseInt(timeoutOverride, 10) : timeoutMs;
