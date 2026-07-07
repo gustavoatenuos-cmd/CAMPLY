@@ -61,9 +61,9 @@ jobs:
         if: ${{ inputs.mode == 'deploy' }}
         run: supabase db push
 
-      - name: Deploy Meta sync Edge Function to staging
+      - name: Deploy all Edge Functions to staging
         if: ${{ inputs.mode == 'deploy' }}
-        run: supabase functions deploy meta-sync-performance --project-ref "$STAGING_PROJECT_ID"
+        run: supabase functions deploy --project-ref "$STAGING_PROJECT_ID"
 
       - name: List migration state
         run: supabase migration list
@@ -94,7 +94,7 @@ jobs:
             echo "- Migration dry-run: completed"
             if [ "${{ inputs.mode }}" = "deploy" ]; then
               echo "- Migrations: applied to staging"
-              echo "- Edge Function: meta-sync-performance deployed to staging"
+              echo "- Edge Functions: all deployed to staging"
               echo "- Schema smoke checks: passed"
             else
               echo "- No migration or function was deployed"
