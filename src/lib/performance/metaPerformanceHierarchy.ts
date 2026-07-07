@@ -17,6 +17,12 @@ export interface HierarchicalMetricNode {
   metrics: Record<string, MetricContract>;
 }
 
+export interface HierarchyResponse {
+  state: 'empty' | 'ready' | 'period_not_synced' | 'unauthorized';
+  items: HierarchicalMetricNode[];
+  total: number;
+}
+
 export async function fetchMetaPerformanceHierarchy(
   clientMetaAssetId: string,
   period: DashboardPeriod,
@@ -24,7 +30,7 @@ export async function fetchMetaPerformanceHierarchy(
   parentId: string | null = null,
   page: number = 1,
   pageSize: number = 50
-): Promise<HierarchicalMetricNode[]> {
+): Promise<HierarchyResponse> {
   if (!supabase) {
     throw new Error('Supabase client not initialized');
   }
@@ -43,6 +49,6 @@ export async function fetchMetaPerformanceHierarchy(
     throw new Error(`Falha ao buscar a hierarquia de métricas (${level}): ${error.message}`);
   }
 
-  // The RPC returns a JSONB array directly or empty array.
-  return (data as unknown as HierarchicalMetricNode[]) || [];
+  // The RPC returns a complex object with items, total, and state
+  return (data as unknown as HierarchyResponse) || { state: 'empty', items: [], total: 0 };
 }

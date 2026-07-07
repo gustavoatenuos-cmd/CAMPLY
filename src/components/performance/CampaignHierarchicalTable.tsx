@@ -22,9 +22,9 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
     async function loadCampaigns() {
       try {
         setLoading(true);
-        const data = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100);
+        const response = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100);
         if (active) {
-          setCampaigns(data);
+          setCampaigns(response.items || []);
           setError(null);
         }
       } catch (err) {
@@ -100,8 +100,8 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
     if (!expanded && !loaded) {
       setLoadingChildren(true);
       try {
-        const data = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, nextLevel, node.id, 1, 100);
-        setChildren(data);
+        const response = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, nextLevel, node.id, 1, 100);
+        setChildren(response.items || []);
         setLoaded(true);
       } catch (err) {
         console.error('Failed to load children', err);
