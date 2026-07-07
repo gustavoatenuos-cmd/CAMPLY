@@ -10,3 +10,6 @@ supabase/secrets.local
 supabase/.branches/
 serve.log
 *.log
+.agents/
+.claude/settings.local.json
+scratch/
