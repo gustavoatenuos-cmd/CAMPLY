@@ -60,6 +60,9 @@ export async function invokeFunction<T>(
     if (error instanceof Error && error.name === 'AbortError') {
       throw new OperationTimedOutError(`A função ${name} demorou mais que o esperado.`);
     }
+    if (error instanceof Error && error.message.includes('Failed to fetch')) {
+      throw new Error(`Falha de rede/CORS ao acessar a função '${name}'. Isso ocorre se a função não estiver publicada no Supabase ou se o servidor sofreu Timeout/OOM (502/504) derrubando os cabeçalhos CORS.`);
+    }
     throw error;
   } finally {
     globalThis.clearTimeout(timeoutId);
