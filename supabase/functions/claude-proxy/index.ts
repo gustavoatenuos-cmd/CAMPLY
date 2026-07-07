@@ -83,9 +83,9 @@ serve(async (req) => {
     }
     const safeMaxTokens = Math.min(Math.max(Number(maxTokens) || 1024, 64), config.maxOutputTokens)
 
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const apiKey = Deno.env.get('CLAUDE_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
-      throw new HttpError('Anthropic API Key is not configured on the server', 500);
+      throw new HttpError('Claude/Anthropic API Key is not configured on the server', 500);
     }
 
     const response = await fetch(CLAUDE_API_URL, {
@@ -120,6 +120,11 @@ serve(async (req) => {
     });
 
   } catch (error) {
+    console.error('[claude-proxy] Failed to execute Claude proxy request.', {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: error instanceof HttpError ? error.status : 500,
+      stage: 'execution'
+    });
     return errorResponse(error, corsHeaders)
   }
 })
