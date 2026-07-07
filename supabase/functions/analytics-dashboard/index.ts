@@ -32,9 +32,13 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let user: { id: string } | undefined;
+  let body: AnalyticsDashboardBody | undefined;
+
   try {
-    const { user } = await requireAuthenticatedUser(req)
-    const body = await req.json().catch(() => ({})) as AnalyticsDashboardBody
+    const authResult = await requireAuthenticatedUser(req);
+    user = authResult.user;
+    body = await req.json().catch(() => ({})) as AnalyticsDashboardBody
     const action = body.action === 'dashboard' ? 'dashboard' : body.action === 'capabilities' ? 'capabilities' : ''
 
     if (!action) throw new HttpError('Ação analítica inválida.', 400)
