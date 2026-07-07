@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Validate only or apply migrations and deploy meta-sync-ads to staging
+        description: Validate only or apply migrations and deploy meta-sync-performance to staging
         required: true
         default: dry-run
         type: choice
@@ -63,7 +63,7 @@ jobs:
 
       - name: Deploy Meta sync Edge Function to staging
         if: ${{ inputs.mode == 'deploy' }}
-        run: supabase functions deploy meta-sync-ads --project-ref "$STAGING_PROJECT_ID"
+        run: supabase functions deploy meta-sync-performance --project-ref "$STAGING_PROJECT_ID"
 
       - name: List migration state
         run: supabase migration list
@@ -94,7 +94,7 @@ jobs:
             echo "- Migration dry-run: completed"
             if [ "${{ inputs.mode }}" = "deploy" ]; then
               echo "- Migrations: applied to staging"
-              echo "- Edge Function: meta-sync-ads deployed to staging"
+              echo "- Edge Function: meta-sync-performance deployed to staging"
               echo "- Schema smoke checks: passed"
             else
               echo "- No migration or function was deployed"
