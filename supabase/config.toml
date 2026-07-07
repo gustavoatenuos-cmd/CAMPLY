@@ -24,9 +24,6 @@ verify_jwt = true
 [functions.meta-oauth-callback]
 verify_jwt = false
 
-[functions.meta-sync-ads]
-verify_jwt = true
-
 [functions.meta-sync-campaigns]
 verify_jwt = true
 
