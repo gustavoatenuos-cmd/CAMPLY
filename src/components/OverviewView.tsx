@@ -307,32 +307,35 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
         if (accountsToSync.length > 0) {
           autoSyncInFlight.current = true;
-          // Fire all syncs concurrently in background, then reload dashboard
-          Promise.allSettled(
-            accountsToSync.map(({ metaAssetId }) =>
-              syncMetaAsset({
-                metaAssetId,
-                period,
-                requestedLevel: 'campaign',
-              }).catch((err) => console.warn('[auto-sync]', metaAssetId, err))
-            )
-          ).then(() => {
+          // Fire syncs sequentially to avoid overwhelming the Edge Function
+          (async () => {
+            for (const { metaAssetId } of accountsToSync) {
+              try {
+                await syncMetaAsset({
+                  metaAssetId,
+                  period,
+                  requestedLevel: 'campaign',
+                });
+                
+                // Incremental dashboard reload after each sync
+                const freshResult = await loadGlobalPerformanceDashboard({
+                  period,
+                  dashboardRpc: capabilities.dashboardRpc,
+                });
+                const freshEnriched = freshResult.map(c => {
+                  const workspaceClient = data.clients.find(w => w.id === c.clientId);
+                  return workspaceClient
+                    ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
+                    : c;
+                });
+                setClients(freshEnriched);
+              } catch (err) {
+                console.warn('[auto-sync]', metaAssetId, err);
+              }
+            }
             autoSyncInFlight.current = false;
-            // Reload dashboard with fresh data after syncs complete
-            loadGlobalPerformanceDashboard({
-              period,
-              dashboardRpc: capabilities.dashboardRpc,
-            }).then((freshResult) => {
-              const freshEnriched = freshResult.map(c => {
-                const workspaceClient = data.clients.find(w => w.id === c.clientId);
-                return workspaceClient
-                  ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
-                  : c;
-              });
-              setClients(freshEnriched);
-              setLastLoadedAt(new Date());
-            }).catch(() => { /* silent reload failure */ });
-          });
+            setLastLoadedAt(new Date());
+          })();
         }
       }
     } catch {

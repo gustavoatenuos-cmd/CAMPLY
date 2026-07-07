@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "camply-e2e",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:VITE_META_E2E_MODE='true'; npm run dev"],
+      "port": 3000
+    }
+  ]
+}
