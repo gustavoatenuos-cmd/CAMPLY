@@ -290,7 +290,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted mb-2">Campanhas da conta</p>
                     {account ? (
-                      <CampaignHierarchicalTable account={account} period="this_month" />
+                      <CampaignHierarchicalTable account={account} period="last_90d" />
                     ) : (
                       <p className="mt-1 text-xs text-brand-soft">Nenhuma conta selecionada.</p>
                     )}
@@ -465,7 +465,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                           </div>
                         </div>
                         <div className="space-y-3">
-                          <CampaignHierarchicalTable account={account} period="this_month" />
+                          <CampaignHierarchicalTable account={account} period="last_90d" />
                         </div>
                       </div>
                     )}
