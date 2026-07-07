@@ -181,6 +181,7 @@ function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Dat
   }
   if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
   if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
+  if (period === 'last_90d') start.setUTCDate(start.getUTCDate() - 89);
   return { start, end };
 }
 

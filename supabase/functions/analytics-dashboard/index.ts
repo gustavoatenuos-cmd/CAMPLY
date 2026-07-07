@@ -10,7 +10,7 @@ type AnalyticsDashboardBody = {
   assetIds?: unknown
 }
 
-const VALID_PERIODS = new Set(['this_month', 'this_week', 'today', 'last_7d', 'last_30d'])
+const VALID_PERIODS = new Set(['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'])
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
