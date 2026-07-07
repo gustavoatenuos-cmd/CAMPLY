@@ -628,4 +628,36 @@ REVOKE ALL ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, T
 REVOKE ALL ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER) TO authenticated;
 
+-- 4. Atualiza get_analytics_capabilities para incluir last_90d
+CREATE OR REPLACE FUNCTION public.get_analytics_capabilities()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+BEGIN
+  IF v_user_id IS NULL OR COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) THEN
+    RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'contractVersion', 5,
+    'dashboardAvailable', true,
+    'dashboardRpc', 'get_global_performance_dashboard_v2',
+    'supportedPeriods', jsonb_build_array('this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'),
+    'supportedLevels', jsonb_build_array('campaign', 'adset', 'ad'),
+    'targetsAvailable', true,
+    'reconciliationAvailable', true,
+    'traceableMetrics', true
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_analytics_capabilities() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_analytics_capabilities() FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_analytics_capabilities() TO authenticated;
+
 COMMIT;
