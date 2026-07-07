@@ -336,23 +336,21 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
 
       {/* ── Desktop ── */}
       <div data-testid="client-performance-desktop" className="hidden overflow-x-auto lg:block">
-        <table className="min-w-[1180px] w-full text-left text-sm">
-          <thead className="border-b border-brand-line bg-brand-ink/60 text-[11px] uppercase tracking-wider text-brand-muted">
-            <tr>
-              <th className="px-4 py-3">Cliente / conta</th>
-              <th className="px-4 py-3">Investimento</th>
-              <th className="px-4 py-3">Pacing</th>
-              <th className="px-4 py-3">Conversas</th>
-              <th className="px-4 py-3">Custo/conv.</th>
-              <th className="px-4 py-3">Leads</th>
-              <th className="px-4 py-3">CPL</th>
-              <th className="px-4 py-3">Compras</th>
-              <th className="px-4 py-3">CPA</th>
-              <th className="px-4 py-3">Situação</th>
-              <th className="px-4 py-3">Dados</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-brand-line/70">
+        <div className="min-w-[1360px] w-full text-left text-sm">
+          <div className="grid grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px] items-center border-b border-brand-line bg-brand-ink/60 text-[11px] font-bold uppercase tracking-wider text-brand-muted">
+            <div className="px-4 py-3">Cliente / conta</div>
+            <div className="px-4 py-3">Investimento</div>
+            <div className="px-4 py-3">Pacing</div>
+            <div className="px-4 py-3">Conversas</div>
+            <div className="px-4 py-3">Custo/conv.</div>
+            <div className="px-4 py-3">Leads</div>
+            <div className="px-4 py-3">CPL</div>
+            <div className="px-4 py-3">Compras</div>
+            <div className="px-4 py-3">CPA</div>
+            <div className="px-4 py-3">Situação</div>
+            <div className="px-4 py-3">Dados</div>
+          </div>
+          <div className="flex flex-col divide-y divide-brand-line/70">
             {rows.map(({ client, account }) => {
               const key               = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
               const spendMetric       = account?.metrics.spend;
@@ -376,8 +374,8 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
               const isExpanded = expanded === key;
 
               return (
-                <tr key={key} className="align-top">
-                  <td colSpan={11} className="p-0">
+                <div key={key} className="flex flex-col">
+                  <div className="w-full p-0">
                     {/**
                      * rowStyle() aplica:
                      *  - borda-esquerda 3 px colorida por severidade
@@ -388,7 +386,7 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                       type="button"
                       onClick={() => account && setExpanded(isExpanded ? null : key)}
                       className={[
-                        'group grid w-full min-w-[1180px]',
+                        'group grid w-full min-w-[1360px]',
                         'grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px]',
                         'items-center text-left transition-colors duration-100',
                         account ? 'hover:bg-white/[0.03]' : 'cursor-default',
@@ -512,12 +510,12 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                         </div>
                       </div>
                     )}
-                  </td>
-                </tr>
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
       </div>
 
       {rows.length === 0 && (
