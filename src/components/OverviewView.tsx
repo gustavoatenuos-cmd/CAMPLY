@@ -9,7 +9,7 @@ import {
   Search,
   Users,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CamplyData, Insight, ViewId } from '../types';
 import {
   loadGlobalPerformanceDashboard,
@@ -31,6 +31,7 @@ import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
+import { syncMetaAsset } from '../lib/meta/metaSyncService';
 
 interface OverviewViewProps {
   data: CamplyData;
@@ -261,6 +262,8 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const capabilities = capabilityState?.mode === 'analytics' ? capabilityState.capabilities : null;
 
+  const autoSyncInFlight = useRef(false);
+
   const loadDashboard = useCallback(async () => {
     if (!capabilities) return;
     setLoading(true);
@@ -280,6 +283,58 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
       
       setClients(enrichedResult);
       setLastLoadedAt(new Date());
+
+      // Auto-sync: identify connected accounts that have never been synced
+      // or whose last sync was more than 6 hours ago, then sync them in background
+      if (!autoSyncInFlight.current) {
+        const staleThresholdMs = 6 * 60 * 60 * 1000; // 6 hours
+        const now = Date.now();
+        const accountsToSync: { metaAssetId: string; clientMetaAssetId: string }[] = [];
+
+        for (const client of enrichedResult) {
+          if (client.clientStatus === 'not_connected') continue;
+          for (const account of client.accounts) {
+            const lastFinished = account.lastSuccessfulRun?.finishedAt;
+            const isStale = !lastFinished || (now - new Date(lastFinished).getTime() > staleThresholdMs);
+            if (isStale) {
+              accountsToSync.push({
+                metaAssetId: account.metaAssetId,
+                clientMetaAssetId: account.clientMetaAssetId,
+              });
+            }
+          }
+        }
+
+        if (accountsToSync.length > 0) {
+          autoSyncInFlight.current = true;
+          // Fire all syncs concurrently in background, then reload dashboard
+          Promise.allSettled(
+            accountsToSync.map(({ metaAssetId }) =>
+              syncMetaAsset({
+                metaAssetId,
+                period,
+                requestedLevel: 'campaign',
+              }).catch((err) => console.warn('[auto-sync]', metaAssetId, err))
+            )
+          ).then(() => {
+            autoSyncInFlight.current = false;
+            // Reload dashboard with fresh data after syncs complete
+            loadGlobalPerformanceDashboard({
+              period,
+              dashboardRpc: capabilities.dashboardRpc,
+            }).then((freshResult) => {
+              const freshEnriched = freshResult.map(c => {
+                const workspaceClient = data.clients.find(w => w.id === c.clientId);
+                return workspaceClient
+                  ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
+                  : c;
+              });
+              setClients(freshEnriched);
+              setLastLoadedAt(new Date());
+            }).catch(() => { /* silent reload failure */ });
+          });
+        }
+      }
     } catch {
       setError('dashboard_unavailable');
     } finally {
