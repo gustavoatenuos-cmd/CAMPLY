@@ -12,6 +12,8 @@ import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
+import { supabase } from '../../lib/supabase';
+import { RefreshCw } from 'lucide-react';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -144,6 +146,41 @@ function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
 
 function accountRowKey(clientId: string, account: GlobalPerformanceAccount): string {
   return `${clientId}:${account.clientMetaAssetId}`;
+}
+
+function SyncAction({ account }: { account: GlobalPerformanceAccount }) {
+  const [syncing, setSyncing] = useState(false);
+  
+  const handleSync = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const { error } = await supabase.functions.invoke('meta-sync-performance', {
+        body: { metaAssetId: account.clientMetaAssetId },
+      });
+      if (error) {
+        alert('Erro ao sincronizar: ' + error.message);
+      } else {
+        alert('Sincronização iniciada com sucesso. Pode levar alguns minutos.');
+      }
+    } catch (err: any) {
+      alert('Erro inesperado: ' + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleSync}
+      disabled={syncing}
+      className="mt-2 hidden flex items-center gap-1 rounded-md border border-brand-line/60 bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft hover:bg-white/10 group-hover:inline-flex disabled:opacity-50"
+    >
+      <RefreshCw size={10} className={syncing ? 'animate-spin' : ''} />
+      {syncing ? 'Sincronizando...' : 'Sincronizar'}
+    </button>
+  );
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -439,9 +476,17 @@ export function ClientPerformanceTable({ clients }: { clients: GlobalClientPerfo
                             : 'Sem sync confiável'}
                         </p>
                         {/* Botão fantasma — aparece no hover da linha */}
-                        {account && (
+                        {account && client.clientStatus === 'failed' ? (
+                          <SyncAction account={account} />
+                        ) : account && client.clientStatus === 'period_not_synced' ? (
+                          <SyncAction account={account} />
+                        ) : account ? (
                           <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
                             Ver campanhas
+                          </span>
+                        ) : (
+                          <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
+                            Ver cliente
                           </span>
                         )}
                       </div>
