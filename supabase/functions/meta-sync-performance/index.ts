@@ -687,7 +687,7 @@ export async function handleRequest(req: Request) {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
         limit: '500',
       },
-    }, 20, 10000);
+    }, 3, 1500);
 
     const fetchAdsets = fetchMetaGraphPaginated<MetaAdSet>({
       endpoint: `/${adAccountId}/adsets`,
@@ -697,7 +697,7 @@ export async function handleRequest(req: Request) {
         fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
         limit: '500',
       },
-    }, 20, 10000);
+    }, 3, 1500);
 
     const fetchAds = shouldCollectAds
       ? fetchMetaGraphPaginated<MetaAd>({
@@ -709,7 +709,7 @@ export async function handleRequest(req: Request) {
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
             limit: '500',
           },
-        }, 20, 10000)
+        }, 3, 1500)
       : Promise.resolve({
           data: [],
           pagesFetched: 0,
@@ -920,7 +920,7 @@ export async function handleRequest(req: Request) {
               ...periodParams,
               limit: '500',
             },
-          }, 20, 10000),
+          }, 3, 1500),
 
           // Campaign level — filtered server-side
           fetchMetaGraphPaginated<MetaInsightRow>({
@@ -934,7 +934,7 @@ export async function handleRequest(req: Request) {
               ...periodParams,
               limit: '500',
             },
-          }, 20, 10000),
+          }, 3, 1500),
 
           // Ad set level — only if needed, filtered server-side
           requiresAdsetInsights.size > 0
@@ -949,7 +949,7 @@ export async function handleRequest(req: Request) {
                   ...periodParams,
                   limit: '500',
                 },
-              }, 20, 10000)
+              }, 3, 1500)
             : Promise.resolve<PaginatedResult<MetaInsightRow>>({
                 data: [],
                 pagesFetched: 0,
@@ -971,7 +971,7 @@ export async function handleRequest(req: Request) {
                   ...periodParams,
                   limit: '500',
                 },
-              }, 20, 10000)
+              }, 3, 1500)
             : Promise.resolve<PaginatedResult<MetaInsightRow>>({
                 data: [],
                 pagesFetched: 0,
