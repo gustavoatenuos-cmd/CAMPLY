@@ -11,6 +11,7 @@ import { HealthScoreGauge } from './HealthScoreGauge';
 import { AlertBadge } from './ui/AlertBadge';
 import { MetricCompareCard } from './performance/MetricCompareCard';
 import { selectMetricsForCampaign, formatMetricValue } from '../lib/meta/metricsSelector';
+import { motion } from 'framer-motion';
 
 interface ClientAnalyticsViewProps {
   data: CamplyData;
@@ -58,12 +59,13 @@ function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
   ).length;
 
   return (
-    <button
+    <motion.button
+      whileHover={{ x: 4 }}
       onClick={onSelect}
-      className={`w-full rounded-xl border p-4 text-left transition-all ${
+      className={`w-full rounded-xl border p-4 text-left transition-all duration-300 ${
         isSelected
-          ? 'border-violet-500/60 bg-violet-500/10'
-          : 'border-white/8 bg-white/4 hover:border-white/15 hover:bg-white/7'
+          ? 'border-brand-green/50 bg-brand-green/10 shadow-[inset_0_0_15px_rgba(0,229,153,0.1)]'
+          : 'border-white/[0.05] bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
       }`}
     >
       <div className="mb-3 flex items-start justify-between gap-2">
@@ -86,7 +88,7 @@ function ClientCard({ client, data, isSelected, onSelect }: ClientCardProps) {
           <AlertBadge severity="critical" label={`${criticalAlerts} crítico${criticalAlerts > 1 ? 's' : ''}`} />
         )}
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -133,9 +135,12 @@ function CampaignPanel({ campaign, client, data }: CampaignPanelProps) {
   };
 
   return (
-    <div className="rounded-xl border border-white/8 bg-white/4 p-5">
-      {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <motion.article 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="glass-card flex flex-col gap-4 rounded-xl p-5"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.05] pb-4">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <h3 className="truncate text-base font-bold text-white">{campaign.name}</h3>
@@ -164,7 +169,7 @@ function CampaignPanel({ campaign, client, data }: CampaignPanelProps) {
         <div className="flex flex-col items-center gap-1">
           <HealthScoreGauge score={healthScore} size="md" />
         </div>
-      </div>
+      </header>
 
       {/* Budget bar */}
       {campaign.budget > 0 && (
@@ -220,7 +225,7 @@ function CampaignPanel({ campaign, client, data }: CampaignPanelProps) {
           ))}
         </div>
       )}
-    </div>
+    </motion.article>
   );
 }
 
@@ -369,15 +374,15 @@ export function ClientAnalyticsView({ data }: ClientAnalyticsViewProps) {
 
               {/* Summary stats */}
               <div className="flex gap-4">
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Gasto Total</p>
-                  <p className="text-lg font-bold text-white">
+                <div className="glass-card rounded-xl px-4 py-3 text-center min-w-[120px]">
+                  <p className="text-xs text-brand-muted">Gasto Total</p>
+                  <p className="text-lg font-bold text-white drop-shadow-md">
                     {formatMetricValue('spent', totalSpent)}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-center">
-                  <p className="text-xs text-zinc-500">Campanhas</p>
-                  <p className="text-lg font-bold text-white">{selectedClientCampaigns.length}</p>
+                <div className="glass-card rounded-xl px-4 py-3 text-center min-w-[120px]">
+                  <p className="text-xs text-brand-muted">Campanhas</p>
+                  <p className="text-lg font-bold text-white drop-shadow-md">{selectedClientCampaigns.length}</p>
                 </div>
                 {totalAlerts > 0 && (
                   <div className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-center">

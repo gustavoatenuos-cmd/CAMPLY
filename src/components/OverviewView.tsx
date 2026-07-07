@@ -15,6 +15,7 @@ import {
   loadGlobalPerformanceDashboard,
   type GlobalClientPerformance,
 } from '../lib/performance/globalPerformanceDashboard';
+import { motion } from 'framer-motion';
 import {
   compatibilityReasonMessage,
   loadAnalyticsCapabilities,
@@ -434,9 +435,14 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   }
 
   return (
-    <section className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8">
+    <motion.section 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8"
+    >
       <div className="mx-auto max-w-[1700px] space-y-6">
-        <header className="rounded-2xl border border-brand-line bg-brand-surface p-5 shadow-brand lg:p-6">
+        <header className="glass-card rounded-2xl p-5 lg:p-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <div className="flex items-center gap-2 text-brand-green">
@@ -554,17 +560,21 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
             </CollapsibleSection>
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-              <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
+              <article className="glass-card rounded-2xl p-5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Desvios de metas</p>
                     <h2 className="mt-1 text-xl font-black text-white">Comparações que sustentam as decisões</h2>
                   </div>
-                  <AlertTriangle className="text-amber-300" size={22} />
+                  <AlertTriangle className="text-brand-green drop-shadow-[0_0_8px_rgba(0,229,153,0.8)]" size={22} />
                 </div>
                 <div className="mt-4 space-y-3">
                   {priorities.length > 0 ? priorities.map(({ client, evaluation }, index) => (
-                    <div key={`${client.clientId}:${evaluation.clientMetaAssetId}:${evaluation.campaignId || 'account'}:${evaluation.metricId}:${index}`} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4">
+                    <motion.div 
+                      whileHover={{ scale: 1.01 }}
+                      key={`${client.clientId}:${evaluation.clientMetaAssetId}:${evaluation.campaignId || 'account'}:${evaluation.metricId}:${index}`} 
+                      className="rounded-xl border border-white/[0.03] bg-brand-surface2/40 p-4 transition-colors hover:border-brand-green/20"
+                    >
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-bold text-white">{index + 1}. {client.clientName}</p>
@@ -573,20 +583,20 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                           <p className="mt-2 text-xs text-brand-soft">
                             Confiança: {evaluation.confidence.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}% · Investigar {evaluation.campaignId ? 'a campanha e seus conjuntos' : 'a conta e as campanhas responsáveis'}.
                           </p>
-                          <p className="mt-2 text-sm font-semibold text-white">Ação recomendada: {recommendationFor(evaluation)}</p>
+                          <p className="mt-2 text-sm font-semibold text-white">Ação recomendada: <span className="text-brand-green drop-shadow-[0_0_4px_rgba(0,229,153,0.3)]">{recommendationFor(evaluation)}</span></p>
                         </div>
                         <PerformanceStatusBadge status={evaluation.status} />
                       </div>
-                    </div>
+                    </motion.div>
                   )) : (
-                    <div className="rounded-xl border border-dashed border-brand-line p-8 text-center text-sm text-brand-muted">
+                    <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-brand-muted">
                       Nenhuma prioridade conclusiva para o período. Clientes sem dados continuam visíveis na tabela.
                     </div>
                   )}
                 </div>
               </article>
 
-              <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
+              <article className="glass-card rounded-2xl p-5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Operação de hoje</p>
                 <h2 className="mt-1 text-xl font-black text-white">Visibilidade rápida do sistema</h2>
                 <div className="mt-4 grid grid-cols-2 gap-3">
@@ -602,26 +612,25 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </>
         )}
       </div>
-    </section>
+    </motion.section>
   );
 }
 
-function QuickMetric({
-  icon: Icon,
-  label,
-  value,
-  onClick,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string | number;
-  onClick: () => void;
-}) {
+function QuickMetric({ icon: Icon, label, value, onClick }: { icon: any; label: string; value: number | string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="rounded-xl border border-brand-line bg-brand-ink/50 p-4 text-left transition hover:border-brand-green/50 hover:bg-white/[0.03]">
-      <Icon size={17} className="text-brand-green" />
-      <p className="mt-3 text-xl font-black text-white">{value}</p>
-      <p className="mt-1 text-xs text-brand-muted">{label}</p>
-    </button>
+    <motion.button
+      whileHover={{ scale: 1.03, y: -2 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={onClick}
+      className="flex flex-col items-start gap-2 rounded-xl border border-white/[0.04] bg-brand-surface2/30 p-3 text-left transition hover:border-brand-green/30 hover:shadow-[0_0_15px_rgba(0,229,153,0.1)]"
+    >
+      <div className="flex w-full items-center justify-between">
+        <Icon size={16} className="text-brand-green drop-shadow-[0_0_4px_rgba(0,229,153,0.6)]" />
+      </div>
+      <div>
+        <p className="text-[11px] uppercase tracking-wider text-brand-muted">{label}</p>
+        <p className="mt-0.5 text-lg font-bold text-white drop-shadow-md">{value}</p>
+      </div>
+    </motion.button>
   );
 }
