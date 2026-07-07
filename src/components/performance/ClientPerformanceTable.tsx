@@ -15,6 +15,7 @@ import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { RefreshCw } from 'lucide-react';
+import { processClientStrategy } from '../../lib/strategy/strategyDecisionEngine';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -132,14 +133,14 @@ function MetricCell({ label, value, metric }: { label: string; value: string; me
 function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
   const labels: Record<GlobalClientPerformance['clientStatus'], string> = {
     not_connected:  'Conta não conectada',
-    never_synced:   'Nunca sincronizado',
+    never_synced:   'Não sincronizada',
     syncing:        'Sincronizando',
-    period_not_synced: 'Período não sincronizado',
+    period_not_synced: 'Sem dados no período',
     sync_without_metrics: 'Sync sem métricas',
     no_delivery:    'Sem entrega',
     available:      'Atualizado',
     stale:          'Desatualizado',
-    partial:        'Sincronização parcial',
+    partial:        'Dados incompletos',
     failed:         'Falha na sincronização',
   };
   return labels[status];
@@ -344,7 +345,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
       {/* ── Desktop ── */}
       <div data-testid="client-performance-desktop" className="hidden overflow-x-auto lg:block">
         <div className="min-w-[1360px] w-full text-left text-sm">
-          <div className="grid grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px] items-center border-b border-brand-line bg-brand-ink/60 text-[11px] font-bold uppercase tracking-wider text-brand-muted">
+          <div className="grid grid-cols-[260px_140px_140px_140px_160px_180px_140px] items-center border-b border-brand-line bg-brand-ink/60 text-[11px] font-bold uppercase tracking-wider text-brand-muted">
             <div className="px-4 py-3">Cliente / conta</div>
             <div className="px-4 py-3">Investimento</div>
             <div className="px-4 py-3">Pacing</div>
@@ -378,6 +379,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const groups            = account
                 ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
+              const decision = processClientStrategy(client, client.analysisProfile);
               const isExpanded = expanded === key;
 
               return (
@@ -394,7 +396,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                       onClick={() => account && setExpanded(isExpanded ? null : key)}
                       className={[
                         'group grid w-full min-w-[1360px]',
-                        'grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px]',
+                        'grid-cols-[260px_140px_140px_140px_160px_180px_140px]',
                         'items-center text-left transition-colors duration-100',
                         account ? 'hover:bg-white/[0.03]' : 'cursor-default',
                         rowStyle(performanceStatus),
@@ -426,7 +428,14 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         </TraceableMetricValue>
                       </div>
 
-                      {/* Coluna 3: Pacing — barra visual */}
+                      {/* Coluna 3: Orçamento */}
+                      <div className="px-4 py-4 font-bold text-white">
+                        {client.analysisProfile?.plannedBudget
+                          ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null)
+                          : <span className="text-brand-muted font-normal">—</span>}
+                      </div>
+
+                      {/* Coluna 4: Pacing */}
                       <div className="px-4 py-4">
                         {account?.budgetPacing
                           ? <PacingBar pct={account.budgetPacing.differencePercent} />
@@ -434,38 +443,15 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         }
                       </div>
 
-                      {/* Colunas 4–9: métricas */}
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue>
-                      </div>
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerConversation}>
-                          {formatCurrency(metricValue(costPerConversation), account?.currency || null)}
-                        </TraceableMetricValue>
-                      </div>
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue>
-                      </div>
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerLead}>
-                          {formatCurrency(metricValue(costPerLead), account?.currency || null)}
-                        </TraceableMetricValue>
-                      </div>
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue>
-                      </div>
-                      <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerPurchase}>
-                          {formatCurrency(metricValue(costPerPurchase), account?.currency || null)}
-                        </TraceableMetricValue>
-                      </div>
-
-                      {/* Coluna 10: Situação */}
+                      {/* Coluna 5: Estratégia */}
                       <div className="px-4 py-4">
-                        <PerformanceStatusBadge status={performanceStatus} />
+                        <p className="font-bold text-white capitalize">{decision.strategyType.replace('_', ' ')}</p>
+                        <div className="mt-1">
+                          <PerformanceStatusBadge status={decision.macroStatus === 'saudavel' ? 'on_track' : decision.macroStatus === 'atencao' ? 'attention' : decision.macroStatus === 'critico' ? 'critical' : 'unavailable'} />
+                        </div>
                       </div>
 
-                      {/* Coluna 11: Dados + hover CTA */}
+                      {/* Coluna 6: Qualidade dos Dados */}
                       <div className="px-4 py-4">
                         <p className="font-semibold text-white">{statusLabel(client.clientStatus)}</p>
                         <p className="mt-1 flex items-center gap-1 text-[10px] text-brand-muted">
@@ -474,18 +460,16 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                             ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
                             : 'Sem sync confiável'}
                         </p>
-                        {/* Botão fantasma — aparece no hover da linha */}
-                        {account && (client.clientStatus === 'failed' || client.clientStatus === 'period_not_synced') ? (
+                      </div>
+
+                      {/* Coluna 7: Ação */}
+                      <div className="px-4 py-4 flex flex-col items-start justify-center gap-2">
+                        {account && (client.clientStatus === 'failed' || client.clientStatus === 'period_not_synced') && (
                           <SyncAction account={account} period={period} />
-                        ) : account ? (
-                          <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
-                            Ver campanhas
-                          </span>
-                        ) : (
-                          <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
-                            Ver cliente
-                          </span>
                         )}
+                        <span className="hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
+                          {account ? 'Ver campanhas' : 'Ver cliente'}
+                        </span>
                       </div>
                     </button>
 

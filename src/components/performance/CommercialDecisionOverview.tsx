@@ -2,16 +2,8 @@ import { AlertTriangle, CheckCircle2, CircleDashed, Layers3, ChevronDown, Chevro
 import React, { useState } from 'react';
 import type { Client } from '../../types';
 import type { GlobalClientPerformance, MetricContract } from '../../lib/performance/globalPerformanceDashboard';
-import { 
-  analysisVerticals, 
-  metricLabels, 
-  operationTypes,
-  salesModels,
-  primaryChannels,
-  primaryConversionMetrics,
-  subsegmentsByVertical,
-  type ClientAnalysisProfile 
-} from '../../lib/analysis/clientAnalysisProfile';
+import { processClientStrategy } from '../../lib/strategy/strategyDecisionEngine';
+import type { ClientDecisionState, MacroStatus, DataStatus } from '../../lib/strategy/strategyDecisionEngine';
 
 function metricValue(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
@@ -26,76 +18,6 @@ function currency(value: number, code: string | null): string {
   }
 }
 
-export function effectiveClientProfile(client: GlobalClientPerformance): ClientAnalysisProfile | null {
-  return client.analysisProfile?.analysisEnabled ? client.analysisProfile : null;
-}
-
-export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
-  const reliableMetrics = ['spend', 'impressions', 'reach', 'purchases', 'messaging_conversations_started_total', 'leads'];
-  const hasReliableMetrics = reliableMetrics.some(m => client.metrics[m]?.available && typeof client.metrics[m]?.value === 'number' && (client.metrics[m]?.value as number) > 0);
-
-  if (
-    !hasReliableMetrics &&
-    (client.dataQuality.status === 'unavailable' ||
-    client.score.status === 'unavailable' ||
-    ['not_connected', 'never_synced', 'sync_without_metrics', 'no_delivery'].includes(client.clientStatus))
-  ) return 'no_data';
-  
-  if (client.score.status === 'critical' || client.evaluations.some((item) => item.status === 'critical')) return 'critical';
-  
-  if (
-    client.dataQuality.status === 'partial'
-    || ['partial', 'stale', 'syncing', 'failed', 'period_not_synced'].includes(client.clientStatus)
-    || client.score.status === 'attention'
-    || client.evaluations.some((item) => item.status === 'attention' || item.status === 'partial_data')
-  ) return 'attention';
-  
-  return 'healthy';
-}
-
-function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null, workspaceClient?: Client): string[] {
-  const reasons: string[] = [];
-  if (!client.analysisProfile) {
-    reasons.push('Sem perfil de análise');
-    reasons.push('Sem segmento');
-  } else if (!client.analysisProfile.analysisEnabled) {
-    reasons.push('Análise desativada');
-  }
-  
-  const vertical = profile?.vertical || workspaceClient?.category;
-  if (!vertical && client.analysisProfile) reasons.push('Sem segmento');
-  if (!profile?.subsegment && client.analysisProfile) reasons.push('Sem subsegmento');
-  if (!profile?.primaryConversionMetric) reasons.push('Sem conversão principal');
-  if (!profile?.plannedBudget) reasons.push('Sem orçamento planejado');
-  const reliableMetrics = ['spend', 'impressions', 'reach', 'purchases', 'messaging_conversations_started_total', 'leads'];
-  const hasReliableMetrics = reliableMetrics.some(m => client.metrics[m]?.available && typeof client.metrics[m]?.value === 'number' && (client.metrics[m]?.value as number) > 0);
-
-  if (client.clientStatus === 'not_connected' || client.accounts.length === 0) reasons.push('Sem conta Meta');
-  if (client.resolvedTargets.length === 0) reasons.push('Sem metas');
-  if (client.clientStatus === 'never_synced') reasons.push('Nunca sincronizado');
-  
-  if (client.clientStatus === 'period_not_synced') {
-    reasons.push('Período atual não sincronizado');
-  }
-  
-  if (client.clientStatus === 'sync_without_metrics') {
-    reasons.push('Sync executado, mas sem métricas normalizadas');
-  }
-  
-  if (client.clientStatus === 'partial') reasons.push('Sincronização parcial');
-  
-  if (client.clientStatus === 'failed') {
-    if (hasReliableMetrics) {
-      reasons.push('Falha recente na sincronização, usando último dado confiável');
-    } else {
-      reasons.push('Falha de sincronização');
-    }
-  }
-  
-  if (client.evaluations.some((evaluation) => evaluation.status === 'insufficient_data')) reasons.push('Dados insuficientes');
-  return Array.from(new Set(reasons));
-}
-
 interface ClientAction {
   priority: number;
   title: string;
@@ -104,50 +26,58 @@ interface ClientAction {
   clientName: string;
 }
 
-function getClientAction(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null, workspaceClient?: Client): ClientAction {
-  const reasons = pendingReasons(client, profile, workspaceClient);
-  if (reasons.length > 0) {
-    return { priority: 1, title: 'Configuração pendente', description: reasons.join('. '), clientId: client.clientId, clientName: client.clientName };
+function getActionForDecision(decision: ClientDecisionState, clientName: string): ClientAction {
+  if (decision.decisionSignals.length > 0) {
+    const sorted = [...decision.decisionSignals].sort((a, b) => {
+      const p = { critical: 1, attention: 2, info: 3 };
+      return p[a.severity] - p[b.severity];
+    });
+    const top = sorted[0];
+    return {
+      priority: top.severity === 'critical' ? 1 : top.severity === 'attention' ? 2 : 3,
+      title: top.title,
+      description: top.description,
+      clientId: decision.clientId,
+      clientName
+    };
   }
   
-  if (client.dataQuality.status === 'unavailable' || client.evaluations.some(e => e.status === 'insufficient_data')) {
-    return { priority: 2, title: 'Sem dados / rastreamento incompleto', description: 'Verificar rastreamento, pixel, eventos ou integração antes de tomar decisão.', clientId: client.clientId, clientName: client.clientName };
+  if (decision.macroStatus === 'saudavel') {
+    return {
+      priority: 8,
+      title: 'Saudável',
+      description: 'Estratégia operando dentro das metas esperadas.',
+      clientId: decision.clientId,
+      clientName
+    };
   }
 
-  if (client.score.status === 'critical') {
-    return { priority: 3, title: 'Crítico', description: 'Performance significativamente abaixo da meta.', clientId: client.clientId, clientName: client.clientName };
-  }
-
-  let hasLowSpend = false;
-  let hasHighSpendLowConv = false;
-  let hasHighBalance = false;
-  
-  const pacing = client.budgetPacing;
-  if (pacing) {
-     const spentRatio = pacing.actualSpend / (pacing.expectedSpendUntilNow || 1);
-     if (spentRatio < 0.6) hasLowSpend = true;
-     else if (spentRatio > 1.2 && client.score.status !== 'healthy') hasHighSpendLowConv = true;
-     
-     const targetBudget = profile?.plannedBudget || 0;
-     const balance = targetBudget ? targetBudget - pacing.actualSpend : 0;
-     if (balance > 0 && pacing.projectedMonthlySpend < targetBudget * 0.7) hasHighBalance = true;
-  }
-
-  if (hasLowSpend) return { priority: 4, title: 'Baixo consumo', description: 'Revisar orçamento, público, limite de gasto ou estratégia da campanha.', clientId: client.clientId, clientName: client.clientName };
-  if (hasHighSpendLowConv) return { priority: 5, title: 'Consumo alto com baixa conversão', description: 'Revisar oferta e criativo.', clientId: client.clientId, clientName: client.clientName };
-  if (hasHighBalance) return { priority: 6, title: 'Saldo alto', description: 'Orçamento com risco de não ser entregue totalmente.', clientId: client.clientId, clientName: client.clientName };
-
-  if (client.score.status === 'attention') return { priority: 7, title: 'Atenção', description: 'Acompanhar métricas de perto, pequenas oscilações de performance.', clientId: client.clientId, clientName: client.clientName };
-
-  return { priority: 8, title: 'Saudável', description: 'Operação dentro do esperado.', clientId: client.clientId, clientName: client.clientName };
+  return {
+    priority: 9,
+    title: 'Monitoramento',
+    description: 'Acompanhamento de rotina.',
+    clientId: decision.clientId,
+    clientName
+  };
 }
 
-export type ViewMode = 'vertical' | 'subsegment' | 'primaryChannel' | 'salesModel' | 'primaryConversionMetric' | 'status';
+export function effectiveClientProfile(client: GlobalClientPerformance) {
+  return client.analysisProfile?.analysisEnabled ? client.analysisProfile : null;
+}
 
-export interface CommercialSummary {
+export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'attention' | 'critical' | 'no_data' {
+  const decision = processClientStrategy(client, client.analysisProfile || null);
+  if (decision.macroStatus === 'saudavel') return 'healthy';
+  if (decision.macroStatus === 'atencao') return 'attention';
+  if (decision.macroStatus === 'critico') return 'critical';
+  return 'no_data';
+}
+
+export type ViewMode = 'strategyType' | 'macroStatus' | 'dataStatus';
+
+export interface StrategySummary {
   key: string;
   label: string;
-  subsegments: Set<string>;
   clients: GlobalClientPerformance[];
   actions: ClientAction[];
   plannedBudgetByCurrency: Map<string, number>;
@@ -159,14 +89,13 @@ export interface CommercialSummary {
   critical: number;
   noData: number;
   pendingActions: number;
-  primaryMetrics: Set<string>;
+  strategyTypes: Set<string>;
 }
 
-function emptyCommercialSummary(key: string, label: string): CommercialSummary {
+function emptyStrategySummary(key: string, label: string): StrategySummary {
   return {
     key,
     label,
-    subsegments: new Set<string>(),
     clients: [],
     actions: [],
     plannedBudgetByCurrency: new Map<string, number>(),
@@ -178,97 +107,94 @@ function emptyCommercialSummary(key: string, label: string): CommercialSummary {
     critical: 0,
     noData: 0,
     pendingActions: 0,
-    primaryMetrics: new Set<string>(),
+    strategyTypes: new Set<string>(),
   };
 }
 
-function findLabel(arr: { value: string; label: string }[], value: string, custom?: string | null): string {
-  if (value === 'outros' && custom) return custom;
-  const found = arr.find(item => item.value === value);
-  return found ? found.label : value;
-}
+const strategyTypeLabels: Record<string, string> = {
+  venda_site: 'Venda no Site',
+  leads_whatsapp: 'Leads no WhatsApp',
+  leads_formulario: 'Leads em Formulário',
+  distribuicao_conteudo: 'Distribuição de Conteúdo',
+  desconhecida: 'Não Definida'
+};
 
-export function buildCommercialSummaries(
+const macroStatusLabels: Record<MacroStatus, string> = {
+  sem_dados: 'Sem Dados',
+  indisponivel: 'Indisponível',
+  atencao: 'Atenção',
+  critico: 'Crítico',
+  saudavel: 'Saudável'
+};
+
+const dataStatusLabels: Record<DataStatus, string> = {
+  sem_conta: 'Sem Conta Conectada',
+  sem_sync: 'Sem Sincronização',
+  periodo_nao_sincronizado: 'Período não sincronizado',
+  sync_com_falha_recente: 'Falha recente no Sync',
+  dados_parciais: 'Dados Parciais/Atrasados',
+  dados_disponiveis: 'Dados Disponíveis'
+};
+
+export function buildStrategySummaries(
   clients: GlobalClientPerformance[],
   workspaceClients: Client[],
   viewMode: ViewMode
-): { summaries: CommercialSummary[]; pending: GlobalClientPerformance[]; pendingByClient: Map<string, string[]> } {
-  const groups = new Map<string, CommercialSummary>();
+): { summaries: StrategySummary[]; pending: GlobalClientPerformance[]; pendingByClient: Map<string, string[]> } {
+  const groups = new Map<string, StrategySummary>();
   const pending: GlobalClientPerformance[] = [];
   const pendingByClient = new Map<string, string[]>();
 
   const getOrCreateGroup = (key: string, label: string) => {
-    if (!groups.has(key)) groups.set(key, emptyCommercialSummary(key, label));
+    if (!groups.has(key)) groups.set(key, emptyStrategySummary(key, label));
     return groups.get(key)!;
   };
 
   for (const client of clients) {
-    const profile = effectiveClientProfile(client);
-    const workspaceClient = workspaceClients.find((w) => w.id === client.clientId);
-    const reasons = pendingReasons(client, profile, workspaceClient);
-    const action = getClientAction(client, profile, workspaceClient);
-    
-    if (viewMode !== 'status' && reasons.length > 0) {
+    const decision = processClientStrategy(client, client.analysisProfile || null);
+    const action = getActionForDecision(decision, client.clientName);
+
+    const isPending = decision.macroStatus === 'sem_dados' || decision.macroStatus === 'indisponivel';
+    if (viewMode !== 'macroStatus' && isPending) {
       pending.push(client);
-      pendingByClient.set(client.clientId, reasons);
+      pendingByClient.set(client.clientId, decision.decisionSignals.map(s => s.title));
     }
-    
-    const vertical = profile?.vertical || workspaceClient?.category;
-    if (viewMode !== 'status' && (!profile || !vertical || !profile.subsegment || !profile.primaryConversionMetric || !profile.plannedBudget)) {
+
+    if (viewMode !== 'macroStatus' && isPending) {
       continue;
     }
 
     const mapKeys: { key: string; label: string }[] = [];
 
-    if (viewMode === 'vertical') {
-      const v = profile?.vertical ?? 'outros';
-      mapKeys.push({ key: v, label: findLabel(analysisVerticals, v, profile?.customVertical) });
-    } else if (viewMode === 'subsegment') {
-      const s = profile?.subsegment ?? 'outros';
-      // Find subsegment array for vertical
-      const subArr = subsegmentsByVertical[profile?.vertical ?? 'outros'] || [];
-      mapKeys.push({ key: s, label: findLabel(subArr, s, profile?.customSubsegment) });
-    } else if (viewMode === 'primaryChannel') {
-      const ch = profile?.primaryChannel ?? 'whatsapp';
-      mapKeys.push({ key: ch, label: findLabel(primaryChannels, ch) });
-    } else if (viewMode === 'salesModel') {
-      const models = profile?.salesModels ?? [];
-      if (models.length === 0) {
-        mapKeys.push({ key: 'sem_modelo', label: 'Sem modelo de venda' });
-      } else {
-        for (const m of models) {
-          mapKeys.push({ key: m, label: findLabel(salesModels, m) });
-        }
-      }
-    } else if (viewMode === 'primaryConversionMetric') {
-      const metric = profile?.primaryConversionMetric ?? 'conversa_iniciada';
-      mapKeys.push({ key: metric, label: findLabel(primaryConversionMetrics, metric) });
-    } else if (viewMode === 'status') {
-      mapKeys.push({ key: action.title, label: action.title });
+    if (viewMode === 'strategyType') {
+      const k = decision.strategyType;
+      mapKeys.push({ key: k, label: strategyTypeLabels[k] || k });
+    } else if (viewMode === 'macroStatus') {
+      const k = decision.macroStatus;
+      mapKeys.push({ key: k, label: macroStatusLabels[k] || k });
+    } else if (viewMode === 'dataStatus') {
+      const k = decision.dataStatus;
+      mapKeys.push({ key: k, label: dataStatusLabels[k] || k });
     }
 
     for (const { key, label } of mapKeys) {
       const summary = getOrCreateGroup(key, label);
       summary.clients.push(client);
       summary.actions.push(action);
-      
-      if (profile) {
-        const subArr = subsegmentsByVertical[profile.vertical] || [];
-        summary.subsegments.add(findLabel(subArr, profile.subsegment, profile.customSubsegment));
-        summary.primaryMetrics.add(profile.primaryConversionMetric);
-        
-        const accountCurrencies = new Set(client.accounts.map((account) => account.currency || 'SEM_MOEDA'));
-        const budgetCurrency = accountCurrencies.size === 1 ? Array.from(accountCurrencies)[0] : 'SEM_MOEDA';
+      summary.strategyTypes.add(strategyTypeLabels[decision.strategyType] || decision.strategyType);
+
+      if (client.analysisProfile) {
+        const budgetCurrency = client.accounts[0]?.currency || 'BRL'; // Defaulting
         summary.plannedBudgetByCurrency.set(
           budgetCurrency,
-          (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + (profile.plannedBudget ?? 0)
+          (summary.plannedBudgetByCurrency.get(budgetCurrency) || 0) + (client.analysisProfile.plannedBudget ?? 0)
         );
       }
       
       for (const account of client.accounts) {
         const spend = metricValue(account.metrics.spend);
         if (spend === null) continue;
-        const currencyKey = account.currency || 'SEM_MOEDA';
+        const currencyKey = account.currency || 'BRL';
         summary.spendByCurrency.set(currencyKey, (summary.spendByCurrency.get(currencyKey) || 0) + spend);
         if (account.budgetPacing) {
           summary.expectedSpendByCurrency.set(currencyKey, (summary.expectedSpendByCurrency.get(currencyKey) || 0) + account.budgetPacing.expectedSpendUntilNow);
@@ -276,12 +202,11 @@ export function buildCommercialSummaries(
         }
       }
       
-      const severity = clientSeverity(client);
-      if (severity === 'healthy') summary.healthy += 1;
-      if (severity === 'attention') summary.attention += 1;
-      if (severity === 'critical') summary.critical += 1;
-      if (severity === 'no_data') summary.noData += 1;
-      summary.pendingActions += client.score.signals.filter((signal) => ['critical', 'warning'].includes(signal.severity)).length;
+      if (decision.macroStatus === 'saudavel') summary.healthy += 1;
+      if (decision.macroStatus === 'atencao') summary.attention += 1;
+      if (decision.macroStatus === 'critico') summary.critical += 1;
+      if (decision.macroStatus === 'sem_dados' || decision.macroStatus === 'indisponivel') summary.noData += 1;
+      summary.pendingActions += decision.decisionSignals.filter(s => s.severity !== 'info').length;
     }
   }
 
@@ -309,15 +234,14 @@ export function CommercialDecisionOverview({
   onSelectSegment: (segment: string) => void;
   onSelectSubsegment: (subsegment: string) => void;
 }) {
-  const [viewMode, setViewMode] = useState<ViewMode>('vertical');
+  const [viewMode, setViewMode] = useState<ViewMode>('strategyType');
   
-  const { summaries, pending, pendingByClient } = buildCommercialSummaries(clients, workspaceClients, viewMode);
+  const { summaries, pending, pendingByClient } = buildStrategySummaries(clients, workspaceClients, viewMode);
   const selectedSummary = summaries.find((summary) => summary.key === selectedSegment);
   
-  // Total active counts calculation
   let activeCount = 0;
   if (selectedSegment === 'all') {
-    activeCount = viewMode === 'salesModel' ? summaries.reduce((acc, curr) => acc + curr.clients.length, 0) : clients.length - (viewMode === 'status' ? 0 : pending.length);
+    activeCount = clients.length - (viewMode === 'macroStatus' ? 0 : pending.length);
   } else if (selectedSegment === '__pending__') {
     activeCount = pending.length;
   } else if (selectedSummary) {
@@ -339,20 +263,17 @@ export function CommercialDecisionOverview({
     <section className="rounded-2xl border border-brand-line bg-brand-surface p-4 lg:p-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central de Decisão Comercial</p>
-          <h2 className="mt-1 text-xl font-black text-white">O que eu esperava, o que aconteceu e onde agir primeiro</h2>
-          <p className="mt-1 text-sm text-brand-muted">Visão modular focada em direcionar ações comerciais e corrigir ofensores operacionais.</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central de Decisão Estratégica</p>
+          <h2 className="mt-1 text-xl font-black text-white">Estratégias, Alertas e Decisões</h2>
+          <p className="mt-1 text-sm text-brand-muted">Visão modular focada em corrigir desvios da estratégia operacional e da meta do cliente.</p>
         </div>
         <p className="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-brand-soft">{activeCount} cliente(s) no recorte</p>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 border-b border-brand-line pb-4">
-        <ViewModeTab mode="vertical" label="Por segmento" current={viewMode} onChange={handleViewModeChange} />
-        <ViewModeTab mode="subsegment" label="Por subsegmento" current={viewMode} onChange={handleViewModeChange} />
-        <ViewModeTab mode="primaryChannel" label="Por canal principal" current={viewMode} onChange={handleViewModeChange} />
-        <ViewModeTab mode="salesModel" label="Por modelo de venda" current={viewMode} onChange={handleViewModeChange} />
-        <ViewModeTab mode="primaryConversionMetric" label="Por conversão" current={viewMode} onChange={handleViewModeChange} />
-        <ViewModeTab mode="status" label="Por status" current={viewMode} onChange={handleViewModeChange} />
+        <ViewModeTab mode="strategyType" label="Por Estratégia" current={viewMode} onChange={handleViewModeChange} />
+        <ViewModeTab mode="macroStatus" label="Por Status de Performance" current={viewMode} onChange={handleViewModeChange} />
+        <ViewModeTab mode="dataStatus" label="Por Qualidade de Dados" current={viewMode} onChange={handleViewModeChange} />
       </div>
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -360,17 +281,10 @@ export function CommercialDecisionOverview({
         {summaries.map((summary) => (
           <button data-testid={`segment-filter-${summary.key}`} aria-pressed={selectedSegment === summary.key} key={summary.key} type="button" onClick={() => selectSegment(summary.key)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === summary.key ? 'bg-brand-green text-brand-ink' : 'border border-brand-line text-brand-soft'}`}>{summary.label}</button>
         ))}
-        {viewMode !== 'status' && (
-          <button data-testid="segment-filter-pending" aria-pressed={selectedSegment === '__pending__'} type="button" onClick={() => selectSegment('__pending__')} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === '__pending__' ? 'bg-amber-300 text-brand-ink' : 'border border-amber-300/40 text-amber-100'}`}>Configurações pendentes ({pending.length})</button>
+        {viewMode !== 'macroStatus' && (
+          <button data-testid="segment-filter-pending" aria-pressed={selectedSegment === '__pending__'} type="button" onClick={() => selectSegment('__pending__')} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black ${selectedSegment === '__pending__' ? 'bg-amber-300 text-brand-ink' : 'border border-amber-300/40 text-amber-100'}`}>Configurações / Dados Pendentes ({pending.length})</button>
         )}
       </div>
-
-      {viewMode === 'salesModel' && (
-        <div className="mt-3 text-xs text-brand-soft flex items-center gap-2">
-          <CircleDashed size={14} className="text-brand-green" />
-          Nesta visualização, um mesmo cliente pode aparecer em mais de um modelo de venda.
-        </div>
-      )}
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(selectedSegment === 'all' ? summaries : summaries.filter(s => s.key === selectedSegment)).map((summary) => (
@@ -378,10 +292,10 @@ export function CommercialDecisionOverview({
         ))}
       </div>
 
-      {pending.length > 0 && (selectedSegment === 'all' || selectedSegment === '__pending__') && viewMode !== 'status' && (
+      {pending.length > 0 && (selectedSegment === 'all' || selectedSegment === '__pending__') && viewMode !== 'macroStatus' && (
         <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-300/10 p-4">
-          <p className="font-black text-amber-100">Configurações pendentes</p>
-          <p className="mt-1 text-sm text-amber-100/80">Esses clientes não entram na leitura principal até terem dados obrigatórios preenchidos.</p>
+          <p className="font-black text-amber-100">Contas Indisponíveis ou Sem Dados</p>
+          <p className="mt-1 text-sm text-amber-100/80">Esses clientes não entram na leitura principal devido a falta de perfil estratégico ou dados inacessíveis.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {pending.map((client) => <span key={client.clientId} title={(pendingByClient.get(client.clientId) || []).join(' · ')} className="rounded-lg bg-black/20 px-3 py-2 text-xs font-bold text-amber-50">{client.clientName}<span className="mt-1 block font-normal text-amber-100/70">{(pendingByClient.get(client.clientId) || []).join(' · ')}</span></span>)}
           </div>
@@ -404,14 +318,8 @@ function ViewModeTab({ mode, label, current, onChange }: { mode: ViewMode; label
   );
 }
 
-function CommercialCard({ summary }: { summary: CommercialSummary }) {
+function CommercialCard({ summary }: { summary: StrategySummary }) {
   const [expanded, setExpanded] = useState(false);
-  
-  const mainMetric = summary.primaryMetrics.size === 0
-    ? 'Sem KPI'
-    : summary.primaryMetrics.size === 1
-      ? metricLabels[Array.from(summary.primaryMetrics)[0]] || findLabel(primaryConversionMetrics, Array.from(summary.primaryMetrics)[0])
-      : 'Múltiplos KPIs';
       
   const topAction = summary.actions.sort((a, b) => a.priority - b.priority)[0];
 
@@ -424,13 +332,13 @@ function CommercialCard({ summary }: { summary: CommercialSummary }) {
         </div>
         <Layers3 className="text-brand-green" size={18} />
       </div>
-      <p className="mt-2 text-xs text-brand-muted">{Array.from(summary.subsegments).join(' · ')}</p>
+      <p className="mt-2 text-xs text-brand-muted">{Array.from(summary.strategyTypes).join(' · ')}</p>
       
       <div className="flex-1">
         <FinancialBreakdown summary={summary} />
         
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          <Metric label="KPI dominante" value={mainMetric} />
+          <Metric label="Estratégias Únicas" value={String(summary.strategyTypes.size)} />
           <Metric label="Sem dados" value={String(summary.noData)} />
         </div>
         
@@ -466,14 +374,16 @@ function CommercialCard({ summary }: { summary: CommercialSummary }) {
   );
 }
 
-function FinancialBreakdown({ summary }: { summary: CommercialSummary }) {
+function FinancialBreakdown({ summary }: { summary: StrategySummary }) {
   const currencies = Array.from(new Set([
     ...summary.plannedBudgetByCurrency.keys(),
     ...summary.spendByCurrency.keys(),
     ...summary.expectedSpendByCurrency.keys(),
     ...summary.projectedSpendByCurrency.keys(),
   ])).sort();
+  
   if (currencies.length === 0) return <div className="mt-4 rounded-lg bg-black/20 p-3 text-xs text-brand-muted">Sem valores financeiros.</div>;
+  
   return (
     <div className="mt-4 space-y-2">
       {currencies.map((currencyCode) => {
@@ -486,7 +396,7 @@ function FinancialBreakdown({ summary }: { summary: CommercialSummary }) {
         const consumed = planned && spent !== null ? spent / planned * 100 : null;
         return (
           <div key={currencyCode} className="rounded-lg border border-brand-line/70 bg-black/20 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-green">{code || 'Moeda não informada'}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-green">{code || 'BRL'}</p>
             <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <FinancialValue label="Planejado" value={planned === null ? '—' : currency(planned, code)} />
               <FinancialValue label="Realizado" value={spent === null ? '—' : currency(spent, code)} />

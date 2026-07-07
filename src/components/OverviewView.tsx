@@ -26,7 +26,7 @@ import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performanc
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
-import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
+import { CommercialDecisionOverview, buildStrategySummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
@@ -298,12 +298,12 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
-    const { summaries, pending } = buildCommercialSummaries(clients, data.clients, 'vertical');
+    const { summaries, pending } = buildStrategySummaries(clients, data.clients, 'strategyType');
     const selectedSummary = summaries.find((summary) => summary.key === segmentFilter);
     const segmentClientIds = segmentFilter === 'all'
       ? null
       : segmentFilter === '__pending__'
-        ? new Set(pending.map((client) => client.clientId))
+        ? new Set(pending.map((client: any) => client.clientId))
         : subsegmentFilter !== 'all'
           ? new Set((selectedSummary?.clients || []).filter(c => effectiveClientProfile(c)?.subsegment === subsegmentFilter).map((client) => client.clientId))
           : new Set((selectedSummary?.clients || []).map((client) => client.clientId));
