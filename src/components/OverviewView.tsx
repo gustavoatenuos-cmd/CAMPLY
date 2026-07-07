@@ -32,7 +32,7 @@ import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
-import { syncMetaAsset } from '../lib/meta/metaSyncService';
+
 
 interface OverviewViewProps {
   data: CamplyData;
@@ -264,7 +264,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const capabilities = capabilityState?.mode === 'analytics' ? capabilityState.capabilities : null;
 
-  const autoSyncInFlight = useRef(false);
+
 
   const loadDashboard = useCallback(async () => {
     if (!capabilities) return;

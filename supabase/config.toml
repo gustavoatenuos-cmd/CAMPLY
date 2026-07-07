@@ -33,3 +33,10 @@ verify_jwt = true
 [functions.meta-validate-token]
 verify_jwt = true
 
+ 
+[functions.meta-sync-performance]
+verify_jwt = true
+
+[functions.analytics-dashboard]
+verify_jwt = true
+

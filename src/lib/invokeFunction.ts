@@ -25,6 +25,13 @@ function envelopeMessage(payload: unknown): string | null {
   return typeof message === 'string' && message.trim() ? message : null;
 }
 
+export class InvokeError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'InvokeError';
+  }
+}
+
 export async function invokeFunction<T>(
   name: string,
   body?: Record<string, unknown>,
@@ -75,13 +82,13 @@ export async function invokeFunction<T>(
   }
 
   if (!response.ok) {
-    throw new Error(envelopeMessage(data) || `Falha ao executar ${name}.`);
+    throw new InvokeError(envelopeMessage(data) || `Falha ao executar ${name}.`, response.status);
   }
   if (!data) {
     throw new Error(`A função ${name} não retornou dados.`);
   }
   if (data.isError || data.error) {
-    throw new Error(envelopeMessage(data) || `Falha ao executar ${name}.`);
+    throw new InvokeError(envelopeMessage(data) || `Falha ao executar ${name}.`, response.status);
   }
 
   return data as T;

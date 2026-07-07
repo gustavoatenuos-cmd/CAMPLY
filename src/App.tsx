@@ -275,25 +275,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
-    let active = true;
-
-    setClaudeLoading(true);
-    const timeout = window.setTimeout(() => {
-      void generateAgentSummary(data).then((result) => {
-        if (!active) return;
-        if (result) {
-          setClaudeSummary(result.summary_text);
-        }
-        setClaudeLoading(false);
-      }).catch(() => {
-        if (active) setClaudeLoading(false);
-      });
-    }, 1_000);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timeout);
-    };
+    // Removed automatic Claude API call on load to prevent 500 errors and avoid critical dependency
   }, [authenticated, data, remoteLoaded]);
 
   const insights = useMemo(() => buildInsights(data), [data]);

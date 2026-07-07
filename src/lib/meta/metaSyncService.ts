@@ -1,6 +1,6 @@
 import type { Campaign, Client } from '../../types';
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
-import { invokeFunction } from '../invokeFunction';
+import { invokeFunction, InvokeError } from '../invokeFunction';
 import { isMetaE2EMode, metaE2EState, persistMetaE2EState } from './metaE2ERuntime';
 import type { MetaSyncResponse } from './metaSyncTypes';
 
@@ -66,24 +66,36 @@ async function syncOperationalMetaAsset(
     };
   }
 
-  const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
-    metaAssetId: input.metaAssetId,
-    periods: [input.period],
-    requestedLevel: input.requestedLevel || 'campaign',
-    selectedEntityIds: {
-      campaign_ids: input.campaignIds || [],
-      adset_ids: input.adsetIds || [],
-      ad_ids: input.adIds || [],
-      creative_ids: input.creativeIds || [],
-    },
-  }, input.requestedLevel === 'creative' ? 120_000 : 90_000);
+  try {
+    const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
+      metaAssetId: input.metaAssetId,
+      periods: [input.period],
+      requestedLevel: input.requestedLevel || 'campaign',
+      selectedEntityIds: {
+        campaign_ids: input.campaignIds || [],
+        adset_ids: input.adsetIds || [],
+        ad_ids: input.adIds || [],
+        creative_ids: input.creativeIds || [],
+      },
+    }, input.requestedLevel === 'creative' ? 120_000 : 90_000);
 
-  return {
-    success: response.success,
-    status: response.status,
-    runId: response.runId,
-    message: response.message,
-  };
+    return {
+      success: response.success,
+      status: response.status,
+      runId: response.runId,
+      message: response.message,
+    };
+  } catch (err) {
+    if (err instanceof InvokeError && err.status === 409) {
+      return {
+        success: true, // Not a fatal error, just already running
+        status: 'running',
+        runId: null,
+        message: 'Sincronização já em andamento',
+      };
+    }
+    throw err;
+  }
 }
 
 export async function syncClientMeta(
@@ -96,25 +108,42 @@ export async function syncClientMeta(
     throw new Error('A sincronização exige metaAssetId ou adAccountId');
   }
 
-  const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
-    metaAssetId: options.metaAssetId,
-    adAccountId: options.adAccountId,
-    periods: options.periods,
-    requestedLevel: options.requestedLevel,
-    selectedCampaigns: options.selectedCampaigns,
-    selectedAdSets: options.selectedAdSets,
-    selectedAds: options.selectedAds,
-    selectedCreatives: options.selectedCreatives,
-  }, options.requestedLevel === 'creative' ? 120_000 : 90_000);
+  try {
+    const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
+      metaAssetId: options.metaAssetId,
+      adAccountId: options.adAccountId,
+      periods: options.periods,
+      requestedLevel: options.requestedLevel,
+      selectedCampaigns: options.selectedCampaigns,
+      selectedAdSets: options.selectedAdSets,
+      selectedAds: options.selectedAds,
+      selectedCreatives: options.selectedCreatives,
+    }, options.requestedLevel === 'creative' ? 120_000 : 90_000);
 
-  if (!response.runId || !Array.isArray(response.campaigns)) {
-    throw new Error('Meta sync returned an invalid response contract');
-  }
-  if (!['success', 'partial', 'failed'].includes(response.status)) {
-    throw new Error('Meta sync returned an unknown status');
-  }
+    if (!response.runId || !Array.isArray(response.campaigns)) {
+      throw new Error('Meta sync returned an invalid response contract');
+    }
+    if (!['success', 'partial', 'failed'].includes(response.status)) {
+      throw new Error('Meta sync returned an unknown status');
+    }
 
-  return response;
+    return response;
+  } catch (err) {
+    if (err instanceof InvokeError && err.status === 409) {
+      return {
+        success: true,
+        status: 'partial',
+        runId: 'already-running',
+        message: 'Sincronização já em andamento',
+        campaigns: [],
+        completenessByPeriod: {},
+        failedAdsetIds: [],
+        timezone: 'America/Sao_Paulo',
+        currency: 'BRL',
+      };
+    }
+    throw err;
+  }
 }
 
 export function syncMetaAsset(input: OperationalMetaSyncInput): Promise<OperationalMetaSyncResult>;

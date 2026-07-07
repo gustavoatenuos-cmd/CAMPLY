@@ -157,7 +157,7 @@ function SyncAction({ account, period }: { account: GlobalPerformanceAccount, pe
     if (syncing) return;
     setSyncing(true);
     try {
-      const result = await syncMetaAsset({ metaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' });
+      const result = await syncMetaAsset({ metaAssetId: account.metaAssetId, period, requestedLevel: 'campaign' });
       if (!result.success) {
         alert('Erro ao sincronizar: ' + (result.message || 'Erro desconhecido'));
       } else {
