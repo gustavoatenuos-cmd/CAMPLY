@@ -9,8 +9,6 @@ export async function withDirectPostgres<T>(
 
   const sql = postgres(dbUrl, {
     max: 1,
-    idle_timeout: 1,
-    connect_timeout: connectTimeoutSeconds,
     prepare: false,
   })
 
