@@ -46,6 +46,7 @@ const periodLabels: Record<DashboardPeriod, string> = {
   today: 'Hoje',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
+  last_90d: 'Últimos 90 dias',
 };
 
 const evaluationSeverity: Record<PerformanceStatus, number> = {
