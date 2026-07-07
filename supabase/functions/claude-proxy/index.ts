@@ -3,7 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, HttpError, requireAuthenticatedUser } from '../_shared/auth.ts'
 
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'claude-3-5-sonnet-20240620';
 
 type ClaudeProxyMode = 'operational_summary' | 'chat_command';
 
