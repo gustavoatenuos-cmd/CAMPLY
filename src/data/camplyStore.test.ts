@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   createActivityLog,
   inferProjectPaymentStatus,
+  initialData,
   makeId,
+  MAX_ACTIVITY_LOGS,
+  MAX_AGENT_ALERTS,
+  MAX_AGENT_LOGS,
   normalizeData,
+  sanitizeWorkspaceData,
   setActivityActor,
 } from './camplyStore';
 
@@ -14,6 +19,33 @@ describe('normalizeData', () => {
     expect(normalized.agentRules).toEqual([]);
     expect(normalized.agentAlerts).toEqual([]);
     expect(normalized.agentLogs).toEqual([]);
+  });
+});
+
+describe('history caps', () => {
+  const oversized = {
+    ...initialData,
+    activityLogs: Array.from({ length: MAX_ACTIVITY_LOGS + 200 }, (_, i) => ({ id: `log-${i}` })),
+    agentAlerts: Array.from({ length: MAX_AGENT_ALERTS + 200 }, (_, i) => ({ id: `alert-${i}` })),
+    agentLogs: Array.from({ length: MAX_AGENT_LOGS + 200 }, (_, i) => ({ id: `agentlog-${i}` })),
+  } as never;
+
+  it('caps unbounded history on load, keeping the newest entries', () => {
+    const normalized = normalizeData(oversized);
+
+    expect(normalized.activityLogs).toHaveLength(MAX_ACTIVITY_LOGS);
+    expect(normalized.agentAlerts).toHaveLength(MAX_AGENT_ALERTS);
+    expect(normalized.agentLogs).toHaveLength(MAX_AGENT_LOGS);
+    // Listas são newest-first: o corte descarta o fim (mais antigo).
+    expect(normalized.activityLogs[0].id).toBe('log-0');
+  });
+
+  it('caps unbounded history before saving the workspace blob', () => {
+    const sanitized = sanitizeWorkspaceData(oversized);
+
+    expect(sanitized.activityLogs).toHaveLength(MAX_ACTIVITY_LOGS);
+    expect(sanitized.agentAlerts).toHaveLength(MAX_AGENT_ALERTS);
+    expect(sanitized.agentLogs).toHaveLength(MAX_AGENT_LOGS);
   });
 });
 

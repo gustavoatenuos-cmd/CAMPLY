@@ -54,8 +54,23 @@ const stripMetaAnalyticsFromCampaign = ({
   ...campaign
 }: Campaign): Campaign => campaign;
 
+// Tetos de histórico: o workspace inteiro vive num único JSONB no Supabase.
+// Sem limite, activityLogs/agentAlerts/agentLogs crescem para sempre, o blob
+// chega a megabytes e o carregamento passa a estourar o gateway (504).
+// As listas são newest-first, então o corte preserva os registros recentes.
+export const MAX_ACTIVITY_LOGS = 500;
+export const MAX_AGENT_ALERTS = 300;
+export const MAX_AGENT_LOGS = 500;
+
+const capHistory = (data: CamplyData): CamplyData => ({
+  ...data,
+  activityLogs: (data.activityLogs ?? []).slice(0, MAX_ACTIVITY_LOGS),
+  agentAlerts: (data.agentAlerts ?? []).slice(0, MAX_AGENT_ALERTS),
+  agentLogs: (data.agentLogs ?? []).slice(0, MAX_AGENT_LOGS),
+});
+
 export const normalizeData = (data: Partial<CamplyData>): CamplyData => {
-  const parsed = { ...initialData, ...data } as CamplyData;
+  const parsed = capHistory({ ...initialData, ...data } as CamplyData);
 
   return {
     ...parsed,
@@ -110,7 +125,7 @@ export const inferProjectPaymentStatus = (amountCharged: number, amountReceived:
   return 'pending';
 };
 
-export const sanitizeWorkspaceData = (data: CamplyData): CamplyData => ({
+export const sanitizeWorkspaceData = (data: CamplyData): CamplyData => capHistory({
   ...data,
   clients: data.clients.map(({ metaAdAccountId: _legacyId, metaAdAccountName: _legacyName, ...client }) => client),
   campaigns: data.campaigns
