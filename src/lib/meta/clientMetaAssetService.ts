@@ -183,9 +183,15 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     writeCachedCatalog(clientId, catalog);
     return catalog;
   } catch (rpcError) {
-    const cached = readCachedCatalog(clientId);
-    if (cached) return cached;
-    throw rpcError instanceof Error ? rpcError : new Error('Não foi possível carregar os vínculos Meta.');
+    try {
+      const directCatalog = await loadClientMetaAssetCatalogDirect(clientId);
+      writeCachedCatalog(clientId, directCatalog);
+      return directCatalog;
+    } catch (directError) {
+      const cached = readCachedCatalog(clientId);
+      if (cached) return cached;
+      throw rpcError instanceof Error ? rpcError : new Error('Não foi possível carregar os vínculos Meta.');
+    }
   }
 }
 
