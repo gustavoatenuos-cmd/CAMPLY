@@ -154,6 +154,10 @@ function SyncAction({ account }: { account: GlobalPerformanceAccount }) {
   const handleSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (syncing) return;
+    if (!supabase) {
+      alert('Serviço indisponível no momento.');
+      return;
+    }
     setSyncing(true);
     try {
       const { error } = await supabase.functions.invoke('meta-sync-performance', {
