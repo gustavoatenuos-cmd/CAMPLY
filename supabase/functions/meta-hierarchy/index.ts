@@ -12,7 +12,7 @@ type HierarchyBody = {
   pageSize?: unknown
 }
 
-const VALID_PERIODS = new Set(['this_month', 'this_week', 'today', 'last_7d', 'last_30d'])
+const VALID_PERIODS = new Set(['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'])
 const VALID_LEVELS = new Set(['campaign', 'adset', 'ad', 'creative'])
 
 function jsonResponse(body: unknown, status = 200) {
