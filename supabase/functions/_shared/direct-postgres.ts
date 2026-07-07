@@ -18,7 +18,7 @@ export async function withDirectPostgres<T>(
     return await operation(sql)
   } finally {
     try {
-      await sql.end({ timeout: 1 })
+      await sql.end()
     } catch (error) {
       console.warn('Direct Postgres connection close skipped', {
         message: error instanceof Error ? error.message : String(error),
