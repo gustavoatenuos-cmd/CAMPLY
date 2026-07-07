@@ -187,10 +187,11 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       const directCatalog = await loadClientMetaAssetCatalogDirect(clientId);
       writeCachedCatalog(clientId, directCatalog);
       return directCatalog;
-    } catch (directError) {
+    } catch (directError: any) {
       const cached = readCachedCatalog(clientId);
       if (cached) return cached;
-      throw rpcError instanceof Error ? rpcError : new Error('Não foi possível carregar os vínculos Meta.');
+      const msg = directError?.message || directError?.details || directError?.hint || 'Erro desconhecido na leitura direta.';
+      throw new Error(`Direct Falha: ${msg} | RPC Falha: ${rpcError instanceof Error ? rpcError.message : 'Unknown'}`);
     }
   }
 }
