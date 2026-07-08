@@ -3,8 +3,12 @@ import { loadGlobalPerformanceDashboard, type GlobalClientPerformance } from './
 import { loadAnalyticsCapabilities, type DashboardPeriod } from './analyticsCapabilities';
 import type { CamplyData } from '../../types';
 
+export interface EnrichedGlobalClientPerformance extends GlobalClientPerformance {
+  client?: any; // Replace with proper Client type if available
+}
+
 export interface UsePerformanceDashboardResult {
-  clients: GlobalClientPerformance[];
+  clients: EnrichedGlobalClientPerformance[];
   loading: boolean;
   error: string | null;
   period: DashboardPeriod;
@@ -16,7 +20,7 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
   const [period, setPeriod] = useState<DashboardPeriod>(defaultPeriod);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
+  const [clients, setClients] = useState<EnrichedGlobalClientPerformance[]>([]);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -37,8 +41,8 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
       const enrichedResult = result.map(c => {
         const workspaceClient = workspaceData.clients.find(w => w.id === c.clientId);
         return workspaceClient 
-          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
-          : c;
+          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName, client: workspaceClient }
+          : { ...c, client: undefined };
       });
 
       setClients(enrichedResult);
