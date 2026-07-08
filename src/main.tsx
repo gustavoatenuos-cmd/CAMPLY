@@ -1,6 +1,5 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { MotionConfig } from 'framer-motion';
 import App from './App';
 import './styles.css';
 
@@ -12,10 +11,6 @@ if (!root) {
 
 createRoot(root).render(
   <React.StrictMode>
-    {/* reducedMotion="user": animações do Framer respeitam a preferência de
-        acessibilidade do sistema operacional (prefers-reduced-motion). */}
-    <MotionConfig reducedMotion="user">
-      <App />
-    </MotionConfig>
+    <App />
   </React.StrictMode>,
 );

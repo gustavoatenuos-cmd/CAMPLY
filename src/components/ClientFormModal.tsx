@@ -230,31 +230,31 @@ export function ClientFormModal({
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Segmento principal</span>
-              <select value={profileDraft.vertical} onChange={(event) => updateProfile({ vertical: event.target.value, subsegment: subsegmentsByVertical[event.target.value]?.[0]?.value || 'outros', customVertical: null, customSubsegment: null })} className="input-field">
+              <select value={profileDraft.vertical} onChange={(event) => updateProfile({ vertical: event.target.value, subsegment: subsegmentsByVertical[event.target.value]?.[0]?.value || 'outros', customVertical: null, customSubsegment: null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 {analysisVerticals.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             {profileDraft.vertical === 'outros' && (
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-brand-soft">Segmento personalizado</span>
-                <input value={profileDraft.customVertical ?? ''} onChange={(event) => updateProfile({ customVertical: event.target.value || null })} className="input-field" placeholder="Ex.: Turismo" />
+                <input value={profileDraft.customVertical ?? ''} onChange={(event) => updateProfile({ customVertical: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex.: Turismo" />
               </label>
             )}
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Subsegmento</span>
-              <select value={profileDraft.subsegment} onChange={(event) => updateProfile({ subsegment: event.target.value })} className="input-field">
+              <select value={profileDraft.subsegment} onChange={(event) => updateProfile({ subsegment: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 {subsegmentOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             {profileDraft.subsegment === 'outros' && (
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-brand-soft">Subsegmento personalizado</span>
-                <input value={profileDraft.customSubsegment ?? ''} onChange={(event) => updateProfile({ customSubsegment: event.target.value || null })} className="input-field" placeholder="Ex.: Agência de viagens" />
+                <input value={profileDraft.customSubsegment ?? ''} onChange={(event) => updateProfile({ customSubsegment: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex.: Agência de viagens" />
               </label>
             )}
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de operação</span>
-              <select value={profileDraft.operationType || ''} onChange={(event) => updateProfile({ operationType: event.target.value || null })} className="input-field">
+              <select value={profileDraft.operationType || ''} onChange={(event) => updateProfile({ operationType: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Selecione...</option>
                 {operationTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
@@ -277,33 +277,33 @@ export function ClientFormModal({
             </div>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Canal principal</span>
-              <select value={profileDraft.primaryChannel} onChange={(event) => updateProfile({ primaryChannel: event.target.value })} className="input-field">
+              <select value={profileDraft.primaryChannel} onChange={(event) => updateProfile({ primaryChannel: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 {primaryChannels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Canal secundário</span>
-              <select value={profileDraft.secondaryChannel || ''} onChange={(event) => updateProfile({ secondaryChannel: event.target.value || null })} className="input-field">
+              <select value={profileDraft.secondaryChannel || ''} onChange={(event) => updateProfile({ secondaryChannel: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Nenhum</option>
                 {primaryChannels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão principal</span>
-              <select value={profileDraft.primaryConversionMetric} onChange={(event) => updateProfile({ primaryConversionMetric: event.target.value })} className="input-field">
+              <select value={profileDraft.primaryConversionMetric} onChange={(event) => updateProfile({ primaryConversionMetric: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão secundária</span>
-              <select value={profileDraft.secondaryConversionMetric || ''} onChange={(event) => updateProfile({ secondaryConversionMetric: event.target.value || null })} className="input-field">
+              <select value={profileDraft.secondaryConversionMetric || ''} onChange={(event) => updateProfile({ secondaryConversionMetric: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Nenhuma</option>
                 {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Periodicidade do orçamento</span>
-              <select value={profileDraft.budgetPeriod} onChange={(event) => updateProfile({ budgetPeriod: event.target.value as BudgetPeriod })} className="input-field">
+              <select value={profileDraft.budgetPeriod} onChange={(event) => updateProfile({ budgetPeriod: event.target.value as BudgetPeriod })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="daily">Diário</option>
                 <option value="weekly">Semanal</option>
                 <option value="monthly">Mensal</option>
@@ -311,7 +311,7 @@ export function ClientFormModal({
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Orçamento planejado Meta</span>
-              <input value={profileDraft.plannedBudget ?? ''} onChange={(event) => updateProfile({ plannedBudget: event.target.value === '' ? null : Number(event.target.value) })} type="number" min="0" step="0.01" className="input-field" />
+              <input value={profileDraft.plannedBudget ?? ''} onChange={(event) => updateProfile({ plannedBudget: event.target.value === '' ? null : Number(event.target.value) })} type="number" min="0" step="0.01" className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green" />
             </label>
           </div>
           <div className="mt-4">
@@ -346,7 +346,7 @@ export function ClientFormModal({
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Projeto guarda-chuva</span>
-            <select name="projectId" defaultValue={editingClient?.projectId ?? ''} className="input-field">
+            <select name="projectId" defaultValue={editingClient?.projectId ?? ''} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
               <option value="">Sem projeto</option>
               {data.projects.map((project) => (
                 <option key={project.id} value={project.id}>
@@ -357,7 +357,7 @@ export function ClientFormModal({
           </label>
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Tipo de serviço</span>
-            <select name="managementFeeType" defaultValue={editingClient?.managementFeeType ?? 'recurring'} className="input-field">
+            <select name="managementFeeType" defaultValue={editingClient?.managementFeeType ?? 'recurring'} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
               {billingTypes.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
@@ -369,7 +369,7 @@ export function ClientFormModal({
 
         <label className="block">
           <span className="mb-2 block text-sm font-semibold text-brand-soft">Estrutura trabalhada</span>
-          <textarea name="structure" defaultValue={editingClient?.structure} rows={3} className="input-field" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
+          <textarea name="structure" defaultValue={editingClient?.structure} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" placeholder="Ex: landing page, WhatsApp, criativos, CRM, checkout, pixel, Google Tag Manager..." />
         </label>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -382,7 +382,7 @@ export function ClientFormModal({
             <p className="text-sm font-semibold text-brand-soft">Investimento em anúncios</p>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Período do investimento</span>
-              <select name="adInvestmentPeriod" value={profileDraft.budgetPeriod} onChange={(event) => updateProfile({ budgetPeriod: event.target.value as BudgetPeriod })} className="input-field">
+              <select name="adInvestmentPeriod" value={profileDraft.budgetPeriod} onChange={(event) => updateProfile({ budgetPeriod: event.target.value as BudgetPeriod })} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green">
                 {investmentPeriods.map((period) => (
                   <option key={period.value} value={period.value}>
                     {period.label}
@@ -402,7 +402,7 @@ export function ClientFormModal({
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-brand-soft">Status</span>
-            <select name="status" className="input-field" defaultValue={editingClient?.status ?? 'lead'}>
+            <select name="status" className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" defaultValue={editingClient?.status ?? 'lead'}>
               <option value="lead">Lead</option>
               <option value="active">Ativo</option>
               <option value="paused">Pausado</option>
@@ -416,7 +416,7 @@ export function ClientFormModal({
 
         <label className="block">
           <span className="mb-2 block text-sm font-semibold text-brand-soft">Observações</span>
-          <textarea name="notes" defaultValue={editingClient?.notes} rows={3} className="input-field" />
+          <textarea name="notes" defaultValue={editingClient?.notes} rows={3} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" />
         </label>
 
         {/* ===== Analytics & Alertas ===== */}
@@ -511,11 +511,11 @@ export function ClientFormModal({
             type="button"
             onClick={closeIfIdle}
             disabled={saving}
-            className="btn-ghost disabled:cursor-wait disabled:opacity-60"
+            className="rounded-lg border border-brand-line px-4 py-2 font-semibold text-brand-soft disabled:cursor-wait disabled:opacity-60"
           >
             Cancelar
           </button>
-          <button disabled={saving} className="btn-primary disabled:cursor-wait">
+          <button disabled={saving} className="rounded-lg bg-brand-green px-4 py-2 font-bold text-brand-ink disabled:cursor-wait disabled:opacity-60">
             {saving ? 'Salvando no banco...' : editingClient ? 'Salvar alterações' : 'Salvar cliente'}
           </button>
         </div>
@@ -528,7 +528,7 @@ function Field({ label, name, ...props }: React.InputHTMLAttributes<HTMLInputEle
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
-      <input name={name} className="input-field" {...props} />
+      <input name={name} className="w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-white outline-none focus:border-brand-green" {...props} />
     </label>
   );
 }
@@ -537,7 +537,7 @@ function MoneyField({ label, name, ...props }: React.InputHTMLAttributes<HTMLInp
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-semibold text-brand-soft">{label}</span>
-      <div className="flex rounded-lg border border-brand-line bg-brand-ink/60 transition focus-within:border-brand-green/60 focus-within:ring-1 focus-within:ring-brand-green/30">
+      <div className="flex rounded-lg border border-brand-line bg-brand-surface focus-within:border-brand-green">
         <span className="grid place-items-center border-r border-brand-line px-3 text-sm font-bold text-brand-green">R$</span>
         <input name={name} type="number" min="0" step="0.01" className="w-full bg-transparent px-3 py-2 text-white outline-none" {...props} />
       </div>

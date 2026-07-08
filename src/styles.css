@@ -85,17 +85,3 @@ button {
 .glass-card {
   @apply bg-brand-surface2/60 backdrop-blur-sm border border-white/[0.03] shadow-lg transition-all duration-300 hover:border-brand-green/30 hover:shadow-glow;
 }
-
-/* Form & Action Utilities — padrão único de inputs e botões do V2.0.
-   Toda tela deve usar estas classes em vez de estilos soltos. */
-.input-field {
-  @apply w-full rounded-lg border border-brand-line bg-brand-ink/60 px-3 py-2 text-white outline-none transition placeholder:text-brand-muted focus:border-brand-green/60 focus:ring-1 focus:ring-brand-green/30;
-}
-
-.btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 hover:shadow-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green/60 disabled:cursor-not-allowed disabled:opacity-60;
-}
-
-.btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-brand-line px-4 py-2.5 text-sm font-bold text-brand-soft transition hover:border-brand-green/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-green/60;
-}
