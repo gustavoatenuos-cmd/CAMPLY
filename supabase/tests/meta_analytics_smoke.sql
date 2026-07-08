@@ -439,7 +439,7 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_user_a::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_user_a::text, 'role', 'authenticated')::text, true);
 
-  v_next_version := public.save_camply_workspace_with_client_registry(
+  v_save_result := public.try_save_camply_workspace_with_client_registry(
     jsonb_build_object(
       'clients',
       jsonb_build_array(
@@ -452,36 +452,31 @@ BEGIN
     NULL
   );
 
-  IF v_next_version <> 1 THEN
-    RAISE EXCEPTION 'Expected initial workspace version 1, got %', v_next_version;
+  IF v_save_result->>'status' <> 'saved' OR (v_save_result->>'version')::bigint <> 1 THEN
+    RAISE EXCEPTION 'Expected initial workspace version 1, got %', v_save_result;
   END IF;
 
   IF (SELECT count(*) FROM public.client_identity WHERE user_id = v_user_a AND archived_at IS NULL) <> 2 THEN
     RAISE EXCEPTION 'Expected two active client identities after transactional workspace save';
   END IF;
 
-  v_error_seen := false;
-  BEGIN
-    PERFORM public.save_camply_workspace_with_client_registry(
-      jsonb_build_object(
-        'clients',
-        jsonb_build_array(jsonb_build_object('id', 'client_gamma', 'company', 'Gamma'))
-      ),
-      99
-    );
-  EXCEPTION WHEN OTHERS THEN
-    v_error_seen := true;
-  END;
+  v_save_result := public.try_save_camply_workspace_with_client_registry(
+    jsonb_build_object(
+      'clients',
+      jsonb_build_array(jsonb_build_object('id', 'client_gamma', 'company', 'Gamma'))
+    ),
+    99
+  );
 
-  IF NOT v_error_seen THEN
-    RAISE EXCEPTION 'Expected stale workspace version to fail';
+  IF v_save_result->>'status' <> 'conflict' THEN
+    RAISE EXCEPTION 'Expected stale workspace version to fail with conflict, got %', v_save_result;
   END IF;
 
   IF EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_gamma') THEN
     RAISE EXCEPTION 'Stale workspace save changed client registry despite conflict';
   END IF;
 
-  v_next_version := public.save_camply_workspace_with_client_registry(
+  v_save_result := public.try_save_camply_workspace_with_client_registry(
     jsonb_build_object(
       'clients',
       jsonb_build_array(jsonb_build_object('id', 'client_beta', 'company', 'Beta Ltda'))
@@ -489,15 +484,15 @@ BEGIN
     1
   );
 
-  IF v_next_version <> 2 THEN
-    RAISE EXCEPTION 'Expected second workspace version 2, got %', v_next_version;
+  IF v_save_result->>'status' <> 'saved' OR (v_save_result->>'version')::bigint <> 2 THEN
+    RAISE EXCEPTION 'Expected second workspace version 2, got %', v_save_result;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_alpha' AND archived_at IS NOT NULL) THEN
     RAISE EXCEPTION 'Removed client was not archived';
   END IF;
 
-  v_next_version := public.save_camply_workspace_with_client_registry(
+  v_save_result := public.try_save_camply_workspace_with_client_registry(
     jsonb_build_object(
       'clients',
       jsonb_build_array(
@@ -507,6 +502,10 @@ BEGIN
     ),
     2
   );
+
+  IF v_save_result->>'status' <> 'saved' OR (v_save_result->>'version')::bigint <> 3 THEN
+    RAISE EXCEPTION 'Expected third workspace version 3, got %', v_save_result;
+  END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.client_identity WHERE user_id = v_user_a AND client_id = 'client_alpha' AND archived_at IS NULL AND display_name = 'Alpha Reativado') THEN
     RAISE EXCEPTION 'Reactivated client did not clear archived_at/update display_name';
