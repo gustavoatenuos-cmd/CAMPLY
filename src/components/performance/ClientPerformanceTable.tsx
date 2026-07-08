@@ -507,7 +507,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                           </div>
                         </div>
                         <div className="space-y-3">
-                          <CampaignHierarchicalTable account={account} period="last_90d" />
+                          <CampaignHierarchicalTable account={account} period={period} />
                         </div>
                       </div>
                     )}
