@@ -32,6 +32,7 @@ import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
+import { syncMetaAsset } from '../lib/meta/metaSyncService';
 
 
 interface OverviewViewProps {
@@ -290,7 +291,32 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [capabilities, period]);
+  }, [capabilities, period, data.clients]);
+
+  const handleSyncAll = useCallback(async () => {
+    if (!capabilities) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected');
+      const syncPromises = activeClientsWithAssets.flatMap(c => 
+        c.accounts.map(account => 
+          syncMetaAsset({ metaAssetId: account.metaAssetId, period, requestedLevel: 'campaign' })
+            .catch(err => { console.error('Erro sync', err); return null; })
+        )
+      );
+      
+      if (syncPromises.length > 0) {
+        await Promise.all(syncPromises);
+      }
+      
+      await loadDashboard();
+    } catch (err) {
+      console.error('Erro na sincronização geral:', err);
+      setError('dashboard_unavailable');
+      setLoading(false);
+    }
+  }, [capabilities, clients, period, loadDashboard]);
 
   useEffect(() => {
     if (capabilities) void loadDashboard();
@@ -421,12 +447,12 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
                   <option key={value} value={value}>{periodLabels[value]}</option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => void loadDashboard()}
-                disabled={loading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
-              >
+                <button
+                  type="button"
+                  onClick={() => void handleSyncAll()}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                >
                 <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                 Atualizar Dashboard
               </button>
