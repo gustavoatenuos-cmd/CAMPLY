@@ -123,7 +123,17 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
             
             <div className="mt-4 pt-4 border-t border-gray-100">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                      Fonte: Meta Ads
+                    </span>
+                  </div>
+                  {client?.adInvestmentGoogle ? (
+                    <span className="text-[10px] text-gray-400">Google Ads não integrado ({formatCurrency(client.adInvestmentGoogle)})</span>
+                  ) : null}
+                </div>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPacingColor(decision.budget.status)}`}>
                   {decision.budget.label}
                 </span>

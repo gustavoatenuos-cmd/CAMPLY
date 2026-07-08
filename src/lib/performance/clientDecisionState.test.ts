@@ -36,7 +36,16 @@ describe('clientDecisionState', () => {
       spend: { metricId: 'spend', value: 2500, status: 'info' },
       messaging_conversations_started_total: { metricId: 'messaging_conversations_started_total', value: 50, status: 'info' }
     },
-    metricGroups: [],
+    metricGroups: [
+      {
+        campaignId: 'c1',
+        classifiedObjective: 'MESSAGING',
+        spend: 2500,
+        metrics: {
+          messaging_conversations_started_total: { value: 50, available: true }
+        }
+      }
+    ],
     resolvedTargets: [],
     evaluations: [
       { metricId: 'messaging_conversations_started_total', targetValue: 100, value: 50, differencePercent: -50, status: 'attention', campaignId: null }
@@ -133,6 +142,7 @@ describe('clientDecisionState', () => {
   it('spend without primary conversion generates alert', () => {
     const p = {
       ...basePerformance,
+      metricGroups: [],
       metrics: {
         spend: { metricId: 'spend', value: 2500, status: 'info' as const }
       }
@@ -169,5 +179,44 @@ describe('clientDecisionState', () => {
     const state = resolveClientDecision({ performance: p as any, now });
     expect(state.budget.status).toBe('over_spending');
     expect(state.alerts.some(a => a.id === 'budget_over_pacing')).toBe(true);
+  });
+
+  it('constri objectiveMetrics separando gastos por objetivo de campanha', () => {
+    const p = {
+      ...basePerformance,
+      metricGroups: [
+        {
+          campaignId: 'c1',
+          classifiedObjective: 'SALES',
+          spend: 1000,
+          metrics: {
+            purchases: { value: 10, available: true }
+          }
+        },
+        {
+          campaignId: 'c2',
+          classifiedObjective: 'MESSAGING',
+          spend: 500,
+          metrics: {
+            messaging_conversations_started_total: { value: 50, available: true }
+          }
+        }
+      ]
+    };
+    const state = resolveClientDecision({ performance: p as any });
+    
+    // SALES spend and CPA
+    expect(state.objectiveMetrics.sales.spend).toBe(1000);
+    expect(state.objectiveMetrics.sales.purchases).toBe(10);
+    expect(state.objectiveMetrics.sales.costPerPurchase).toBe(1000 / 10); // 100
+    
+    // MESSAGING spend and Cost per Conversation
+    expect(state.objectiveMetrics.messaging.spend).toBe(500);
+    expect(state.objectiveMetrics.messaging.conversations).toBe(50);
+    expect(state.objectiveMetrics.messaging.costPerConversation).toBe(500 / 50); // 10
+    
+    // LEADS empty
+    expect(state.objectiveMetrics.leads.spend).toBe(null);
+    expect(state.objectiveMetrics.leads.costPerLead).toBe(null);
   });
 });

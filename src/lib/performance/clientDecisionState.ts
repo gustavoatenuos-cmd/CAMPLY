@@ -1,6 +1,7 @@
 import { GlobalClientPerformance } from './globalPerformanceDashboard';
 import { ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import { PerformanceStatus } from './types';
+import { ObjectiveScopedMetrics, buildObjectiveScopedMetrics } from './objectiveScopedMetrics';
 
 export interface ClientDecisionAlert {
   id: string;
@@ -49,6 +50,8 @@ export interface ClientDecisionState {
     formattedValue: string;
     status: 'healthy' | 'attention' | 'critical' | 'no_data';
   };
+
+  objectiveMetrics: ObjectiveScopedMetrics;
 
   budget: {
     plannedMonthlyBudget: number | null;
@@ -222,6 +225,7 @@ export function resolveClientDecision({
   }
 
   // 3. Primary Metric Resolution
+  const objectiveMetrics = buildObjectiveScopedMetrics(performance.metricGroups || []);
   let pmId: string | null = null;
   let pmLabel = 'Não configurado';
   let pmActual: number | null = null;
@@ -280,7 +284,12 @@ export function resolveClientDecision({
     }
 
     if (pmId) {
-      pmActual = metrics[pmId]?.value ?? null;
+      if (pmId === 'purchases') pmActual = objectiveMetrics.sales.purchases;
+      else if (pmId === 'messaging_conversations_started_total') pmActual = objectiveMetrics.messaging.conversations;
+      else if (pmId === 'leads') pmActual = objectiveMetrics.leads.leads;
+      else if (pmId === 'reach') pmActual = objectiveMetrics.awareness.reach;
+      else pmActual = metrics[pmId]?.value ?? null;
+      
       if (pmActual !== null && pmActual > 0) hasPrimaryConversions = true;
       pmFormatted = pmActual !== null ? String(pmActual) : '-';
       
@@ -303,7 +312,11 @@ export function resolveClientDecision({
         }
       }
 
-      efValue = metrics[efId]?.value ?? null;
+      if (efId === 'cost_per_purchase') efValue = objectiveMetrics.sales.costPerPurchase;
+      else if (efId === 'cost_per_messaging_conversation') efValue = objectiveMetrics.messaging.costPerConversation;
+      else if (efId === 'cost_per_lead') efValue = objectiveMetrics.leads.costPerLead;
+      else if (efId === 'cpm') efValue = objectiveMetrics.awareness.cpm;
+      else efValue = metrics[efId]?.value ?? null;
       if (efValue !== null) {
         efFormatted = `R$ ${efValue.toFixed(2)}`;
         const efEval = evaluations.find(e => e.metricId === efId);
@@ -373,6 +386,7 @@ export function resolveClientDecision({
     clientName: performance.clientName,
     macroStatus,
     dataStatus,
+    objectiveMetrics,
     primaryMetric: {
       metricId: pmId,
       label: pmLabel,

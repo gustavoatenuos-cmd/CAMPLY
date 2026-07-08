@@ -7,7 +7,6 @@ import type {
   MetricContract,
 } from '../../lib/performance/globalPerformanceDashboard';
 import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/performance/types';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
@@ -222,9 +221,6 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
           const evaluations     = account
             ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
             : [];
-          const groups            = account
-            ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
-            : [];
           const isExpanded = expanded === key;
 
           return (
@@ -365,18 +361,19 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
             {rows.map(({ client, account }) => {
               const key               = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
               const spendMetric       = account?.metrics.spend;
-              const conversationsMetric = account?.metrics.messaging_conversations_started_total;
-              const leadsMetric       = account?.metrics.leads;
-              const purchasesMetric   = account?.metrics.purchases;
               const spend             = metricValue(spendMetric);
-              const conversations     = metricValue(conversationsMetric);
-              const leads             = metricValue(leadsMetric);
-              const purchases         = metricValue(purchasesMetric);
-              const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', spendMetric, conversationsMetric);
-              const costPerLead         = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
-              const costPerPurchase     = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
               const decision            = resolveClientDecision({ performance: client });
               const performanceStatus   = mapMacroStatusToPerformanceStatus(decision.macroStatus);
+              
+              // Extract objective metrics
+              const obj = decision.objectiveMetrics;
+              const conversations = obj.messaging.conversations;
+              const costPerConversation = obj.messaging.costPerConversation;
+              const leads = obj.leads.leads;
+              const costPerLead = obj.leads.costPerLead;
+              const purchases = obj.sales.purchases;
+              const costPerPurchase = obj.sales.costPerPurchase;
+
               const isExpanded = expanded === key;
 
               return (
@@ -426,30 +423,24 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         }
                       </div>
 
-                      {/* Colunas 4–9: métricas */}
+                      {/* Colunas 4-9: mǸtricas */}
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue>
+                        {formatNumber(conversations)}
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerConversation}>
-                          {formatCurrency(metricValue(costPerConversation), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerConversation, account?.currency || null)}
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue>
+                        {formatNumber(leads)}
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerLead}>
-                          {formatCurrency(metricValue(costPerLead), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerLead, account?.currency || null)}
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue>
+                        {formatNumber(purchases)}
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerPurchase}>
-                          {formatCurrency(metricValue(costPerPurchase), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerPurchase, account?.currency || null)}
                       </div>
 
                       {/* Coluna 10: Situação */}
