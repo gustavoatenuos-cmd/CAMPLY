@@ -1,5 +1,6 @@
 import { GlobalClientPerformance } from './globalPerformanceDashboard';
 import { ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
+import { PerformanceStatus } from './types';
 
 export interface ClientDecisionAlert {
   id: string;
@@ -404,6 +405,20 @@ export function resolveClientDecision({
       reason: alerts[0].title,
       priority: alerts.some(a => a.severity === 'critical') ? 'high' : 'medium'
     } : null,
+    // TODO: Implementar mapeamento de microEntrypoints (campanha/adset/ad) na próxima branch
     microEntrypoints: []
   };
 }
+
+export function mapMacroStatusToPerformanceStatus(macroStatus: ClientDecisionState['macroStatus']): PerformanceStatus {
+  switch (macroStatus) {
+    case 'healthy': return 'on_track';
+    case 'attention': return 'attention';
+    case 'critical': return 'critical';
+    case 'no_data': return 'unavailable';
+    case 'not_connected': return 'unavailable';
+    case 'not_configured': return 'insufficient_data';
+    default: return 'unavailable';
+  }
+}
+

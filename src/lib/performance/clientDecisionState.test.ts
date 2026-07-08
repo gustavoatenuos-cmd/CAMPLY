@@ -86,17 +86,17 @@ describe('clientDecisionState', () => {
     expect(state.alerts.some(a => a.id === 'budget_exceeded')).toBe(true);
   });
 
-  it('client with metric and recent failure becomes partial/attention', () => {
+  it('client with metric and recent failure becomes sync_failed_recently/attention', () => {
     const p = {
       ...basePerformance,
       hasNewerFailure: true,
-      lastAttempt: { id: 'r2', status: 'failed' as const, startedAt: '2026-07-08T12:00:00Z', finishedAt: '2026-07-08T12:05:00Z', range_diagnostics_by_period: {} }
+      lastAttempt: { id: 'r2', status: 'failed' as const, startedAt: '2026-07-08T12:00:00Z', finishedAt: '2026-07-08T12:05:00Z', terminationReason: 'API Error', range_diagnostics_by_period: {} }
     };
-    const state = resolveClientDecision({ performance: p as any as any });
+    const state = resolveClientDecision({ performance: p as any });
     
-    expect(state.dataStatus).toBe('partial');
+    expect(state.dataStatus).toBe('sync_failed_recently');
     expect(state.macroStatus).toBe('attention'); // Due to recent sync failure alert
-    expect(state.alerts.some(a => a.id === 'recent_sync_failure')).toBe(true);
+    expect(state.alerts.some(a => a.id === 'last_sync_failed')).toBe(true);
   });
 
   it('client without account becomes not_connected', () => {

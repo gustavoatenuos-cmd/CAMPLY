@@ -15,7 +15,7 @@ import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { RefreshCw } from 'lucide-react';
-import { resolveClientDecision } from '../../lib/performance/clientDecisionState';
+import { resolveClientDecision, mapMacroStatusToPerformanceStatus } from '../../lib/performance/clientDecisionState';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -218,10 +218,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
           const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
           const primaryMetric   = account?.metrics[primaryMetricId];
           const decision        = resolveClientDecision({ performance: client });
-          let performanceStatus: any = 'unavailable';
-          if (decision.macroStatus === 'healthy') performanceStatus = 'on_track';
-          if (decision.macroStatus === 'attention') performanceStatus = 'attention';
-          if (decision.macroStatus === 'critical') performanceStatus = 'critical';
+          const performanceStatus: any = mapMacroStatusToPerformanceStatus(decision.macroStatus);
           const evaluations     = account
             ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
             : [];
@@ -349,6 +346,8 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
       {/* ── Desktop ── */}
       <div data-testid="client-performance-desktop" className="hidden overflow-x-auto lg:block">
         <div className="min-w-[1360px] w-full text-left text-sm">
+          {/* As métricas abertas (Conversas, Custo/conv., Leads, CPL, Compras, CPA) permanecem como visual complementar,
+              enquanto Situação, Dados, e Pacing são controlados estritamente pela camada única de decisão (ClientDecisionState). */}
           <div className="grid grid-cols-[260px_120px_120px_95px_110px_80px_105px_85px_105px_135px_145px] items-center border-b border-brand-line bg-brand-ink/60 text-[11px] font-bold uppercase tracking-wider text-brand-muted">
             <div className="px-4 py-3">Cliente / conta</div>
             <div className="px-4 py-3">Investimento</div>
@@ -377,7 +376,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const costPerLead         = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
               const costPerPurchase     = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
               const decision            = resolveClientDecision({ performance: client });
-              const performanceStatus   = decision.macroStatus;
+              const performanceStatus   = mapMacroStatusToPerformanceStatus(decision.macroStatus);
               const isExpanded = expanded === key;
 
               return (

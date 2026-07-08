@@ -13,13 +13,15 @@ interface ClientAnalyticsCardProps {
 
 export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
   const { client, score } = performance;
-  const profile = client?.analysisProfile;
+  const profile = performance.analysisProfile;
   const performanceScore = score?.value;
 
   const decision = resolveClientDecision({ performance });
+  const currency = performance.accounts && performance.accounts.length > 0 && performance.accounts[0].currency ? performance.accounts[0].currency : 'BRL';
+
   const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '-';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val);
   };
 
   // Determine badge color for pacing
@@ -62,6 +64,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
   };
 
   const hasDataIssues = decision.macroStatus === 'not_connected' || decision.macroStatus === 'no_data';
+  const mainAlert = decision.alerts.length > 0 ? decision.alerts[0] : null;
 
   return (
     <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -102,6 +105,21 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
         ) : (
           <>
             <ClientPrimaryMetricBlock performance={performance} />
+
+            {mainAlert ? (
+              <div className="mt-3 text-xs p-2 rounded bg-red-50 text-red-800 border border-red-100 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">{mainAlert.title}</p>
+                  <p className="text-red-700/80 line-clamp-1">{mainAlert.description}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-[11px] p-2 rounded bg-green-50 text-green-800 border border-green-100 flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                <span>Sem alertas críticos.</span>
+              </div>
+            )}
             
             <div className="mt-4 pt-4 border-t border-gray-100">
               <div className="flex justify-between items-center mb-2">

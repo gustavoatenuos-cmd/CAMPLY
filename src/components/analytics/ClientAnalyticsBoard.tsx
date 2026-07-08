@@ -81,9 +81,9 @@ export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyti
               onChange={(e: any) => setStatusFilter(e.target.value as FilterStatus)}
             >
               <option value="ALL">Todos os clientes</option>
-              <option value="HEALTHY">Saudáveis (&gt; 80)</option>
-              <option value="WARNING">Atenção (50-79)</option>
-              <option value="CRITICAL">Críticos (&lt; 50)</option>
+              <option value="HEALTHY">Saudáveis</option>
+              <option value="WARNING">Atenção</option>
+              <option value="CRITICAL">Críticos</option>
               <option value="NO_DATA">Sem dados</option>
               <option value="NO_ACCOUNT">Sem conta Meta</option>
             </select>
