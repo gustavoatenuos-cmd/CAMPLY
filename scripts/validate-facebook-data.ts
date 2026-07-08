@@ -49,23 +49,37 @@ async function run() {
       const purchases = m.purchases?.value ?? 0;
       const leads = m.leads?.value ?? 0;
       const convs = m.messaging_conversations_started_total?.value ?? 0;
+
+      const groups = run.metrics.groups || [];
+      let salesSpend = 0, messagingSpend = 0, leadsSpend = 0;
+      for (const g of groups) {
+        const obj = g.classifiedObjective || g.objective;
+        const gSpend = g.spend || g.metrics?.spend?.value || 0;
+        if (obj === 'SALES') salesSpend += gSpend;
+        else if (obj === 'MESSAGING') messagingSpend += gSpend;
+        else if (obj === 'LEADS') leadsSpend += gSpend;
+      }
       
-      const cpa = purchases > 0 ? spend / purchases : null;
-      const cpc = convs > 0 ? spend / convs : null;
-      const purcValue = m.purchase_value?.value ?? 0;
-      const roas = spend > 0 ? purcValue / spend : null;
+      const cpa = purchases > 0 ? salesSpend / purchases : null;
+      const cpc = convs > 0 ? messagingSpend / convs : null;
+      const cpl = leads > 0 ? leadsSpend / leads : null;
 
       rows.push({
         Cliente: client.name,
         'Conta Meta (Asset ID)': run.meta_asset_id,
-        Período: run.period,
-        Spend: `R$ ${spend.toFixed(2)}`,
+        Perodo: run.period,
+        'Spend Total': `R$ ${spend.toFixed(2)}`,
+        'Sales Spend': `R$ ${salesSpend.toFixed(2)}`,
+        'Messaging Spend': `R$ ${messagingSpend.toFixed(2)}`,
+        'Leads Spend': `R$ ${leadsSpend.toFixed(2)}`,
         Purchases: purchases,
+        Conversations: convs,
         Leads: leads,
-        Conversas: convs,
-        CPA: cpa !== null ? `R$ ${cpa.toFixed(2)}` : '-',
-        'Custo por Conv.': cpc !== null ? `R$ ${cpc.toFixed(2)}` : '-',
-        ROAS: roas !== null ? `${roas.toFixed(2)}x` : '-',
+        'CPA Scoped': cpa !== null ? `R$ ${cpa.toFixed(2)}` : '-',
+        'Custo por Conv. Scoped': cpc !== null ? `R$ ${cpc.toFixed(2)}` : '-',
+        'CPL Scoped': cpl !== null ? `R$ ${cpl.toFixed(2)}` : '-',
+        Moeda: m.currency?.value || '-',
+        Timezone: m.timezone?.value || '-',
         'Data Quality': run.metrics.data_quality?.completeness_score ?? '-',
         'Last Run': run.completed_at ? new Date(run.completed_at).toLocaleString('pt-BR') : '-'
       });

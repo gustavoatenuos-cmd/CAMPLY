@@ -214,9 +214,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
         {rows.map(({ client, account }) => {
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric     = account?.metrics.spend;
-          const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
-          const primaryMetric   = account?.metrics[primaryMetricId];
-          const decision        = resolveClientDecision({ performance: client });
+          const decision        = resolveClientDecision({ performance: client, clientMetaAssetId: account?.clientMetaAssetId });
           const performanceStatus: any = mapMacroStatusToPerformanceStatus(decision.macroStatus);
           const evaluations     = account
             ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
@@ -258,15 +256,20 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                   metric={spendMetric}
                 />
                 <MetricCell
-                  label={metricLabels[primaryMetricId] || 'KPI principal'}
-                  value={formatNumber(metricValue(primaryMetric))}
-                  metric={primaryMetric}
+                  label={decision.primaryMetric.label}
+                  value={decision.primaryMetric.formattedActual}
                 />
+                {decision.efficiencyMetric && (
+                  <MetricCell
+                    label={decision.efficiencyMetric.label}
+                    value={decision.efficiencyMetric.formattedValue}
+                  />
+                )}
                 <MetricCell
                   label="Orçamento"
                   value={
-                    client.analysisProfile?.plannedBudget
-                      ? formatCurrency(client.analysisProfile.plannedBudget, account?.currency || null)
+                    decision.budget.plannedMonthlyBudget
+                      ? formatCurrency(decision.budget.plannedMonthlyBudget, account?.currency || null)
                       : '—'
                   }
                 />
@@ -362,7 +365,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const key               = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
               const spendMetric       = account?.metrics.spend;
               const spend             = metricValue(spendMetric);
-              const decision            = resolveClientDecision({ performance: client });
+              const decision            = resolveClientDecision({ performance: client, clientMetaAssetId: account?.clientMetaAssetId });
               const performanceStatus   = mapMacroStatusToPerformanceStatus(decision.macroStatus);
               
               // Extract objective metrics

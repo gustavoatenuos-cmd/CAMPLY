@@ -142,7 +142,12 @@ describe('clientDecisionState', () => {
   it('spend without primary conversion generates alert', () => {
     const p = {
       ...basePerformance,
-      metricGroups: [],
+      metricGroups: [{
+        campaignId: 'c2',
+        classifiedObjective: 'MESSAGING',
+        spend: 2500,
+        metrics: {}
+      }],
       metrics: {
         spend: { metricId: 'spend', value: 2500, status: 'info' as const }
       }

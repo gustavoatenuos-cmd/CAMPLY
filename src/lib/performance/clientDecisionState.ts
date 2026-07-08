@@ -86,11 +86,13 @@ export interface ClientDecisionState {
 
 interface ResolveDecisionParams {
   performance: GlobalClientPerformance;
+  clientMetaAssetId?: string;
   now?: Date;
 }
 
 export function resolveClientDecision({
   performance,
+  clientMetaAssetId,
   now = new Date()
 }: ResolveDecisionParams): ClientDecisionState {
   const profile = performance.analysisProfile || null;
@@ -225,7 +227,10 @@ export function resolveClientDecision({
   }
 
   // 3. Primary Metric Resolution
-  const objectiveMetrics = buildObjectiveScopedMetrics(performance.metricGroups || []);
+  const scopedGroups = clientMetaAssetId 
+    ? performance.metricGroups?.filter(g => g.clientMetaAssetId === clientMetaAssetId) || []
+    : performance.metricGroups || [];
+  const objectiveMetrics = buildObjectiveScopedMetrics(scopedGroups);
   let pmId: string | null = null;
   let pmLabel = 'Não configurado';
   let pmActual: number | null = null;
@@ -337,12 +342,18 @@ export function resolveClientDecision({
     }
   }
 
-  if (pmId && actualSpend > 0 && !hasPrimaryConversions && dataStatus !== 'not_connected') {
+  let objectiveSpend = actualSpend;
+  if (pmId === 'purchases') objectiveSpend = objectiveMetrics.sales.spend ?? 0;
+  else if (pmId === 'messaging_conversations_started_total') objectiveSpend = objectiveMetrics.messaging.spend ?? 0;
+  else if (pmId === 'leads') objectiveSpend = objectiveMetrics.leads.spend ?? 0;
+  else if (pmId === 'reach') objectiveSpend = objectiveMetrics.awareness.spend ?? 0;
+
+  if (pmId && objectiveSpend > 0 && !hasPrimaryConversions && dataStatus !== 'not_connected') {
     alerts.push({
       id: 'spend_no_conversion',
       severity: 'critical',
       title: 'Gasto sem conversão principal',
-      description: `A conta gastou R$ ${actualSpend.toFixed(2)} e não gerou resultados de ${pmLabel || 'conversão'}.`,
+      description: `O objetivo principal gastou R$ ${objectiveSpend.toFixed(2)} e não gerou resultados de ${pmLabel || 'conversão'}.`,
       evidence: [],
       source: 'meta'
     });
