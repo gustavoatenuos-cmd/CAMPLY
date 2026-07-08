@@ -20,16 +20,19 @@ export type RemoteSaveResult =
   | { status: 'conflict'; remoteData: CamplyData | null }
   | { status: 'error'; message: string };
 
-const VERSION_CONFLICT_CODE = '40001';
 const LOAD_TIMEOUT_MS = 12_000;
 const SAVE_TIMEOUT_MS = 15_000;
 const CONFIRM_TIMEOUT_MS = 10_000;
 
 let remoteVersion: number | null = null;
 let saveQueue: Promise<unknown> = Promise.resolve();
+let lastSavedPayloadStr: string | null = null;
+let pendingPayloadStr: string | null = null;
 
 export const resetRemoteWorkspaceState = (): void => {
   remoteVersion = null;
+  lastSavedPayloadStr = null;
+  pendingPayloadStr = null;
 };
 
 export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
@@ -66,7 +69,9 @@ export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
   }
 
   remoteVersion = data.version;
-  return { status: 'ok', data: normalizeData(data.data) };
+  const normalized = normalizeData(data.data);
+  lastSavedPayloadStr = JSON.stringify(sanitizeWorkspaceData(normalized));
+  return { status: 'ok', data: normalized };
 };
 
 // Consulta leve usada ao voltar o foco para a aba: compara apenas a versão,
@@ -96,7 +101,16 @@ export const hasNewerRemoteVersion = async (): Promise<boolean> => {
 };
 
 export const saveRemoteData = async (data: CamplyData): Promise<RemoteSaveResult> => {
-  const operation = saveQueue.then(() => saveRemoteDataNow(data));
+  const payload = sanitizeWorkspaceData(data);
+  const payloadStr = JSON.stringify(payload);
+
+  if (payloadStr === lastSavedPayloadStr || payloadStr === pendingPayloadStr) {
+    return { status: 'skipped' };
+  }
+
+  pendingPayloadStr = payloadStr;
+
+  const operation = saveQueue.then(() => saveRemoteDataNow(payload, payloadStr));
   saveQueue = operation.catch(() => undefined);
   return operation;
 };
@@ -112,16 +126,22 @@ const fetchRemoteWorkspaceRow = async (userId: string): Promise<WorkspaceRow | n
   return data;
 };
 
-const saveRemoteDataNow = async (data: CamplyData): Promise<RemoteSaveResult> => {
-  if (!isSupabaseConfigured || !supabaseData) return { status: 'skipped' };
+const saveRemoteDataNow = async (payload: any, payloadStr: string): Promise<RemoteSaveResult> => {
+  if (!isSupabaseConfigured || !supabaseData) {
+    if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
+    return { status: 'skipped' };
+  }
   const userId = getSupabaseSessionUserId();
-  if (!userId) return { status: 'skipped' };
+  if (!userId) {
+    if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
+    return { status: 'skipped' };
+  }
 
   let response;
   try {
     response = await withTimeout(
-      supabaseData.rpc('save_camply_workspace_with_client_registry', {
-        p_data: sanitizeWorkspaceData(data),
+      supabaseData.rpc('try_save_camply_workspace_with_client_registry', {
+        p_data: payload,
         p_expected_version: remoteVersion,
       }),
       SAVE_TIMEOUT_MS,
@@ -130,28 +150,42 @@ const saveRemoteDataNow = async (data: CamplyData): Promise<RemoteSaveResult> =>
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('Camply Supabase save failed:', message);
+    if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
     return { status: 'error', message };
   }
-  const { data: nextVersion, error } = response;
+  
+  if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
+
+  const { data: rpcResult, error } = response;
 
   if (error) {
     console.error('Camply Supabase save failed:', error.message);
-    if (error.code === VERSION_CONFLICT_CODE) {
-      // Outro dispositivo gravou primeiro. Adotamos a versão remota e a
-      // devolvemos ao chamador para que a UI recarregue os dados em vez de
-      // sobrescrever silenciosamente o trabalho feito no outro dispositivo.
-      const row = await fetchRemoteWorkspaceRow(userId);
-      if (row) {
-        remoteVersion = row.version;
-        return { status: 'conflict', remoteData: row.data ? normalizeData(row.data) : null };
-      }
-      return { status: 'conflict', remoteData: null };
-    }
     return { status: 'error', message: error.message };
   }
 
-  remoteVersion = Number(nextVersion);
-  return { status: 'saved' };
+  if (rpcResult?.status === 'conflict') {
+    if (import.meta.env?.DEV) {
+      console.warn('Camply Supabase conflict, adopting remote version', rpcResult.current_version);
+    }
+    const row = await fetchRemoteWorkspaceRow(userId);
+    if (row) {
+      remoteVersion = row.version;
+      const normalized = row.data ? normalizeData(row.data) : null;
+      if (normalized) {
+        lastSavedPayloadStr = JSON.stringify(sanitizeWorkspaceData(normalized));
+      }
+      return { status: 'conflict', remoteData: normalized };
+    }
+    return { status: 'conflict', remoteData: null };
+  }
+
+  if (rpcResult?.status === 'saved') {
+    remoteVersion = Number(rpcResult.version);
+    lastSavedPayloadStr = payloadStr;
+    return { status: 'saved' };
+  }
+
+  return { status: 'error', message: 'Unknown RPC result' };
 };
 
 export const confirmClientIdentity = async (clientId: string): Promise<boolean> => {

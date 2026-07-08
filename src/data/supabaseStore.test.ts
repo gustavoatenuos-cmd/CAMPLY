@@ -32,6 +32,7 @@ vi.mock('../lib/supabase', () => ({
 }));
 
 import { initialData } from './camplyStore';
+import { CamplyData } from '../types';
 import {
   hasNewerRemoteVersion,
   loadRemoteData,
@@ -75,8 +76,8 @@ describe('loadRemoteData', () => {
     const result = await loadRemoteData();
     expect(result.status).toBe('ok');
 
-    mockState.rpcQueue.push({ data: 8, error: null });
-    const saved = await saveRemoteData(workspaceFixture);
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 8 }, error: null });
+    const saved = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
     expect(saved.status).toBe('saved');
     expect(mockState.rpcCalls[0].p_expected_version).toBe(7);
   });
@@ -87,10 +88,10 @@ describe('saveRemoteData', () => {
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
     await loadRemoteData();
 
-    mockState.rpcQueue.push({ data: 4, error: null });
-    mockState.rpcQueue.push({ data: 5, error: null });
-    await saveRemoteData(workspaceFixture);
-    await saveRemoteData(workspaceFixture);
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 4 }, error: null });
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 5 }, error: null });
+    await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
+    await saveRemoteData({ ...workspaceFixture, fakeData: 2 } as unknown as CamplyData);
 
     expect(mockState.rpcCalls.map(c => c.p_expected_version)).toEqual([3, 4]);
   });
@@ -99,26 +100,36 @@ describe('saveRemoteData', () => {
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
     await loadRemoteData();
 
-    mockState.rpcQueue.push({ data: null, error: { message: 'stale', code: '40001' } });
+    mockState.rpcQueue.push({ data: { status: 'conflict', current_version: 12 }, error: null });
     // Row fetched after the conflict: another device already wrote version 12.
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 12 }, error: null });
 
-    const result = await saveRemoteData(workspaceFixture);
+    const result = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
     expect(result.status).toBe('conflict');
     if (result.status === 'conflict') {
       expect(result.remoteData).not.toBeNull();
     }
 
     // The next save must build on the fetched version, not the stale one.
-    mockState.rpcQueue.push({ data: 13, error: null });
-    await saveRemoteData(workspaceFixture);
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 13 }, error: null });
+    await saveRemoteData({ ...workspaceFixture, fakeData: 2 } as unknown as CamplyData);
     expect(mockState.rpcCalls[1].p_expected_version).toBe(12);
   });
 
   it('returns error on non-conflict failures', async () => {
     mockState.rpcQueue.push({ data: null, error: { message: 'permission denied' } });
-    const result = await saveRemoteData(workspaceFixture);
+    const result = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
     expect(result).toEqual({ status: 'error', message: 'permission denied' });
+  });
+
+  it('skips saving if payload is identical to last successfully saved payload', async () => {
+    mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
+    await loadRemoteData(); // This populates lastSavedPayloadStr with workspaceFixture
+
+    const result = await saveRemoteData(workspaceFixture); // Should be identical
+    expect(result.status).toBe('skipped');
+    // RPC queue will not be consumed
+    expect(mockState.rpcCalls.length).toBe(0);
   });
 });
 

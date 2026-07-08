@@ -88,6 +88,10 @@ export default function App() {
   const sessionUserIdRef = useRef<string | null>(null);
   const skipNextRemoteSaveRef = useRef(false);
   const focusRefreshRunningRef = useRef(false);
+  const remoteHydratingRef = useRef(false);
+  const authTransitionRef = useRef(false);
+  const conflictRecoveringRef = useRef(false);
+  const lastConflictAtRef = useRef(0);
 
   // Reexibir o toast se surgir um novo erro após o usuário fechar
   useEffect(() => {
@@ -115,6 +119,7 @@ export default function App() {
       return;
     }
 
+    authTransitionRef.current = true;
     void supabase.auth.getSession().then(({ data }) => {
       setSupabaseSession(data.session);
       sessionUserIdRef.current = data.session?.user.id || null;
@@ -128,6 +133,7 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      authTransitionRef.current = true;
       setSupabaseSession(nextSession);
       const nextUserId = nextSession?.user.id || null;
       if (sessionUserIdRef.current !== nextUserId) {
@@ -164,11 +170,16 @@ export default function App() {
     let active = true;
     let retryTimeout: number | undefined;
 
+    remoteHydratingRef.current = true;
     loadRemoteData().then((result) => {
       if (!active) return;
+      remoteHydratingRef.current = false;
+      authTransitionRef.current = false;
       if (result.status === 'ok') {
         skipNextRemoteSaveRef.current = true;
+        conflictRecoveringRef.current = true;
         setData(result.data);
+        setTimeout(() => { conflictRecoveringRef.current = false; }, 0);
         setRemoteLoaded(true);
         setRemoteLoadError(null);
         return;
@@ -202,11 +213,15 @@ export default function App() {
       void hasNewerRemoteVersion()
         .then(async (newer) => {
           if (!newer) return;
+          remoteHydratingRef.current = true;
           const result = await loadRemoteData();
           if (result.status === 'ok') {
             skipNextRemoteSaveRef.current = true;
+            conflictRecoveringRef.current = true;
             setData(result.data);
+            setTimeout(() => { conflictRecoveringRef.current = false; }, 0);
           }
+          remoteHydratingRef.current = false;
         })
         .finally(() => {
           focusRefreshRunningRef.current = false;
@@ -227,6 +242,20 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
+    if (remoteLoadError) return;
+    
+    if (authTransitionRef.current || remoteHydratingRef.current || conflictRecoveringRef.current) {
+      if (import.meta.env?.DEV) console.warn('[workspace-save] skipped: hydrating or transitioning');
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('meta_sync') || params.has('meta_error')) {
+        return;
+      }
+    }
+
     if (skipNextRemoteSaveRef.current) {
       skipNextRemoteSaveRef.current = false;
       setSyncError(null);
@@ -236,18 +265,25 @@ export default function App() {
     const timeout = window.setTimeout(() => {
       void saveRemoteData(data).then((result) => {
         if (result.status === 'saved' || result.status === 'skipped') {
+          if (result.status === 'saved' && import.meta.env?.DEV) console.warn('[workspace-save] saved successfully');
           setSyncError(null);
           return;
         }
         if (result.status === 'conflict') {
-          if (result.remoteData) {
-            // Outro dispositivo salvou primeiro: adota a versão do banco em vez
-            // de sobrescrevê-la com os dados desatualizados deste dispositivo.
-            skipNextRemoteSaveRef.current = true;
-            setData(result.remoteData);
-            setSyncError('Este dispositivo estava com dados desatualizados. Carregamos a versão mais recente do banco — confira sua última alteração e refaça se necessário.');
-          } else {
-            setSyncError('Os dados foram alterados em outro dispositivo. Recarregue a página antes de continuar editando.');
+          const now = Date.now();
+          if (now - lastConflictAtRef.current > 5000) {
+            lastConflictAtRef.current = now;
+            if (result.remoteData) {
+              // Outro dispositivo salvou primeiro: adota a versão do banco em vez
+              // de sobrescrevê-la com os dados desatualizados deste dispositivo.
+              skipNextRemoteSaveRef.current = true;
+              conflictRecoveringRef.current = true;
+              setData(result.remoteData);
+              setSyncError('Este dispositivo estava com dados desatualizados. Carregamos a versão mais recente do banco — confira sua última alteração e refaça se necessário.');
+              setTimeout(() => { conflictRecoveringRef.current = false; }, 0);
+            } else {
+              setSyncError('Os dados foram alterados em outro dispositivo. Recarregue a página antes de continuar editando.');
+            }
           }
           return;
         }
@@ -256,7 +292,7 @@ export default function App() {
     }, 500);
 
     return () => window.clearTimeout(timeout);
-  }, [authenticated, data, remoteLoaded]);
+  }, [authenticated, data, remoteLoaded, remoteLoadError]);
 
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
