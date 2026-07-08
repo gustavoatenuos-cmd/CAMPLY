@@ -1,4 +1,3 @@
-import { LayoutGrid, List } from 'lucide-react';
 import {
   AlertTriangle,
   Banknote,
@@ -26,9 +25,8 @@ import {
 import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performance/types';
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
-import { ClientPerformanceCardGrid } from './performance/ClientPerformanceCardGrid';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
-import { CommercialDecisionOverview, buildStrategySummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
+import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
@@ -236,15 +234,6 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   const [segmentFilter, setSegmentFilter] = useState(storedFilters.segment || 'all');
   const [subsegmentFilter, setSubsegmentFilter] = useState(storedFilters.subsegment || 'all');
 
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
-    return (sessionStorage.getItem('camply:dashboard-view-mode') as 'cards' | 'table') || 'cards';
-  });
-
-  // Salva no sessionStorage quando alterar
-  useEffect(() => {
-    sessionStorage.setItem('camply:dashboard-view-mode', viewMode);
-  }, [viewMode]);
-
   useEffect(() => {
     window.sessionStorage.setItem(DASHBOARD_FILTERS_KEY, JSON.stringify({
       period,
@@ -309,12 +298,12 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
-    const { summaries, pending } = buildStrategySummaries(clients, data.clients, 'strategyType');
+    const { summaries, pending } = buildCommercialSummaries(clients, data.clients, 'vertical');
     const selectedSummary = summaries.find((summary) => summary.key === segmentFilter);
     const segmentClientIds = segmentFilter === 'all'
       ? null
       : segmentFilter === '__pending__'
-        ? new Set(pending.map((client: any) => client.clientId))
+        ? new Set(pending.map((client) => client.clientId))
         : subsegmentFilter !== 'all'
           ? new Set((selectedSummary?.clients || []).filter(c => effectiveClientProfile(c)?.subsegment === subsegmentFilter).map((client) => client.clientId))
           : new Set((selectedSummary?.clients || []).map((client) => client.clientId));
@@ -476,35 +465,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               onStatusFilterChange={setStatusFilter}
             />
 
-            <div className="flex items-center justify-between my-2">
-              <h2 className="text-lg font-black text-white">Performance</h2>
-              <div className="flex items-center gap-1 rounded-lg bg-black/20 p-1">
-                <button
-                  onClick={() => setViewMode('cards')}
-                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-bold transition ${viewMode === 'cards' ? 'bg-brand-surface text-brand-green shadow' : 'text-brand-muted hover:text-white'}`}
-                >
-                  <LayoutGrid size={16} />
-                  Cards
-                </button>
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-bold transition ${viewMode === 'table' ? 'bg-brand-surface text-brand-green shadow' : 'text-brand-muted hover:text-white'}`}
-                >
-                  <List size={16} />
-                  Tabela
-                </button>
-              </div>
-            </div>
-
-            {viewMode === 'cards' ? (
-              <ClientPerformanceCardGrid 
-                clients={sortedClients} 
-                workspaceClients={data.clients}
-                period={period} 
-              />
-            ) : (
-              <ClientPerformanceTable clients={sortedClients} period={period} />
-            )}
+            <ClientPerformanceTable clients={sortedClients} period={period} />
 
             <CollapsibleSection
               title="Análise comercial por segmento"
