@@ -27,7 +27,7 @@ describe('clientDecisionState', () => {
     analysisEnabled: true
   };
 
-  const basePerformance: GlobalClientPerformance = {
+  const basePerformance: any = {
     clientId: 'c1',
     clientName: 'Client 1',
     clientStatus: 'active',
@@ -61,7 +61,7 @@ describe('clientDecisionState', () => {
     
     // Middle of month, spend 2500, budget 5000 -> pace 100% -> on_track
     const now = new Date(2026, 6, 15); // July 15 (half month)
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any as any, now });
     
     expect(state.macroStatus).toBe('healthy');
     expect(state.budget.status).toBe('on_track');
@@ -79,7 +79,7 @@ describe('clientDecisionState', () => {
       }
     };
     const now = new Date(2026, 6, 15);
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any as any, now });
     
     expect(state.macroStatus).toBe('critical');
     expect(state.budget.status).toBe('exceeded');
@@ -92,7 +92,7 @@ describe('clientDecisionState', () => {
       hasNewerFailure: true,
       lastAttempt: { id: 'r2', status: 'failed' as const, startedAt: '2026-07-08T12:00:00Z', finishedAt: '2026-07-08T12:05:00Z', range_diagnostics_by_period: {} }
     };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any as any });
     
     expect(state.dataStatus).toBe('partial');
     expect(state.macroStatus).toBe('attention'); // Due to recent sync failure alert
@@ -101,7 +101,7 @@ describe('clientDecisionState', () => {
 
   it('client without account becomes not_connected', () => {
     const p = { ...basePerformance, accounts: [] };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any });
     expect(state.dataStatus).toBe('not_connected');
     expect(state.macroStatus).toBe('not_connected');
     expect(state.alerts.some(a => a.id === 'not_connected')).toBe(true);
@@ -109,7 +109,7 @@ describe('clientDecisionState', () => {
 
   it('client without primary metric becomes not_configured', () => {
     const p = { ...basePerformance, analysisProfile: { ...baseProfile, primaryConversionMetric: '' } };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any });
     expect(state.macroStatus).toBe('not_configured');
     expect(state.alerts.some(a => a.id === 'missing_primary_metric')).toBe(true);
   });
@@ -118,7 +118,7 @@ describe('clientDecisionState', () => {
     const p = { ...basePerformance, analysisProfile: { ...baseProfile, budgetPeriod: 'daily' as const, plannedBudget: 100 } };
     // July has 31 days. 100 * 31 = 3100.
     const now = new Date(2026, 6, 15);
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any, now });
     expect(state.budget.plannedMonthlyBudget).toBe(3100);
   });
 
@@ -126,7 +126,7 @@ describe('clientDecisionState', () => {
     const p = { ...basePerformance, analysisProfile: { ...baseProfile, budgetPeriod: 'weekly' as const, plannedBudget: 700 } };
     // July has 31 days. 700 * (31/7) = 3100.
     const now = new Date(2026, 6, 15);
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any, now });
     expect(state.budget.plannedMonthlyBudget).toBe(3100);
   });
 
@@ -137,28 +137,28 @@ describe('clientDecisionState', () => {
         spend: { metricId: 'spend', value: 2500, status: 'info' as const }
       }
     };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any });
     expect(state.alerts.some(a => a.id === 'spend_no_conversion')).toBe(true);
     expect(state.macroStatus).toBe('critical'); // spend without conversion is critical
   });
 
   it('cliente sem sync vira never_synced', () => {
     const p = { ...basePerformance, lastSuccessfulRun: null, lastAttempt: null };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any });
     expect(state.dataStatus).toBe('never_synced');
     expect(state.macroStatus).toBe('no_data');
   });
 
   it('orçamento monthly usa valor direto', () => {
     const p = { ...basePerformance, analysisProfile: { ...baseProfile, budgetPeriod: 'monthly' as const, plannedBudget: 5000 } };
-    const state = resolveClientDecision({ performance: p });
+    const state = resolveClientDecision({ performance: p as any });
     expect(state.budget.plannedMonthlyBudget).toBe(5000);
   });
 
   it('gasto abaixo do ritmo gera alerta', () => {
     const p = { ...basePerformance, metrics: { spend: { metricId: 'spend', value: 500, status: 'info' as const }, messaging_conversations_started_total: { metricId: 'messaging_conversations_started_total', value: 50, status: 'info' as const } } };
     const now = new Date(2026, 6, 15);
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any, now });
     expect(state.budget.status).toBe('under_spending');
     expect(state.alerts.some(a => a.id === 'budget_under_pacing')).toBe(true);
   });
@@ -166,7 +166,7 @@ describe('clientDecisionState', () => {
   it('gasto acima do ritmo gera alerta', () => {
     const p = { ...basePerformance, metrics: { spend: { metricId: 'spend', value: 4000, status: 'info' as const }, messaging_conversations_started_total: { metricId: 'messaging_conversations_started_total', value: 50, status: 'info' as const } } };
     const now = new Date(2026, 6, 15);
-    const state = resolveClientDecision({ performance: p, now });
+    const state = resolveClientDecision({ performance: p as any, now });
     expect(state.budget.status).toBe('over_spending');
     expect(state.alerts.some(a => a.id === 'budget_over_pacing')).toBe(true);
   });

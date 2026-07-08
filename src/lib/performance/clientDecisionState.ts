@@ -126,14 +126,14 @@ export function resolveClientDecision({
       evidence: [`Sincronização falhou: ${performance.lastAttempt.terminationReason || 'Erro desconhecido'}`],
       source: 'sync'
     });
-  } else if (performance.lastSuccessfulRun && performance.hasNewerFailure) {
-    dataStatus = 'partial'; // We have some data, but the latest failed
+  } else if (performance.lastAttempt && performance.lastAttempt.status === 'failed' && performance.lastAttempt.terminationReason) {
+    dataStatus = 'sync_failed_recently';
     alerts.push({
-      id: 'recent_sync_failure',
+      id: 'last_sync_failed',
       severity: 'attention',
       title: 'Falha na última atualização',
       description: 'Estamos exibindo dados do último sucesso, pois a última sincronização falhou.',
-      evidence: [performance.lastAttempt?.message || 'Erro desconhecido'],
+      evidence: [performance.lastAttempt?.terminationReason || 'Erro desconhecido'],
       source: 'sync'
     });
   } else if (performance.lastSuccessfulRun && performance.hasNewerPartial) {
@@ -307,8 +307,8 @@ export function resolveClientDecision({
         efFormatted = `R$ ${efValue.toFixed(2)}`;
         const efEval = evaluations.find(e => e.metricId === efId);
         if (efEval) {
-          efStatus = efEval.status as any;
-          if (efEval.status === 'critical') {
+          efStatus = (efEval as any).status;
+          if ((efEval as any).status === 'critical') {
             alerts.push({
               id: 'cpa_critical',
               severity: 'critical',
@@ -342,7 +342,7 @@ export function resolveClientDecision({
       severity: 'critical',
       title: 'ROAS abaixo da meta',
       description: 'O retorno sobre investimento está crítico.',
-      evidence: [`Atual: ${roasEval.actualValue.toFixed(2)}x`, `Meta: ${roasEval.targetValue.toFixed(2)}x`],
+      evidence: [`Atual: ${(roasEval as any).actualValue?.toFixed(2) || '0.00'}x`, `Meta: ${roasEval.targetValue.toFixed(2)}x`],
       source: 'target'
     });
   }

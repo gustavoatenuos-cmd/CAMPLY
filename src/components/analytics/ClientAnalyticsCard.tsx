@@ -1,4 +1,5 @@
 import { resolveClientDecision } from '../../lib/performance/clientDecisionState';
+import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientLogo } from '../clients/ClientLogo';
 import { Clock, AlertCircle, CalendarX2 } from 'lucide-react';

@@ -216,6 +216,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric     = account?.metrics.spend;
           const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
+          const primaryMetric   = account?.metrics[primaryMetricId];
           const decision        = resolveClientDecision({ performance: client });
           let performanceStatus: any = 'unavailable';
           if (decision.macroStatus === 'healthy') performanceStatus = 'on_track';
