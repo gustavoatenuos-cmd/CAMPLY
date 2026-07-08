@@ -232,7 +232,7 @@ export function resolveClientDecision({
   let efId = '';
   let efLabel = '';
   let efValue: number | null = null;
-  let efStatus: ClientDecisionState['efficiencyMetric']['status'] = 'no_data';
+  let efStatus: NonNullable<ClientDecisionState['efficiencyMetric']>['status'] = 'no_data';
   let efFormatted = '-';
   
   let hasPrimaryConversions = false;
