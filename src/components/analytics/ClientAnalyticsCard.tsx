@@ -1,6 +1,4 @@
-import React from 'react';
-import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
-import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
+import { resolveClientDecision } from '../../lib/performance/clientDecisionState';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientLogo } from '../clients/ClientLogo';
 import { Clock, AlertCircle, CalendarX2 } from 'lucide-react';
@@ -13,20 +11,11 @@ interface ClientAnalyticsCardProps {
 }
 
 export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
-  const { client, metrics, clientStatus, score } = performance;
+  const { client, score } = performance;
   const profile = client?.analysisProfile;
   const performanceScore = score?.value;
 
-  // Actual spend from Meta
-  const actualSpend = metrics?.spend?.value ?? 0;
-
-  // Budget calculations
-  const budgetPacing = calculateClientBudgetPacing(
-    profile?.plannedBudget,
-    profile?.budgetPeriod,
-    actualSpend
-  );
-
+  const decision = resolveClientDecision({ performance });
   const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '-';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -36,15 +25,15 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
   const getPacingColor = (status: string) => {
     switch (status) {
       case 'on_track': return 'bg-green-100 text-green-800';
-      case 'under_pacing': return 'bg-blue-100 text-blue-800';
-      case 'over_pacing': return 'bg-yellow-100 text-yellow-800';
-      case 'budget_exceeded': return 'bg-red-100 text-red-800';
+      case 'under_spending': return 'bg-blue-100 text-blue-800';
+      case 'over_spending': return 'bg-yellow-100 text-yellow-800';
+      case 'exceeded': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusDisplay = () => {
-    if (clientStatus === 'not_connected') {
+    if (decision.dataStatus === 'not_connected') {
       return (
         <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
           <AlertCircle className="h-4 w-4" />
@@ -52,7 +41,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
         </div>
       );
     }
-    if (clientStatus === 'never_synced') {
+    if (decision.dataStatus === 'never_synced') {
       return (
         <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
           <Clock className="h-4 w-4" />
@@ -60,7 +49,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
         </div>
       );
     }
-    if (clientStatus === 'period_not_synced') {
+    if (decision.dataStatus === 'period_not_synced') {
       return (
         <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
           <CalendarX2 className="h-4 w-4" />
@@ -71,7 +60,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
     return null;
   };
 
-  const hasDataIssues = ['not_connected', 'never_synced', 'period_not_synced'].includes(clientStatus);
+  const hasDataIssues = decision.macroStatus === 'not_connected' || decision.macroStatus === 'no_data';
 
   return (
     <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -116,12 +105,12 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
             <div className="mt-4 pt-4 border-t border-gray-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPacingColor(budgetPacing.status)}`}>
-                  {budgetPacing.statusText}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPacingColor(decision.budget.status)}`}>
+                  {decision.budget.label}
                 </span>
               </div>
 
-              {budgetPacing.status === 'no_budget' ? (
+              {decision.budget.status === 'no_budget' ? (
                 <div className="text-sm text-gray-500 italic py-1">
                   Orçamento não configurado
                 </div>
@@ -129,18 +118,18 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Planejado</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
+                    <span className="font-semibold text-sm">{formatCurrency(decision.budget.plannedMonthlyBudget)}</span>
                   </div>
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Gasto</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.actualSpend)}</span>
+                    <span className="font-semibold text-sm">{formatCurrency(decision.budget.actualSpend)}</span>
                   </div>
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Restante</span>
                     <span className={`font-semibold text-sm ${
-                      budgetPacing.remainingBudget !== null && budgetPacing.remainingBudget < 0 ? 'text-red-600' : 'text-gray-900'
+                      decision.budget.remainingBudget !== null && decision.budget.remainingBudget < 0 ? 'text-red-600' : 'text-gray-900'
                     }`}>
-                      {formatCurrency(budgetPacing.remainingBudget)}
+                      {formatCurrency(decision.budget.remainingBudget)}
                     </span>
                   </div>
                 </div>

@@ -15,6 +15,7 @@ import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { RefreshCw } from 'lucide-react';
+import { resolveClientDecision } from '../../lib/performance/clientDecisionState';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -60,18 +61,18 @@ function worstEvaluation(evaluations: PerformanceEvaluation[]): PerformanceStatu
 }
 
 /** Cor do indicador (bolinha) na primeira coluna */
-function statusDotColor(status: PerformanceStatus): string {
+function statusDotColor(status: string): string {
   switch (status) {
     case 'critical':          return 'bg-red-500';
     case 'attention':         return 'bg-amber-400';
-    case 'partial_data':      return 'bg-amber-400/70';
-    case 'on_track':          return 'bg-green-500';
+    case 'partial':           return 'bg-amber-400/70';
+    case 'healthy':           return 'bg-green-500';
     default:                  return 'bg-[#475569]'; // cinza — sem dados
   }
 }
 
 /** Fundo + borda-esquerda da linha baseado no status mais grave */
-function rowStyle(status: PerformanceStatus): string {
+function rowStyle(status: string): string {
   switch (status) {
     case 'critical':
       return 'border-l-[3px] border-l-red-500 bg-red-500/[0.04]';
@@ -215,11 +216,14 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
           const key = account ? accountRowKey(client.clientId, account) : `${client.clientId}:none`;
           const spendMetric     = account?.metrics.spend;
           const primaryMetricId = client.analysisProfile?.primaryConversionMetric || 'messaging_conversations_started_total';
-          const primaryMetric   = account?.metrics[primaryMetricId];
+          const decision        = resolveClientDecision({ performance: client });
+          let performanceStatus: any = 'unavailable';
+          if (decision.macroStatus === 'healthy') performanceStatus = 'on_track';
+          if (decision.macroStatus === 'attention') performanceStatus = 'attention';
+          if (decision.macroStatus === 'critical') performanceStatus = 'critical';
           const evaluations     = account
             ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
             : [];
-          const performanceStatus = worstEvaluation(evaluations);
           const groups            = account
             ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
             : [];
@@ -274,11 +278,11 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                 />
                 {/* Pacing visual no mobile */}
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Pacing</p>
-                  <div className="mt-1">
-                    {account?.budgetPacing
-                      ? <PacingBar pct={account.budgetPacing.differencePercent} />
-                      : <span className="font-bold text-brand-muted">—</span>
+                  <div className="flex w-full items-center justify-between">
+                    <span className="text-xs text-brand-muted">Pacing Mensal</span>
+                    {decision.budget.pacingPercent !== null
+                      ? <PacingBar pct={decision.budget.pacingPercent - 100} />
+                      : <span className="text-xs text-brand-muted">—</span>
                     }
                   </div>
                 </div>
@@ -371,24 +375,13 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', spendMetric, conversationsMetric);
               const costPerLead         = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
               const costPerPurchase     = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-              const evaluations       = account
-                ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
-                : [];
-              const performanceStatus = worstEvaluation(evaluations);
-              const groups            = account
-                ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
-                : [];
+              const decision            = resolveClientDecision({ performance: client });
+              const performanceStatus   = decision.macroStatus;
               const isExpanded = expanded === key;
 
               return (
                 <div key={key} className="flex flex-col">
                   <div className="w-full p-0">
-                    {/**
-                     * rowStyle() aplica:
-                     *  - borda-esquerda 3 px colorida por severidade
-                     *  - fundo com opacity 4 % na cor semântica
-                     * group + group-hover expõe o botão "Ver campanhas" na última célula.
-                     */}
                     <button
                       type="button"
                       onClick={() => account && setExpanded(isExpanded ? null : key)}
@@ -406,7 +399,6 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                           ? (isExpanded ? <ChevronDown size={17} className="shrink-0 text-brand-muted" /> : <ChevronRight size={17} className="shrink-0 text-brand-muted" />)
                           : <Database size={17} className="shrink-0 text-brand-muted" />
                         }
-                        {/* Bolinha de status */}
                         <span
                           className={`h-2 w-2 shrink-0 rounded-full ${statusDotColor(performanceStatus)}`}
                           aria-hidden="true"
@@ -428,8 +420,8 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
 
                       {/* Coluna 3: Pacing — barra visual */}
                       <div className="px-4 py-4">
-                        {account?.budgetPacing
-                          ? <PacingBar pct={account.budgetPacing.differencePercent} />
+                        {decision.budget.pacingPercent !== null
+                          ? <PacingBar pct={decision.budget.pacingPercent - 100} />
                           : <span className="text-brand-muted">—</span>
                         }
                       </div>
@@ -462,18 +454,24 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
 
                       {/* Coluna 10: Situação */}
                       <div className="px-4 py-4">
-                        <PerformanceStatusBadge status={performanceStatus} />
+                        <div className="flex w-full items-center justify-between">
+                          <PerformanceStatusBadge status={performanceStatus as PerformanceStatus} />
+                        </div>
                       </div>
 
                       {/* Coluna 11: Dados + hover CTA */}
                       <div className="px-4 py-4">
-                        <p className="font-semibold text-white">{statusLabel(client.clientStatus)}</p>
-                        <p className="mt-1 flex items-center gap-1 text-[10px] text-brand-muted">
-                          <Clock3 size={11} />
-                          {account?.lastSuccessfulRun?.finishedAt
-                            ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
-                            : 'Sem sync confiável'}
-                        </p>
+                        <div className="flex w-full items-center justify-between border-t border-brand-line/50 pt-2">
+                          <div className="text-right">
+                            <p className="font-semibold text-white">{decision.dataStatus}</p>
+                            <p className="mt-1 flex items-center gap-1 text-[10px] text-brand-muted">
+                              <Clock3 size={11} />
+                              {account?.lastSuccessfulRun?.finishedAt
+                                ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
+                                : 'Sem sync confiável'}
+                            </p>
+                          </div>
+                        </div>
                         {/* Botão fantasma — aparece no hover da linha */}
                         {account && (client.clientStatus === 'failed' || client.clientStatus === 'period_not_synced') ? (
                           <SyncAction account={account} period={period} />

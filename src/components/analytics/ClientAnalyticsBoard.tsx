@@ -3,6 +3,7 @@ import { type EnrichedGlobalClientPerformance } from '../../lib/performance/useP
 import { ClientAnalyticsCard } from './ClientAnalyticsCard';
 import { ClientCampaignDrawer } from './ClientCampaignDrawer';
 import { Search, Filter } from 'lucide-react';
+import { resolveClientDecision } from '../../lib/performance/clientDecisionState';
 
 interface ClientAnalyticsBoardProps {
   clients: EnrichedGlobalClientPerformance[];
@@ -27,21 +28,14 @@ export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyti
 
       // 2. Status filter
       if (statusFilter !== 'ALL') {
-        const status = c.clientStatus;
-        const score = c.score?.value;
+        const decision = resolveClientDecision({ performance: c });
+        const macro = decision.macroStatus;
         
-        if (statusFilter === 'NO_ACCOUNT' && status !== 'not_connected') return false;
-        
-        if (statusFilter === 'NO_DATA' && 
-            status !== 'never_synced' && 
-            status !== 'period_not_synced' && 
-            status !== 'not_connected') {
-          return false;
-        }
-
-        if (statusFilter === 'HEALTHY' && (!score || score < 80)) return false;
-        if (statusFilter === 'WARNING' && (!score || score < 50 || score >= 80)) return false;
-        if (statusFilter === 'CRITICAL' && (!score || score >= 50)) return false;
+        if (statusFilter === 'NO_ACCOUNT' && macro !== 'not_connected') return false;
+        if (statusFilter === 'NO_DATA' && macro !== 'no_data' && macro !== 'not_connected') return false;
+        if (statusFilter === 'HEALTHY' && macro !== 'healthy') return false;
+        if (statusFilter === 'WARNING' && macro !== 'attention' && macro !== 'not_configured') return false;
+        if (statusFilter === 'CRITICAL' && macro !== 'critical') return false;
       }
 
       return true;

@@ -223,7 +223,7 @@ function DashboardUnavailable({
 
 export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   const storedFilters = useMemo(loadStoredFilters, []);
-  const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'last_90d');
+  const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'this_month');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
