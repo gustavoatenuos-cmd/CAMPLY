@@ -131,6 +131,7 @@ export function ClientFormModal({
       projectId: String(form.get('projectId') ?? ''),
       name,
       company: String(form.get('company') ?? ''),
+      logoUrl: String(form.get('logoUrl') ?? '') || null,
       segment: String(profileDraft.vertical || form.get('segment') || ''),
       structure: String(form.get('structure') ?? ''),
       hasProject: form.get('hasProject') === 'on',
@@ -218,6 +219,7 @@ export function ClientFormModal({
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Nome do responsável" name="name" defaultValue={editingClient?.name} required />
           <Field label="Empresa / marca" name="company" defaultValue={editingClient?.company} />
+          <Field label="Logo do cliente (URL)" name="logoUrl" type="url" placeholder="Ex: https://dominio.com/logo.png" defaultValue={editingClient?.logoUrl || ''} />
           <Field label="Contato principal" name="contact" defaultValue={editingClient?.contact} placeholder="E-mail, telefone ou WhatsApp" />
         </div>
 

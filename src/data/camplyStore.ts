@@ -135,25 +135,33 @@ export const sanitizeWorkspaceData = (data: CamplyData): CamplyData => capHistor
 
 export const loadData = (userId?: string | null): CamplyData => {
   if (!userId) return initialData;
-  window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-  const stored = window.localStorage.getItem(storageKeyForUser(userId));
-  if (!stored) return initialData;
-
   try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKeyForUser(userId));
+    if (!stored) return initialData;
     return normalizeData(JSON.parse(stored));
-  } catch {
+  } catch (error) {
+    console.warn('[camplyStore] Failed to load from localStorage:', error);
     return initialData;
   }
 };
 
 export const saveData = (data: CamplyData, userId?: string | null) => {
   if (!userId) return;
-  window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(sanitizeWorkspaceData(data)));
+  try {
+    window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(sanitizeWorkspaceData(data)));
+  } catch (error) {
+    console.warn('[camplyStore] Failed to save to localStorage:', error);
+  }
 };
 
 export const clearUserData = (userId?: string | null) => {
   if (!userId) return;
-  window.localStorage.removeItem(storageKeyForUser(userId));
+  try {
+    window.localStorage.removeItem(storageKeyForUser(userId));
+  } catch (error) {
+    console.warn('[camplyStore] Failed to remove from localStorage:', error);
+  }
 };
 
 let fallbackIdCounter = 0;

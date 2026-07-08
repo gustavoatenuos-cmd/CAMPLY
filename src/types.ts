@@ -94,6 +94,7 @@ export interface Client {
   notes?: string;
   metaAdAccountId?: string;
   metaAdAccountName?: string;
+  logoUrl?: string | null;
   // Analytics & categorization (Phase 1)
   category?: ClientCategory;
   benchmarks?: ClientBenchmarks;
