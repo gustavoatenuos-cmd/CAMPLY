@@ -4,8 +4,10 @@
  * Also shows cost-related alerts derived from campaign data in real time.
  */
 import React, { useMemo, useState } from 'react';
+import { Bell, ShieldCheck } from 'lucide-react';
 import type { CamplyData, AgentAlert, Campaign, Client } from '../types';
 import { AlertBadge } from './ui/AlertBadge';
+import { EmptyState } from './ui/EmptyState';
 import { formatMetricValue } from '../lib/meta/metricsSelector';
 
 interface AlertCenterViewProps {
@@ -130,13 +132,13 @@ function AlertItem({ severity, title, message, action, clientName, campaignName,
         <div className="mb-0.5 flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold text-white">{title}</p>
           {clientName && (
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">{clientName}</span>
+            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-brand-muted">{clientName}</span>
           )}
           {campaignName && (
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-500">{campaignName}</span>
+            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-brand-muted">{campaignName}</span>
           )}
         </div>
-        <p className="mb-1.5 text-xs text-zinc-400">{message}</p>
+        <p className="mb-1.5 text-xs text-brand-muted">{message}</p>
         {action && (
           <p className="text-xs font-medium text-violet-400">→ {action}</p>
         )}
@@ -144,7 +146,7 @@ function AlertItem({ severity, title, message, action, clientName, campaignName,
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="flex-shrink-0 rounded p-1 text-zinc-500 transition hover:bg-white/8 hover:text-white"
+          className="flex-shrink-0 rounded p-1 text-brand-muted transition hover:bg-white/8 hover:text-white"
           title="Dispensar alerta"
         >
           ✕
@@ -208,14 +210,16 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-6">
+    <section className="h-full overflow-y-auto bg-brand-ink p-4 sm:p-5 lg:p-8">
+      <div className="mx-auto flex min-h-full max-w-[1200px] flex-col space-y-6">
       {/* Header */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="glass-panel flex animate-fade-in flex-wrap items-start justify-between gap-4 rounded-2xl p-5 lg:p-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Central de Alertas</h1>
-          <p className="text-sm text-zinc-400">
+          <div className="flex items-center gap-2 text-brand-green"><Bell size={17} /><p className="text-xs font-bold uppercase tracking-[0.2em]">Alertas</p></div>
+          <h1 className="mt-2 text-3xl font-black text-white">Central de Alertas</h1>
+          <p className="mt-1 text-sm text-brand-muted">
             {totalActive === 0
-              ? 'Nenhum alerta ativo — operação saudável ✓'
+              ? 'Nenhum alerta ativo — operação saudável'
               : `${totalActive} alerta${totalActive !== 1 ? 's' : ''} ativo${totalActive !== 1 ? 's' : ''}`}
           </p>
         </div>
@@ -243,11 +247,12 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
           {(['all', 'critical', 'warning', 'info'] as const).map(f => (
             <button
               key={f}
+              aria-pressed={filter === f}
               onClick={() => setFilter(f)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-green/60 ${
                 filter === f
-                  ? 'bg-violet-500 text-white'
-                  : 'bg-white/8 text-zinc-400 hover:bg-white/12'
+                  ? 'border-brand-green/60 bg-brand-green/15 text-brand-green'
+                  : 'border-brand-line text-brand-muted hover:bg-white/5 hover:text-white'
               }`}
             >
               {f === 'all' ? 'Todos' : f === 'critical' ? 'Críticos' : f === 'warning' ? 'Atenção' : 'Info'}
@@ -255,19 +260,19 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
           ))}
         </div>
         <div className="flex gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-brand-muted transition hover:text-white">
             <input
               type="checkbox"
               checked={showResolved}
               onChange={e => setShowResolved(e.target.checked)}
-              className="rounded border-white/20"
+              className="rounded border-white/20 accent-[#00E599]"
             />
             Ver dispensados
           </label>
           {agentAlerts.filter(a => a.status === 'active').length > 0 && (
             <button
               onClick={dismissAll}
-              className="rounded-lg border border-white/10 px-3 py-1 text-xs text-zinc-400 transition hover:border-white/20 hover:text-white"
+              className="rounded-lg border border-brand-line px-3 py-1 text-xs font-bold text-brand-muted transition hover:border-brand-green/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-green/60"
             >
               Dispensar todos
             </button>
@@ -278,10 +283,10 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
       {/* Cost Alerts (real-time derived) */}
       {filteredCostAlerts.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-soft">
             <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
             Alertas de Custo e Performance
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
+            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-brand-muted">
               {filteredCostAlerts.length}
             </span>
           </h2>
@@ -304,10 +309,10 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
       {/* Agent Alerts (operational) */}
       {filteredAgentAlerts.length > 0 && (
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-brand-soft">
             <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
             Alertas Operacionais
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
+            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-brand-muted">
               {filteredAgentAlerts.length}
             </span>
           </h2>
@@ -332,14 +337,17 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
 
       {/* Empty state */}
       {filteredCostAlerts.length === 0 && filteredAgentAlerts.length === 0 && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/15">
-            <span className="text-3xl">✓</span>
+        <div className="flex flex-1 items-center justify-center py-10">
+          <div className="w-full max-w-lg">
+            <EmptyState
+              icon={ShieldCheck}
+              title="Operação saudável"
+              description="Nenhum alerta para o filtro selecionado. O agente segue monitorando budget, otimizações e custos por resultado."
+            />
           </div>
-          <p className="text-lg font-semibold text-emerald-400">Operação Saudável</p>
-          <p className="text-sm text-zinc-500">Nenhum alerta para o filtro selecionado</p>
         </div>
       )}
-    </div>
+      </div>
+    </section>
   );
 }
