@@ -426,7 +426,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         }
                       </div>
 
-                      {/* Colunas 4-9: mǸtricas */}
+                      {/* Colunas 4-9: métricas */}
                       <div className="px-4 py-4 text-white">
                         {formatNumber(conversations)}
                       </div>

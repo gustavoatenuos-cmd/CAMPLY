@@ -2,8 +2,9 @@ import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import * as path from 'path';
 
-// Load .env
+// Load .env and .env.local
 config({ path: path.resolve(process.cwd(), '.env') });
+config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -38,7 +39,7 @@ async function run() {
 
   for (const client of clients || []) {
     // Apenas clientes que o user pediu: Donatellus, TDAH CONSTANTE, ORAL UNIC TOLEDO etc.
-    // Mas vamos processar todos que tm run
+    // Mas vamos processar todos que têm run
     if (!client.meta_sync_runs || client.meta_sync_runs.length === 0) continue;
 
     for (const run of client.meta_sync_runs) {
@@ -67,7 +68,7 @@ async function run() {
       rows.push({
         Cliente: client.name,
         'Conta Meta (Asset ID)': run.meta_asset_id,
-        Perodo: run.period,
+        Período: run.period,
         'Spend Total': `R$ ${spend.toFixed(2)}`,
         'Sales Spend': `R$ ${salesSpend.toFixed(2)}`,
         'Messaging Spend': `R$ ${messagingSpend.toFixed(2)}`,
