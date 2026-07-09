@@ -54,19 +54,7 @@ fi
 
 echo "1. Nenhum projeto remoto linkado."
 
-# 1.5. Prepare environment variables for local testing
-cat << 'EOF' > supabase/functions/.env
-META_TEST_MODE=true
-META_API_ENV=local
-TEST_TIMEOUT_MS=100
-TEST_MAX_RETRIES=2
-TEST_BACKOFF_MS=50
-META_APP_ID=123
-META_APP_SECRET=abc
-APP_BASE_URL=http://localhost:3000
-META_BASE_URL=http://mock-graph:9999
-META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
-EOF
+
 
 # 2. Preparar migrations incrementais antes de iniciar o Supabase.
 # O teste precisa recriar um banco legado até a migration 000002, aplicar fixtures
@@ -82,8 +70,23 @@ for migration in supabase/migrations/*.sql; do
   fi
 done
 
+# 2.5. Prepare environment variables for local testing
+cat << EOF > supabase/functions/.env
+META_TEST_MODE=true
+META_API_ENV=local
+TEST_TIMEOUT_MS=100
+TEST_MAX_RETRIES=2
+TEST_BACKOFF_MS=50
+META_APP_ID=123
+META_APP_SECRET=abc
+APP_BASE_URL=http://localhost:3000
+META_BASE_URL=http://mock-graph:9999
+META_TOKEN_ENCRYPTION_KEY=my-super-secret-encryption-key
+DIRECT_DB_URL=postgresql://postgres:postgres@supabase_db_camply:5432/postgres
+EOF
+
 # 3. Iniciar o Supabase local
-echo "3. Iniciando Supabase local..."
+echo "3. Iniciar o Supabase local..."
 "$SUPABASE_CLI" start
 
 # Descobrir a rede do Supabase

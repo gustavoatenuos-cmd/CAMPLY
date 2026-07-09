@@ -101,8 +101,24 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ id: '123456789', name: 'Mock User' }));
   }
 
-  let date_start = '2026-06-27';
-  let date_stop = '2026-06-27';
+  function getSaoPauloDate(shiftDays = 0) {
+    const d = new Date();
+    if (shiftDays !== 0) {
+      d.setDate(d.getDate() + shiftDays);
+    }
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d).map((part) => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  const todaySP = getSaoPauloDate(0);
+  let date_start = todaySP;
+  let date_stop = todaySP;
+
   if (parsedUrl.query.date_preset === 'this_month') {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Sao_Paulo',
@@ -112,13 +128,24 @@ const server = http.createServer((req, res) => {
     }).formatToParts(new Date()).map((part) => [part.type, part.value]));
     date_start = `${parts.year}-${parts.month}-01`;
     date_stop = `${parts.year}-${parts.month}-${parts.day}`;
-  }
-  if (parsedUrl.query.time_range) {
+  } else if (parsedUrl.query.date_preset === 'last_7d') {
+    date_start = getSaoPauloDate(-6);
+    date_stop = todaySP;
+  } else if (parsedUrl.query.date_preset === 'last_30d') {
+    date_start = getSaoPauloDate(-29);
+    date_stop = todaySP;
+  } else if (parsedUrl.query.date_preset === 'today') {
+    date_start = todaySP;
+    date_stop = todaySP;
+  } else if (parsedUrl.query.time_range) {
      try {
        const tr = JSON.parse(parsedUrl.query.time_range);
        if (tr.since) date_start = tr.since;
        if (tr.until) date_stop = tr.until;
      } catch(e){}
+  } else {
+    date_start = '2026-06-27';
+    date_stop = '2026-06-27';
   }
 
   if (path.endsWith(`/${accountId}`) || path.endsWith(`/${accountId}/`)) {
