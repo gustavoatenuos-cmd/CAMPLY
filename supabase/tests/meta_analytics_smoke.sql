@@ -226,11 +226,20 @@ BEGIN
   IF has_function_privilege('anon', 'public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon must not execute get_global_performance_dashboard_v2';
   END IF;
-  IF has_function_privilege('anon', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER)', 'EXECUTE') THEN
+  IF has_function_privilege('anon', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER, TEXT, TEXT[], TEXT, TEXT)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon must not execute upsert_client_analysis_profile';
   END IF;
-  IF NOT has_function_privilege('authenticated', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER)', 'EXECUTE') THEN
+  IF NOT has_function_privilege('authenticated', 'public.upsert_client_analysis_profile(TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT, NUMERIC, BOOLEAN, TEXT, TEXT, NUMERIC, BIGINT, BIGINT, INTEGER, TEXT, TEXT[], TEXT, TEXT)', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated must execute upsert_client_analysis_profile';
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'upsert_client_analysis_profile'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'Expected exactly 1 signature for upsert_client_analysis_profile';
   END IF;
 
   SELECT p.prosecdef, p.proconfig
