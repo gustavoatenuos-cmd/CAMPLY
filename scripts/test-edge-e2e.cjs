@@ -14,13 +14,13 @@ async function setMockReconciliationState(state) {
   await fetch(`http://127.0.0.1:9999/set_reconciliation_state?state=${state}`);
 }
 
-async function runScenario(scenarioName, assetId, accessToken, assertFn, extraPayload = {}, skipReset = false) {
+async function runScenario(scenarioName, clientMetaAssetId, accessToken, assertFn, extraPayload = {}, skipReset = false) {
   if (!skipReset) await resetMock();
   executedCount++;
   console.log(`\n--- Running Scenario: ${scenarioName} ---`);
-  
+
   // Rule: requestedPeriods -> periods
-  const payload = { metaAssetId: assetId, periods: ['last_7d'], ...extraPayload };
+  const payload = { clientMetaAssetId, periods: ['last_7d'], ...extraPayload };
   const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: {
@@ -93,10 +93,20 @@ async function run() {
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${integrationId}', '${userId}', '${encryptOut}', 'active');
   "`);
 
-  const setupAccount = (act, intId = integrationId) => {
+  // Operational sync only authorizes through a client-linked asset
+  // (public.client_meta_assets, joined to client_identity) — a discovered
+  // meta_assets row alone is not enough. See meta-sync-performance/index.ts.
+  const setupAccount = (act, intId = integrationId, ownerUserId = userId) => {
     const assetId = cryptoLib.randomUUID();
     execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "INSERT INTO meta_assets (id, integration_id, asset_id, asset_type, asset_name) VALUES ('${assetId}', '${intId}', '${act}', 'adaccount', 'Mock ${act}');"`);
-    return assetId;
+
+    const clientId = `client_${act}`;
+    const linkId = cryptoLib.randomUUID();
+    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
+      INSERT INTO client_identity (user_id, client_id, display_name) VALUES ('${ownerUserId}', '${clientId}', 'Mock ${act}');
+      INSERT INTO client_meta_assets (id, user_id, client_id, meta_asset_id) VALUES ('${linkId}', '${ownerUserId}', '${clientId}', '${assetId}');
+    "`);
+    return linkId;
   };
 
   const assets = {
@@ -122,7 +132,7 @@ async function run() {
     INSERT INTO auth.users (id, email) VALUES ('${foreignUserId}', 'foreign_${Date.now()}@test.com');
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${foreignIntegrationId}', '${foreignUserId}', 'token', 'active');
   "`);
-  const foreignAsset = setupAccount('act_foreign', foreignIntegrationId);
+  const foreignAsset = setupAccount('act_foreign', foreignIntegrationId, foreignUserId);
 
   // 1. simple
   await runScenario('simple', assets.simple, accessToken, (res, json, q) => {
@@ -266,7 +276,7 @@ async function run() {
   const resInv = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-    body: JSON.stringify({ periods: ['invalid_period'] }) // Missing metaAssetId
+    body: JSON.stringify({ periods: ['invalid_period'] }) // Missing clientMetaAssetId
   });
   assertEqual(resInv.status, 400, 'HTTP 400');
   passedCount++;
@@ -278,7 +288,7 @@ async function run() {
   const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer fake_token` },
-    body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'] })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'] })
   });
   assertEqual(resUnauth.status, 401, 'HTTP 401');
   passedCount++;
@@ -451,7 +461,7 @@ async function run() {
   const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-    body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
   });
   assertEqual(resRej.status, 400, 'HTTP 400');
   passedCount++;
