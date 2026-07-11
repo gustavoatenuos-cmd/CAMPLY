@@ -27,6 +27,8 @@ vi.mock('../../../supabase/functions/_shared/cors.ts', () => ({
 
 vi.mock('../../../supabase/functions/_shared/direct-postgres.ts', () => ({
   withDirectPostgres: vi.fn().mockResolvedValue({
+    client_meta_asset_id: 'cma_123',
+    client_id: 'client_123',
     id: 'act_123',
     asset_id: 'act_mock_account',
     integration_id: 'int_123',
@@ -161,7 +163,7 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     };
   };
 
-  const runScenario = async (failConfig?: { target: string }, body = { metaAssetId: 'act_123', periods: ['today'] }) => {
+  const runScenario = async (failConfig?: { target: string }, body = { clientMetaAssetId: 'cma_123', periods: ['today'] }) => {
     const supabaseClient = createMockSupabase(failConfig);
     requireAuthenticatedUser.mockResolvedValue({
       user: { id: 'user_123' },
@@ -187,14 +189,35 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     expect(supabaseClient.from).toHaveBeenCalledWith('meta_sync_runs');
   });
 
-  it('supports legacy adAccountId only through the owned meta asset lookup', async () => {
-    const { response, supabaseClient } = await runScenario(undefined, { adAccountId: 'act_mock_account', periods: ['today'] });
+  it('resolves the ad account exclusively through the linked clientMetaAssetId', async () => {
+    const { response, supabaseClient } = await runScenario(undefined, { clientMetaAssetId: 'cma_123', periods: ['today'] });
 
     expect(response.status).toBe(206);
     expect(supabaseClient.rpc).toHaveBeenCalledWith('persist_meta_sync_run', expect.objectContaining({
       p_ad_account_id: 'act_mock_account',
       p_user_id: 'user_123',
     }));
+  });
+
+  it('rejects a bare metaAssetId with no clientMetaAssetId for operational sync', async () => {
+    const { response, json } = await runScenario(undefined, { metaAssetId: 'act_123', periods: ['today'] });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('clientMetaAssetId');
+  });
+
+  it('rejects a bare adAccountId with no clientMetaAssetId for operational sync', async () => {
+    const { response, json } = await runScenario(undefined, { adAccountId: 'act_mock_account', periods: ['today'] });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('clientMetaAssetId');
+  });
+
+  it('rejects an empty request with no clientMetaAssetId at all', async () => {
+    const { response, json } = await runScenario(undefined, { periods: ['today'] });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('clientMetaAssetId');
   });
 
   it('rejects unsafe adAccountId values before building Graph API endpoints', async () => {
@@ -209,7 +232,7 @@ describe('Persistence Failure Handling through Orchestrator', () => {
 
   it('rejects unsafe selected entity ids before filtering Graph API data', async () => {
     const { response, json } = await runScenario(undefined, {
-      metaAssetId: 'act_123',
+      clientMetaAssetId: 'cma_123',
       periods: ['today'],
       selectedCampaigns: ['camp_1', '../metadata'],
     });

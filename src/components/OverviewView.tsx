@@ -301,7 +301,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
       const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected');
       const syncPromises = activeClientsWithAssets.flatMap(c => 
         c.accounts.map(account => 
-          syncMetaAsset({ metaAssetId: account.metaAssetId, period, requestedLevel: 'campaign' })
+          syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' })
             .catch(err => { console.error('Erro sync', err); return null; })
         )
       );

@@ -244,7 +244,7 @@ export function MetaHierarchyExplorer({
     setError(null);
     try {
       await syncMetaAsset({
-        metaAssetId: account.metaAssetId,
+        clientMetaAssetId: account.clientMetaAssetId,
         period,
         requestedLevel: level === 'campaign' ? 'adset' : 'creative',
         campaignIds: level === 'campaign' ? [item.id] : [],

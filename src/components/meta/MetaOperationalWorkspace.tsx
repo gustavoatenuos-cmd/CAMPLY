@@ -175,7 +175,7 @@ export function MetaOperationalWorkspace({
     setError(null);
     setAction(null);
     try {
-      const result = await syncMetaAsset({ metaAssetId: account.metaAssetId, period, requestedLevel });
+      const result = await syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel });
       if (!result.success || result.status === 'failed') throw new Error(result.message || 'A coleta Meta falhou.');
       setAction(result.status === 'partial'
         ? 'Sincronização parcial registrada. O snapshot confiável anterior permanece disponível.'

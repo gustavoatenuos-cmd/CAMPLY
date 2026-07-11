@@ -1,10 +1,32 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Facebook, Link as LinkIcon, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import { invokeFunction } from '../lib/invokeFunction';
-import { loadCachedClientMetaAssetCatalog } from '../lib/meta/clientMetaAssetService';
+import {
+  loadCachedClientMetaAssetCatalog,
+  loadClientMetaAssetCatalog,
+  type ClientMetaAssetCatalog,
+} from '../lib/meta/clientMetaAssetService';
+import { syncMetaAsset } from '../lib/meta/metaSyncService';
+import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+
+const bulkPeriodLabels: Record<DashboardPeriod, string> = {
+  this_month: 'Mês atual',
+  this_week: 'Semana atual',
+  today: 'Hoje',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  last_90d: 'Últimos 90 dias',
+};
+
+interface BulkSyncProgress {
+  total: number;
+  completed: number;
+  failed: number;
+  running: boolean;
+}
 
 interface MetaIntegrationViewProps {
   data: CamplyData;
@@ -56,6 +78,65 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [showAvailableAssets, setShowAvailableAssets] = useState(false);
+  const [bulkPeriod, setBulkPeriod] = useState<DashboardPeriod>('this_month');
+  const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
+
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const next = await loadClientMetaAssetCatalog();
+      setCatalog(next);
+    } catch (catalogLoadError) {
+      setCatalogError(catalogLoadError instanceof Error
+        ? catalogLoadError.message
+        : 'Não foi possível carregar as contas vinculadas a clientes.');
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
+
+  const linkedAccounts = useMemo(() => (catalog?.clients || []).flatMap((client) => (
+    client.accounts.map((account) => ({ clientId: client.clientId, clientName: client.clientName, account }))
+  )), [catalog]);
+
+  const availableUnlinkedAssets = useMemo(() => (
+    (catalog?.availableAssets || []).filter((asset) => !asset.linkedClientId)
+  ), [catalog]);
+
+  const syncLinkedClients = async () => {
+    if (linkedAccounts.length === 0 || bulkSync?.running) return;
+    setError(null);
+    setNotice(null);
+    setBulkSync({ total: linkedAccounts.length, completed: 0, failed: 0, running: true });
+    let completed = 0;
+    let failed = 0;
+    for (const { account } of linkedAccounts) {
+      try {
+        const result = await syncMetaAsset({
+          clientMetaAssetId: account.clientMetaAssetId,
+          period: bulkPeriod,
+          requestedLevel: 'campaign',
+        });
+        if (!result.success || result.status === 'failed') failed += 1;
+      } catch {
+        failed += 1;
+      }
+      completed += 1;
+      setBulkSync({ total: linkedAccounts.length, completed, failed, running: true });
+    }
+    setBulkSync({ total: linkedAccounts.length, completed, failed, running: false });
+    setNotice(`Sincronização de clientes vinculados concluída: ${completed - failed}/${linkedAccounts.length} conta(s) com sucesso${failed > 0 ? `, ${failed} com falha` : ''}.`);
+    await loadCatalog();
+  };
 
   const checkStatus = useCallback(async (verifyRemote = false) => {
     setStatusLoading(true);
@@ -149,6 +230,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       const response = await invokeFunction<{ assets?: MetaAsset[] }>('meta-list-assets');
       setAssets(response.assets || []);
       setNotice('Ativos atualizados e salvos. As métricas das campanhas só mudam quando você sincronizar a conta ou o período.');
+      await loadCatalog();
     } catch (discoverError) {
       setError(metaActionError(discoverError, 'Não foi possível atualizar os ativos.'));
     } finally {
@@ -210,11 +292,85 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
           </article>
 
           <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
-            <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Ativos descobertos</p>
-            <h2 className="mt-1 text-lg font-black text-white">Contas e páginas autorizadas</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Contas operacionais</p>
+                <h2 className="mt-1 text-lg font-black text-white">Contas vinculadas a clientes</h2>
+                <p className="mt-1 max-w-xl text-sm text-brand-muted">Conta autorizada no Facebook não é conta operacional do CAMPLY. Só contas vinculadas a um cliente ativo entram em sincronização e análise.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  data-testid="meta-bulk-period-select"
+                  value={bulkPeriod}
+                  onChange={(event) => setBulkPeriod(event.target.value as DashboardPeriod)}
+                  className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white"
+                >
+                  {Object.entries(bulkPeriodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <button
+                  data-testid="meta-sync-linked-clients"
+                  type="button"
+                  onClick={() => void syncLinkedClients()}
+                  disabled={linkedAccounts.length === 0 || Boolean(bulkSync?.running)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
+                >
+                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar clientes vinculados
+                </button>
+              </div>
+            </div>
+
+            {bulkSync && (
+              <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs font-bold text-brand-soft">
+                {bulkSync.running ? 'Sincronizando' : 'Concluído'}: {bulkSync.completed}/{bulkSync.total} conta(s) vinculada(s)
+                {bulkSync.failed > 0 ? ` · ${bulkSync.failed} com falha` : ''}
+              </p>
+            )}
+
+            {catalogError && <div role="alert" className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{catalogError}</div>}
+
             <div className="mt-4 space-y-2">
-              {assets.map((asset, index) => <div key={asset.id || asset.asset_id || index} className="flex items-center gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3"><div className="grid h-8 w-8 place-items-center rounded-lg bg-white/5">{asset.asset_type === 'adaccount' ? <CheckCircle2 className="text-brand-green" size={15} /> : <LinkIcon className="text-blue-300" size={15} />}</div><div><p className="font-bold text-white">{asset.asset_name || 'Ativo sem nome'}</p><p className="text-xs text-brand-muted">{asset.asset_type || 'tipo não informado'} · {asset.asset_id || asset.id}</p></div></div>)}
-              {assets.length === 0 && <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Nenhum ativo carregado. Conecte a conta e execute a descoberta.</div>}
+              {linkedAccounts.map(({ clientName, account }) => (
+                <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/10"><CheckCircle2 className="text-brand-green" size={15} /></div>
+                    <div>
+                      <p className="font-bold text-white">{clientName}</p>
+                      <p className="text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
+                </div>
+              ))}
+              {catalogLoading && linkedAccounts.length === 0 && (
+                <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Carregando contas vinculadas...</div>
+              )}
+              {!catalogLoading && linkedAccounts.length === 0 && (
+                <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Nenhuma conta vinculada a um cliente ainda. Vincule uma conta abaixo, em "contas disponíveis para vínculo".</div>
+              )}
+            </div>
+
+            <div className="mt-5 border-t border-brand-line pt-4">
+              <button
+                type="button"
+                onClick={() => setShowAvailableAssets((current) => !current)}
+                className="inline-flex items-center gap-2 text-xs font-bold text-brand-soft"
+              >
+                {showAvailableAssets ? 'Ocultar' : 'Ver'} contas disponíveis para vínculo ({availableUnlinkedAssets.length})
+              </button>
+              {showAvailableAssets && (
+                <div className="mt-3 space-y-2">
+                  {availableUnlinkedAssets.map((asset) => (
+                    <div key={asset.metaAssetId} className="flex items-center gap-3 rounded-xl border border-dashed border-brand-line bg-brand-ink/30 p-3">
+                      <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/5"><LinkIcon className="text-blue-300" size={15} /></div>
+                      <div>
+                        <p className="font-bold text-white">{asset.accountName}</p>
+                        <p className="text-xs text-brand-muted">{asset.adAccountId} · autorizada no Facebook, ainda não vinculada a um cliente</p>
+                      </div>
+                    </div>
+                  ))}
+                  {availableUnlinkedAssets.length === 0 && <p className="text-sm text-brand-muted">Nenhuma conta disponível para vínculo.</p>}
+                </div>
+              )}
             </div>
           </article>
         </div>
