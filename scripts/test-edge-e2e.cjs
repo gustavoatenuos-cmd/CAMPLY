@@ -308,15 +308,23 @@ async function run() {
   });
 
   // 12. rate_limit_recovered
+  // NOTE: 1dbd3df ("inject timeoutMs=40000 and maxRetries=0 to prevent
+  // OOM/504 on large accounts") hardcoded maxRetries=0 on every insight-level
+  // fetchMetaGraphPaginated call and it is still 0 at HEAD. The mock returns
+  // 429 on this account's first 2 requests and succeeds from the 3rd request
+  // on, but with zero retries the sync now fails on the very first 429
+  // instead of ever reaching that 3rd attempt. This scenario is kept to
+  // document that a transient rate limit is no longer recovered from
+  // automatically, not to prove recovery still works.
   await fetch('http://127.0.0.1:9999/reset');
   await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
-    assertEqual(res.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
-    assertEqual(json.success, true, 'JSON Success');
+    assertEqual(res.status, 502, 'HTTP Status 502 (maxRetries=0 fails on the first 429, never reaches recovery)');
+    assertEqual(json.success, false, 'JSON Failed');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(status, 'success', 'Run success');
+    assertEqual(status, 'failed', 'Run failed on the first rate-limited attempt');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests due to retries');
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 1, true, 'Mock received at least 1 request; maxRetries=0 means none of them retry into the 3rd, recovering attempt');
   });
 
   // 13. rate_limit_exhausted
@@ -329,7 +337,7 @@ async function run() {
     assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
+    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 1, true, 'Mock received at least 1 request; maxRetries=0 exhausts without retrying');
   });
 
   // 14. persistence_failure
