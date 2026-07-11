@@ -309,22 +309,27 @@ async function run() {
 
   // 12. rate_limit_recovered
   // NOTE: 1dbd3df ("inject timeoutMs=40000 and maxRetries=0 to prevent
-  // OOM/504 on large accounts") hardcoded maxRetries=0 on every insight-level
-  // fetchMetaGraphPaginated call and it is still 0 at HEAD. The mock returns
-  // 429 on this account's first 2 requests and succeeds from the 3rd request
-  // on, but with zero retries the sync now fails on the very first 429
-  // instead of ever reaching that 3rd attempt. This scenario is kept to
-  // document that a transient rate limit is no longer recovered from
-  // automatically, not to prove recovery still works.
+  // OOM/504 on large accounts") hardcoded maxRetries=0 on every
+  // fetchMetaGraphPaginated call (campaigns, adsets, ads, every insight
+  // level) and it is still 0 at HEAD. The mock returns 429 on this account's
+  // first 2 requests and succeeds from the 3rd on, but campaigns/adsets/ads
+  // are fetched concurrently, so which of them lands in those first 2 slots
+  // is a race, not a fixed retry count. With zero retries, whichever
+  // sub-collection loses that race fails outright instead of recovering —
+  // but the run itself degrades gracefully (this scenario is kept to
+  // document that: partial success, not a hard failure). Observed directly
+  // from a real CI run: HTTP 206, success:true, status:'partial', with the
+  // response's top-level `message` naming whichever collection got
+  // rate-limited (varies by race, so not asserted here).
   await fetch('http://127.0.0.1:9999/reset');
   await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
-    assertEqual(res.status, 502, 'HTTP Status 502 (maxRetries=0 fails on the first 429, never reaches recovery)');
-    assertEqual(json.success, false, 'JSON Failed');
+    assertEqual(res.status, 206, 'HTTP Status 206 (one concurrent sub-collection loses the 429 race; the run still degrades gracefully)');
+    assertEqual(json.success, true, 'JSON Success (partial is structurally a success)');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(status, 'failed', 'Run failed on the first rate-limited attempt');
+    assertEqual(status, 'partial', 'Run is partial — at least one sub-collection was rate-limited with no retries left');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 1, true, 'Mock received at least 1 request; maxRetries=0 means none of them retry into the 3rd, recovering attempt');
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 1, true, 'Mock received at least 1 request');
   });
 
   // 13. rate_limit_exhausted
