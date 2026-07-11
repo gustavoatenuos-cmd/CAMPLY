@@ -7,7 +7,10 @@ interface ClientPrimaryMetricBlockProps {
 }
 
 export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlockProps) {
-  const profile = performance.client?.analysisProfile;
+  // performance.client é o registro local do workspace (sem perfil analítico);
+  // o perfil comercial de fato vem do nível superior, populado a partir de
+  // client_analysis_profiles em globalPerformanceDashboard.ts.
+  const profile = performance.analysisProfile;
   const metrics = performance.metrics;
 
   if (!profile?.primaryConversionMetric) {
