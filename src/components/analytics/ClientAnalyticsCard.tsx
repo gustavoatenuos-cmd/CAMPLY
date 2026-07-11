@@ -13,8 +13,11 @@ interface ClientAnalyticsCardProps {
 }
 
 export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
-  const { client, metrics, clientStatus, score } = performance;
-  const profile = client?.analysisProfile;
+  const { client, metrics, clientStatus, score, analysisProfile } = performance;
+  // client é o registro local do workspace (sem perfil analítico); o perfil
+  // comercial de fato vem do nível superior, populado a partir de
+  // client_analysis_profiles em globalPerformanceDashboard.ts.
+  const profile = analysisProfile;
   const performanceScore = score?.value;
 
   // Actual spend from Meta
