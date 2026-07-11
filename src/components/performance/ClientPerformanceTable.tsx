@@ -7,7 +7,7 @@ import type {
   MetricContract,
 } from '../../lib/performance/globalPerformanceDashboard';
 import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/performance/types';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { calculateObjectiveScopedCosts } from '../../lib/performance/objectiveScopedMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
@@ -368,9 +368,6 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const conversations     = metricValue(conversationsMetric);
               const leads             = metricValue(leadsMetric);
               const purchases         = metricValue(purchasesMetric);
-              const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', spendMetric, conversationsMetric);
-              const costPerLead         = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
-              const costPerPurchase     = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
               const evaluations       = account
                 ? client.evaluations.filter((ev) => ev.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
@@ -378,6 +375,13 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
               const groups            = account
                 ? client.metricGroups.filter((g) => g.clientMetaAssetId === account.clientMetaAssetId)
                 : [];
+              // CPA/CPL/custo-por-conversa vêm do gasto e do resultado das
+              // campanhas do MESMO objetivo (metricGroups), nunca do gasto
+              // total da conta — ver src/lib/performance/objectiveScopedMetrics.ts.
+              const objectiveCosts     = calculateObjectiveScopedCosts(groups);
+              const costPerConversation = objectiveCosts.costPerMessagingConversation;
+              const costPerLead         = objectiveCosts.costPerLead;
+              const costPerPurchase     = objectiveCosts.costPerPurchase;
               const isExpanded = expanded === key;
 
               return (
@@ -439,25 +443,19 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         <TraceableMetricValue metric={conversationsMetric}>{formatNumber(conversations)}</TraceableMetricValue>
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerConversation}>
-                          {formatCurrency(metricValue(costPerConversation), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerConversation.value, costPerConversation.currency)}
                       </div>
                       <div className="px-4 py-4 text-white">
                         <TraceableMetricValue metric={leadsMetric}>{formatNumber(leads)}</TraceableMetricValue>
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerLead}>
-                          {formatCurrency(metricValue(costPerLead), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerLead.value, costPerLead.currency)}
                       </div>
                       <div className="px-4 py-4 text-white">
                         <TraceableMetricValue metric={purchasesMetric}>{formatNumber(purchases)}</TraceableMetricValue>
                       </div>
                       <div className="px-4 py-4 text-white">
-                        <TraceableMetricValue metric={costPerPurchase}>
-                          {formatCurrency(metricValue(costPerPurchase), account?.currency || null)}
-                        </TraceableMetricValue>
+                        {formatCurrency(costPerPurchase.value, costPerPurchase.currency)}
                       </div>
 
                       {/* Coluna 10: Situação */}

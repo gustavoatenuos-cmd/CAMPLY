@@ -1,6 +1,7 @@
 import { Activity, Banknote, MessageCircle, ShoppingBag, UserRound } from 'lucide-react';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
-import { aggregateMetricTotal, aggregateRatio, type MetricAggregate } from '../../lib/performance/aggregateMetrics';
+import { aggregateMetricTotal, type MetricAggregate } from '../../lib/performance/aggregateMetrics';
+import { calculateObjectiveScopedCosts } from '../../lib/performance/objectiveScopedMetrics';
 import { clientSeverity } from './CommercialDecisionOverview';
 
 export type HealthFilter = 'all' | 'healthy' | 'attention' | 'critical' | 'no_data';
@@ -73,8 +74,12 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   const conversations = aggregateMetricTotal(clients.map((client) => client.metrics.messaging_conversations_started_total));
   const leads = aggregateMetricTotal(clients.map((client) => client.metrics.leads));
   const purchases = aggregateMetricTotal(clients.map((client) => client.metrics.purchases));
-  const costPerConversation = aggregateRatio(spend, conversations);
-  const costPerPurchase = aggregateRatio(spend, purchases);
+  // CPA/custo por conversa vêm do gasto e do resultado das campanhas do MESMO
+  // objetivo (metricGroups), nunca do gasto total do recorte — ver
+  // src/lib/performance/objectiveScopedMetrics.ts.
+  const objectiveCosts = calculateObjectiveScopedCosts(clients.flatMap((client) => client.metricGroups));
+  const costPerConversation = objectiveCosts.costPerMessagingConversation;
+  const costPerPurchase = objectiveCosts.costPerPurchase;
 
   // Investimento por moeda: mantém a soma honesta mesmo com contas em moedas
   // diferentes (caso em que o agregado único fica indisponível).

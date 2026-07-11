@@ -14,8 +14,7 @@ import type { Client } from '../../types';
 import { ClientLogo } from '../clients/ClientLogo';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
-import { TraceableMetricValue } from './TraceableMetricValue';
+import { calculateObjectiveScopedCosts } from '../../lib/performance/objectiveScopedMetrics';
 
 interface ClientPerformanceCardGridProps {
   clients: GlobalClientPerformance[];
@@ -71,17 +70,20 @@ export function ClientPerformanceCardGrid({
 
         // Metricas agregadas do cliente
         const spend = getMetric(client, 'spend');
-        
+
+        // CPA, CPL, custo por conversa e ROAS vêm do gasto e do resultado das
+        // campanhas do MESMO objetivo (metricGroups), nunca do gasto total do
+        // cliente — ver src/lib/performance/objectiveScopedMetrics.ts.
+        const objectiveCosts = calculateObjectiveScopedCosts(client.metricGroups);
+
         // Conversões (Vendas)
-        const purchasesMetric = client.metrics?.['purchases'];
         const purchases = getMetric(client, 'purchases');
-        const costPerPurchase = deriveCostMetric('cost_per_purchase', client.metrics?.['spend'], purchasesMetric);
-        const purchaseRoas = getMetric(client, 'purchase_roas');
+        const costPerPurchase = objectiveCosts.costPerPurchase;
+        const purchaseRoas = objectiveCosts.purchaseRoas.available ? objectiveCosts.purchaseRoas.value : null;
 
         // Conversões (Leads/Conversas)
-        const conversationsMetric = client.metrics?.['messaging_conversations_started_total'];
         const conversations = getMetric(client, 'messaging_conversations_started_total');
-        const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', client.metrics?.['spend'], conversationsMetric);
+        const costPerConversation = objectiveCosts.costPerMessagingConversation;
 
         // Engajamento
         const linkClicks = getMetric(client, 'link_clicks');
@@ -137,13 +139,13 @@ export function ClientPerformanceCardGrid({
                     <p className="text-lg font-black text-white">
                       {formatNumber(purchases)} <span className="text-xs font-normal text-emerald-400">({purchaseRoas !== null ? purchaseRoas.toFixed(2) + 'x' : '—'})</span>
                     </p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerPurchase}>{formatCurrency(costPerPurchase?.value, currency)}</TraceableMetricValue></p>
+                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: {formatCurrency(costPerPurchase.available ? costPerPurchase.value : null, currency)}</p>
                   </>
                 ) : conversations && conversations > 0 ? (
                   <>
                     <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Conversas (Mensagens)</p>
                     <p className="text-lg font-black text-white">{formatNumber(conversations)}</p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerConversation}>{formatCurrency(costPerConversation?.value, currency)}</TraceableMetricValue></p>
+                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: {formatCurrency(costPerConversation.available ? costPerConversation.value : null, currency)}</p>
                   </>
                 ) : (
                   <>
