@@ -21,7 +21,7 @@ async function runScenario(scenarioName, assetId, accessToken, assertFn, extraPa
   
   // Rule: requestedPeriods -> periods
   const payload = { metaAssetId: assetId, periods: ['last_7d'], ...extraPayload };
-  const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -263,7 +263,7 @@ async function run() {
   // 9. invalid_payload
   executedCount++;
   console.log(`\n--- Running Scenario: invalid_payload ---`);
-  const resInv = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resInv = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
     body: JSON.stringify({ periods: ['invalid_period'] }) // Missing metaAssetId
@@ -275,7 +275,7 @@ async function run() {
   // 10. unauthorized
   executedCount++;
   console.log(`\n--- Running Scenario: unauthorized ---`);
-  const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer fake_token` },
     body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'] })
@@ -448,7 +448,7 @@ async function run() {
   // 22. sync_run_id_rejected
   executedCount++;
   console.log(`\n--- Running Scenario: sync_run_id_rejected ---`);
-  const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
     body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
