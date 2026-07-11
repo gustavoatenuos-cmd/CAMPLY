@@ -44,7 +44,7 @@ export interface OperationalMetaSyncResult {
 }
 
 export interface OperationalMetaSyncInput {
-  metaAssetId: string;
+  clientMetaAssetId: string;
   period: DashboardPeriod;
   requestedLevel?: MetaSyncLevel;
   campaignIds?: string[];
@@ -56,6 +56,10 @@ export interface OperationalMetaSyncInput {
 async function syncOperationalMetaAsset(
   input: OperationalMetaSyncInput
 ): Promise<OperationalMetaSyncResult> {
+  if (!input.clientMetaAssetId) {
+    throw new Error('A sincronização operacional exige uma conta Meta vinculada a um cliente.');
+  }
+
   if (isMetaE2EMode) {
     metaE2EState.syncedPeriods.add(input.period);
     persistMetaE2EState();
@@ -68,7 +72,7 @@ async function syncOperationalMetaAsset(
 
   try {
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
-      metaAssetId: input.metaAssetId,
+      clientMetaAssetId: input.clientMetaAssetId,
       periods: [input.period],
       requestedLevel: input.requestedLevel || 'campaign',
       selectedEntityIds: {

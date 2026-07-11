@@ -25,7 +25,10 @@ import { insightHasDelivery } from '../_shared/meta/mixedAttributionDetector.ts'
 import { withDirectPostgres } from '../_shared/direct-postgres.ts';
 
 interface SyncRequestBody {
+  clientMetaAssetId?: string;
+  /** @deprecated legacy discovery-only identifiers; rejected for operational sync, see clientMetaAssetId */
   metaAssetId?: string;
+  /** @deprecated legacy discovery-only identifiers; rejected for operational sync, see clientMetaAssetId */
   adAccountId?: string;
   periods?: string[];
   selectedCampaigns?: string[];
@@ -87,7 +90,9 @@ interface MetaAd {
   creative?: MetaAdCreative;
 }
 
-interface OwnedMetaAsset {
+interface OwnedClientMetaAsset {
+  client_meta_asset_id: string;
+  client_id: string;
   id: string;
   asset_id: string;
   integration_id: string;
@@ -461,16 +466,33 @@ export async function handleRequest(req: Request) {
     supabaseClient = auth.adminClient;
 
     const body = await req.json() as SyncRequestBody & { syncRunId?: string };
-    const metaAssetId = typeof body.metaAssetId === 'string' ? body.metaAssetId.trim() : undefined;
+    const clientMetaAssetId = typeof body.clientMetaAssetId === 'string' ? body.clientMetaAssetId.trim() : undefined;
+    const legacyMetaAssetId = typeof body.metaAssetId === 'string' ? body.metaAssetId.trim() : undefined;
     const legacyAdAccountId = typeof body.adAccountId === 'string' ? body.adAccountId.trim() : undefined;
+    if (body.clientMetaAssetId !== undefined && typeof body.clientMetaAssetId !== 'string') {
+      throw new HttpError('Invalid clientMetaAssetId', 400);
+    }
     if (body.metaAssetId !== undefined && typeof body.metaAssetId !== 'string') {
       throw new HttpError('Invalid metaAssetId', 400);
     }
     if (body.adAccountId !== undefined && typeof body.adAccountId !== 'string') {
       throw new HttpError('Invalid adAccountId', 400);
     }
-    if (metaAssetId) assertSafeMetaId(metaAssetId, 'metaAssetId');
+    if (clientMetaAssetId) assertSafeMetaId(clientMetaAssetId, 'clientMetaAssetId');
+    if (legacyMetaAssetId) assertSafeMetaId(legacyMetaAssetId, 'metaAssetId');
     if (legacyAdAccountId) assertSafeMetaId(legacyAdAccountId, 'adAccountId');
+
+    // Operational sync only ever runs against a Meta account linked to an active
+    // client (public.client_meta_assets). A Facebook-authorized ad account that
+    // was merely discovered (meta_assets) and never linked to a client is not an
+    // operational account and must never be synced or analyzed.
+    if (!clientMetaAssetId) {
+      throw new HttpError(
+        'A sincronização operacional exige uma conta Meta vinculada a um cliente (clientMetaAssetId).',
+        400
+      );
+    }
+
     const periods = Array.isArray(body.periods) && body.periods.length > 0
       ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
       : ['last_7d'];
@@ -502,48 +524,45 @@ export async function handleRequest(req: Request) {
     }
     usedRunId = generatedRunId;
 
-    if (!metaAssetId && !legacyAdAccountId) throw new HttpError('metaAssetId is required', 400);
-
+    // Resolve the account exclusively through the client link: client_meta_assets
+    // (unlinked_at IS NULL) -> client_identity (archived_at IS NULL) -> meta_assets
+    // -> meta_integrations. A discovered-but-unlinked meta_assets row, or a link
+    // whose client was archived, must never resolve here.
     const asset = await withDirectPostgres(async (sql) => {
-      const rows = metaAssetId
-        ? await sql<OwnedMetaAsset[]>`
-          select ma.id::text as id,
-                 ma.asset_id,
-                 mi.id::text as integration_id,
-                 mi.user_id::text as integration_user_id,
-                 mi.status as integration_status,
-                 mi.access_token_encrypted
-          from public.meta_assets ma
-          join public.meta_integrations mi on mi.id = ma.integration_id
-          where ma.asset_type = 'adaccount'
-            and mi.user_id::text = ${userId}
-            and ma.id::text = ${metaAssetId}
-          limit 1
-        `
-        : await sql<OwnedMetaAsset[]>`
-          select ma.id::text as id,
-                 ma.asset_id,
-                 mi.id::text as integration_id,
-                 mi.user_id::text as integration_user_id,
-                 mi.status as integration_status,
-                 mi.access_token_encrypted
-          from public.meta_assets ma
-          join public.meta_integrations mi on mi.id = ma.integration_id
-          where ma.asset_type = 'adaccount'
-            and mi.user_id::text = ${userId}
-            and ma.asset_id = ${legacyAdAccountId || ''}
-          limit 1
-        `;
+      const rows = await sql<OwnedClientMetaAsset[]>`
+        select cma.id::text as client_meta_asset_id,
+               cma.client_id,
+               ma.id::text as id,
+               ma.asset_id,
+               mi.id::text as integration_id,
+               mi.user_id::text as integration_user_id,
+               mi.status as integration_status,
+               mi.access_token_encrypted
+        from public.client_meta_assets cma
+        join public.client_identity ci
+          on ci.user_id = cma.user_id
+         and ci.client_id = cma.client_id
+         and ci.archived_at is null
+        join public.meta_assets ma
+          on ma.id = cma.meta_asset_id
+        join public.meta_integrations mi
+          on mi.id = ma.integration_id
+         and mi.user_id = cma.user_id
+        where cma.id::text = ${clientMetaAssetId}
+          and cma.user_id::text = ${userId}
+          and cma.unlinked_at is null
+          and ma.asset_type = 'adaccount'
+        limit 1
+      `;
       return rows[0] || null;
     });
 
     if (!asset) {
-      console.error('Owned Meta asset was not found', {
+      console.error('Client Meta asset link was not found or is not active', {
         userId,
-        metaAssetId: metaAssetId || null,
-        adAccountId: legacyAdAccountId || null,
+        clientMetaAssetId,
       });
-      throw new HttpError('Asset não localizado ou inválido para esta operação', 403);
+      throw new HttpError('Conta Meta não vinculada a um cliente ativo.', 403);
     }
 
     if (asset.integration_user_id !== userId) {
@@ -561,6 +580,8 @@ export async function handleRequest(req: Request) {
       access_token_encrypted: asset.access_token_encrypted,
     };
     const adAccountId = asset.asset_id;
+    const resolvedMetaAssetId = asset.id;
+    const resolvedClientId = asset.client_id;
     assertSafeMetaId(adAccountId, 'stored Meta ad account id', 500);
 
     const accessToken = await decryptToken(integration.access_token_encrypted);
@@ -572,6 +593,9 @@ export async function handleRequest(req: Request) {
       metricDefinitionVersion: METRIC_DEFINITION_VERSION,
       graphApiVersion: META_GRAPH_VERSION,
       endpoint: 'meta-sync-ads',
+      clientMetaAssetId,
+      clientId: resolvedClientId,
+      metaAssetId: resolvedMetaAssetId,
       adAccountId,
       requestedLevel,
       periods,
@@ -1420,6 +1444,22 @@ export async function handleRequest(req: Request) {
       collection_warnings: collectionWarnings,
       collection_errors: collectionErrors,
       range_diagnostics_by_period: rangeDiagnosticsByPeriod,
+      // Traceability fields to compare this run against the Ads Manager, per the
+      // linked-client sync contract: which client/account this run actually
+      // covered, and exactly how each period was requested from the Graph API.
+      sync_reconciliation: {
+        clientMetaAssetId,
+        clientId: resolvedClientId,
+        metaAssetId: resolvedMetaAssetId,
+        adAccountId,
+        periods,
+        timezone: timezone === 'UNKNOWN' ? null : timezone,
+        currency: currency === 'UNKNOWN' ? null : currency,
+        requestedLevel,
+        runScope,
+        graphApiVersion: META_GRAPH_VERSION,
+        periodParamsByPeriod: Object.fromEntries(periods.map((period) => [period, insightPeriodParams(period, timezone)])),
+      },
     };
     const terminationReason = syncStatus === 'success' ? 'completed' : 'partial_collection';
 
