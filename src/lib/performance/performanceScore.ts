@@ -1,4 +1,5 @@
 import type { BudgetPacingResult, PerformanceEvaluation, PerformanceStatus } from './types';
+import { describeDataQualityReason } from './dataQualityReason';
 
 export type PerformanceScoreStatus = 'excellent' | 'healthy' | 'attention' | 'critical' | 'unavailable';
 export type DecisionSignalKind = 'performance' | 'pacing' | 'data_quality' | 'sync';
@@ -230,7 +231,7 @@ function buildSignals(input: PerformanceScoreInput): DecisionSignal[] {
       kind: 'data_quality',
       severity: input.dataQuality.status === 'unavailable' ? 'critical' : 'warning',
       title: input.dataQuality.status === 'unavailable' ? 'Dados indisponíveis' : 'Dados incompletos',
-      evidence: input.dataQuality.reason || 'A coleta não possui completude suficiente para uma leitura definitiva.',
+      evidence: describeDataQualityReason(input.dataQuality.reason) || 'A coleta não possui completude suficiente para uma leitura definitiva.',
       nextAction: 'Executar nova sincronização e validar período, nível e atribuição antes de otimizar.',
       confidence: 100,
     });

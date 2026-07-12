@@ -214,23 +214,20 @@ async function run() {
   });
 
   // 6. partial_page
-  // NOTE: 9186a75 ("Restringe maxPages=1 e limit=100 para evitar OOM e
-  // timeout do Supabase") capped every insight-level fetchMetaGraphPaginated
-  // call at maxPages=1 and never reverted it (still true at HEAD). The mock's
-  // partial_mode=complete/partial toggle only controls what page 2 of
-  // act_partial_test would return, but page 2 is now never requested at all,
-  // so both runs below always come back partial/206 regardless of mode. Run A
-  // used to be a genuine "success" run before that cap existed (this scenario
-  // passed with status 200/success up to the 2026-07-04 CI run); it is kept
-  // here, with the mode toggle, mainly to document the current truncation
-  // behavior and to prove two consecutive runs against the same account are
-  // still both persisted correctly, not to prove "complete" is reachable.
+  // fix/meta-sync-pagination-and-rate-limit-contract raised maxPages from the
+  // uniform 1 that 9186a75 had left in place (account:2, campaign:5,
+  // adset/ad:3 — see meta-sync-performance/index.ts) specifically so a
+  // 2-page account like this one is fully collected again. Mode "complete"
+  // should now genuinely reach page 2 and finish as a real success; mode
+  // "partial" still forces page 2 to fail (500) regardless of maxPages, so
+  // Run B stays partial. This restores the original pre-9186a75 contract
+  // instead of just documenting the truncation as permanent.
   await fetch('http://127.0.0.1:9999/set_partial_mode?mode=complete');
   const runIdA = await runScenario('partial_page_A', assets.partialTest, accessToken, (res, json, q) => {
-    assertEqual(res.status, 206, 'HTTP Status (maxPages=1 always truncates this 2-page account)');
+    assertEqual(res.status, 200, 'HTTP Status (maxPages now covers both pages of this account)');
     assertEqual(json.success, true, 'JSON Success');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(status, 'partial', 'Run A is partial under the current maxPages=1 cap');
+    assertEqual(status, 'success', 'Run A is a genuine success again, not truncated to page 1');
   });
 
   await fetch('http://127.0.0.1:9999/set_partial_mode?mode=partial');
@@ -239,6 +236,10 @@ async function run() {
     assertEqual(json.success, true, 'JSON Success is true for partial'); // partial is a success structurally, but run is marked partial
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'partial', 'Run B is partial');
+
+    // Ensure Run A remains the last complete run conceptually
+    const lastCompleteRun = q(`SELECT id FROM meta_sync_runs WHERE ad_account_id='act_partial_test' AND status='success' ORDER BY created_at DESC LIMIT 1`);
+    assertEqual(lastCompleteRun, runIdA, 'Dashboard selector should pick Run A');
 
     // Check that totals were inserted for A
     const metricsA = q(`SELECT count(*) FROM meta_normalized_metrics WHERE sync_run_id='${runIdA}' AND source_level='campaign'`);
@@ -308,36 +309,25 @@ async function run() {
   });
 
   // 12. rate_limit_recovered
-  // NOTE: 1dbd3df ("inject timeoutMs=40000 and maxRetries=0 to prevent
-  // OOM/504 on large accounts") hardcoded maxRetries=0 on every
-  // fetchMetaGraphPaginated call (campaigns, adsets, ads, every insight
-  // level) and it is still 0 at HEAD. The mock returns 429 on this account's
-  // first 2 requests and succeeds from the 3rd on, but campaigns/adsets/ads
-  // and every insight level are fetched concurrently, so which of them lands
-  // in those first 2 slots is a genuine race, not a fixed retry count. With
-  // zero retries, whichever sub-collection loses that race fails outright —
-  // sometimes that's a minor collection and the run degrades to partial
-  // (HTTP 206), sometimes it's one everything else depends on and the whole
-  // run fails (HTTP 502). Confirmed both outcomes happen across otherwise
-  // identical CI runs, so this scenario accepts either degraded state and
-  // only rejects genuinely unexpected ones (e.g. a bare 200, or a 500).
+  // fix/meta-sync-pagination-and-rate-limit-contract reactivates a bounded
+  // retry (maxRetries: 2, i.e. 3 attempts) specifically for rate-limit/5xx/
+  // timeout responses — fetchMetaGraph already had this logic, 1dbd3df had
+  // just zeroed it out everywhere. The mock 429s only this account's first 2
+  // requests (globally, across every concurrent sub-collection) and succeeds
+  // from the 3rd on; with real retries, every sub-collection that loses that
+  // initial race gets another shot and should recover well within its retry
+  // budget. This restores the original pre-1dbd3df contract — a transient
+  // rate limit is recovered from automatically — instead of accepting
+  // whichever degraded state a lost race happens to produce.
   await fetch('http://127.0.0.1:9999/reset');
   await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
-    if (res.status !== 206 && res.status !== 502) {
-      throw new Error(`HTTP Status: expected 206 (partial) or 502 (failed) — the concrete outcome is a race between concurrent sub-collections under maxRetries=0 — got ${res.status}`);
-    }
-    if (res.status === 206) {
-      assertEqual(json.success, true, 'JSON Success (partial is structurally a success)');
-      const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-      assertEqual(status, 'partial', 'Run is partial — a non-essential sub-collection lost the 429 race with no retries left');
-    } else {
-      assertEqual(json.success, false, 'JSON Failed');
-      const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
-      assertEqual(status, 'failed', 'Run failed — a required sub-collection lost the 429 race with no retries left');
-    }
+    assertEqual(res.status, 200, 'HTTP Status 200 — bounded retries recover from the first 2 forced 429s');
+    assertEqual(json.success, true, 'JSON Success');
+    const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(status, 'success', 'Run succeeds once retries carry every sub-collection past the rate limit');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 1, true, 'Mock received at least 1 request');
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests — the first 2 were rate-limited before recovery');
   });
 
   // 13. rate_limit_exhausted
@@ -350,7 +340,10 @@ async function run() {
     assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 1, true, 'Mock received at least 1 request; maxRetries=0 exhausts without retrying');
+    // This account 429s unconditionally, so even with maxRetries: 2 every
+    // attempt (the initial one plus both retries) still fails — at least
+    // one sub-collection alone accounts for 3 requests before giving up.
+    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
   });
 
   // 14. persistence_failure

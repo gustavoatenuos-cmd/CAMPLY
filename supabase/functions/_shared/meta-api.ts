@@ -40,9 +40,17 @@ export interface PaginatedResult<T> {
   pagesFetched: number;
   recordsFetched: number;
   isPartial: boolean;
-  completionStatus: 'complete' | 'partial_page' | 'timeout' | 'api_error';
+  completionStatus: 'complete' | 'partial_page' | 'timeout' | 'api_error' | 'rate_limit_exhausted';
   errorMessage?: string;
   maxRetries?: number;
+}
+
+/** Thrown only when every retry attempt for a rate-limited request (code 4/17/32/613/8000x) is exhausted — lets callers tell "Meta throttled us" apart from a generic API failure. */
+export class MetaRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MetaRateLimitError';
+  }
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -105,14 +113,17 @@ export async function fetchMetaGraph(options: MetaApiOptions) {
         // Rate limit codes: 4, 17, 32, 613 (and 8000x for Ads API)
         const isRateLimit = data.error && (data.error.code === 4 || data.error.code === 17 || data.error.code === 32 || data.error.code === 613 || (data.error.code >= 80000 && data.error.code <= 80009));
         
-        if (isRateLimit && retries < maxRetries) {
-          const waitTime = getExponentialBackoffWithJitter(retries);
-          console.warn(`Meta API Rate Limit hit [Code: ${data.error.code}]. Retrying in ${Math.round(waitTime)}ms... (Attempt ${retries + 1})`);
-          await sleep(waitTime);
-          retries++;
-          continue;
+        if (isRateLimit) {
+          if (retries < maxRetries) {
+            const waitTime = getExponentialBackoffWithJitter(retries);
+            console.warn(`Meta API Rate Limit hit [Code: ${data.error.code}]. Retrying in ${Math.round(waitTime)}ms... (Attempt ${retries + 1})`);
+            await sleep(waitTime);
+            retries++;
+            continue;
+          }
+          throw new MetaRateLimitError(`Meta API rate limit exhausted after ${retries} retries [Code: ${data.error.code}]: ${data.error?.message || 'Rate limit exceeded.'}`);
         }
-        
+
         // If it's a transient server error
         if (response.status >= 500 && retries < maxRetries) {
           const waitTime = getExponentialBackoffWithJitter(retries);
@@ -217,9 +228,11 @@ export async function fetchMetaGraphPaginated<T = any>(
   } catch (error: any) {
     result.isPartial = true;
     result.errorMessage = error.message;
-    result.completionStatus = error?.name === 'AbortError' || /timeout|aborted/i.test(error?.message || '')
-      ? 'timeout'
-      : 'api_error';
+    result.completionStatus = error instanceof MetaRateLimitError
+      ? 'rate_limit_exhausted'
+      : error?.name === 'AbortError' || /timeout|aborted/i.test(error?.message || '')
+        ? 'timeout'
+        : 'api_error';
     console.error(`fetchMetaGraphPaginated partial failure: ${error.message}`);
   }
 

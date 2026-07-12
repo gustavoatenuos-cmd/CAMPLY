@@ -41,6 +41,7 @@ vi.mock('../../../supabase/functions/_shared/direct-postgres.ts', () => ({
 vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   fetchMetaGraph: vi.fn(),
   fetchMetaGraphPaginated: vi.fn(),
+  MetaRateLimitError: class MetaRateLimitError extends Error {},
   META_GRAPH_VERSION: 'v25.0',
 }));
 
