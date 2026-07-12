@@ -5,6 +5,7 @@ import { decryptToken } from '../_shared/crypto.ts';
 import {
   fetchMetaGraph,
   fetchMetaGraphPaginated,
+  MetaRateLimitError,
   META_GRAPH_VERSION,
   type PaginatedResult,
 } from '../_shared/meta-api.ts';
@@ -368,6 +369,7 @@ const normalizeSelection = (body: SyncRequestBody): EntitySelection => ({
 });
 
 const terminationReasonForError = (error: unknown): string => {
+  if (error instanceof MetaRateLimitError) return 'rate_limit_exhausted';
   if (error instanceof HttpError) {
     if (error.status === 400 || error.status === 403) return 'validation_error';
     if (error.status === 502) return 'meta_api_error';
@@ -676,7 +678,7 @@ export async function handleRequest(req: Request) {
         accessToken,
         appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
         params: { fields: 'timezone_name,currency' },
       });
       timezone = typeof account?.timezone_name === 'string' && account.timezone_name
@@ -691,7 +693,7 @@ export async function handleRequest(req: Request) {
         collectionMessages.push('Meta account timezone or currency is unavailable.');
       }
     } catch (error) {
-      accountContextStatus = 'validation_error';
+      accountContextStatus = error instanceof MetaRateLimitError ? 'rate_limit_exhausted' : 'validation_error';
       const message = `Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`;
       collectionErrors.push(message);
       collectionMessages.push(message);
@@ -713,24 +715,24 @@ export async function handleRequest(req: Request) {
       accessToken,
       appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
       params: {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
         limit: '100',
       },
-    }, 1, 100);
+    }, 5, 500);
 
     const fetchAdsets = fetchMetaGraphPaginated<MetaAdSet>({
       endpoint: `/${adAccountId}/adsets`,
       accessToken,
       appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
       params: {
         fields: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
         limit: '100',
       },
-    }, 1, 100);
+    }, 5, 500);
 
     const fetchAds = shouldCollectAds
       ? fetchMetaGraphPaginated<MetaAd>({
@@ -738,13 +740,13 @@ export async function handleRequest(req: Request) {
           accessToken,
           appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
           params: {
             fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
             limit: '100',
           },
-        }, 1, 100)
+        }, 3, 300)
       : Promise.resolve({
           data: [],
           pagesFetched: 0,
@@ -951,14 +953,14 @@ export async function handleRequest(req: Request) {
             accessToken,
             appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
             params: {
               level: 'account',
               fields: 'date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
               ...periodParams,
               limit: '100',
             },
-          }, 1, 100),
+          }, 2, 200),
 
           // Campaign level — filtered server-side
           fetchMetaGraphPaginated<MetaInsightRow>({
@@ -966,7 +968,7 @@ export async function handleRequest(req: Request) {
             accessToken,
             appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
             params: {
               level: 'campaign',
               fields: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -974,7 +976,7 @@ export async function handleRequest(req: Request) {
               ...periodParams,
               limit: '100',
             },
-          }, 1, 100),
+          }, 5, 500),
 
           // Ad set level — only if needed, filtered server-side
           requiresAdsetInsights.size > 0
@@ -983,7 +985,7 @@ export async function handleRequest(req: Request) {
                 accessToken,
                 appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
                 params: {
                   level: 'adset',
                   fields: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -991,7 +993,7 @@ export async function handleRequest(req: Request) {
                   ...periodParams,
                   limit: '100',
                 },
-              }, 1, 100)
+              }, 3, 300)
             : Promise.resolve<PaginatedResult<MetaInsightRow>>({
                 data: [],
                 pagesFetched: 0,
@@ -1007,7 +1009,7 @@ export async function handleRequest(req: Request) {
                 accessToken,
                 appSecret,
         timeoutMs: 40000,
-        maxRetries: 0,
+        maxRetries: 2,
                 params: {
                   level: 'ad',
                   fields: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -1015,7 +1017,7 @@ export async function handleRequest(req: Request) {
                   ...periodParams,
                   limit: '100',
                 },
-              }, 1, 100)
+              }, 3, 300)
             : Promise.resolve<PaginatedResult<MetaInsightRow>>({
                 data: [],
                 pagesFetched: 0,
@@ -1435,6 +1437,15 @@ export async function handleRequest(req: Request) {
     // Using partial if collection is incomplete.
     const syncStatus = collectionIncomplete ? 'partial' : 'success';
     const errorMessage = collectionMessages.join(' ').trim();
+
+    // Distinguishes "Meta throttled us" from other partial-collection causes
+    // (page cap, timeout, generic API error) so the run's termination_reason
+    // is actionable instead of a single catch-all 'partial_collection'.
+    const wasRateLimited = accountContextStatus === 'rate_limit_exhausted'
+      || campaignsResult.completionStatus === 'rate_limit_exhausted'
+      || adsetsResult.completionStatus === 'rate_limit_exhausted'
+      || (shouldCollectAds && adsResult.completionStatus === 'rate_limit_exhausted')
+      || Object.values(overallCompletenessByPeriod).some((status) => status === 'rate_limit_exhausted');
     
     const p_metadata = {
       error_message: errorMessage || null,
@@ -1464,7 +1475,9 @@ export async function handleRequest(req: Request) {
         periodParamsByPeriod: Object.fromEntries(periods.map((period) => [period, insightPeriodParams(period, timezone)])),
       },
     };
-    const terminationReason = syncStatus === 'success' ? 'completed' : 'partial_collection';
+    const terminationReason = syncStatus === 'success'
+      ? 'completed'
+      : wasRateLimited ? 'rate_limit_exhausted' : 'partial_collection';
 
     const collectedRanges = p_normalized_metrics
       .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop);
@@ -1573,15 +1586,17 @@ export async function handleRequest(req: Request) {
         console.error('Failed to persist Meta sync failure:', persistenceError);
       }
     }
-    const errorCode = error instanceof HttpError
-      ? error.status === 429
-        ? 'META_RATE_LIMITED'
-        : error.status === 502
-          ? 'META_API_ERROR'
-          : error.status === 400 || error.status === 403
-            ? 'META_VALIDATION_ERROR'
-            : 'META_PERSISTENCE_FAILED'
-      : 'META_PERSISTENCE_FAILED';
+    const errorCode = error instanceof MetaRateLimitError
+      ? 'META_RATE_LIMITED'
+      : error instanceof HttpError
+        ? error.status === 429
+          ? 'META_RATE_LIMITED'
+          : error.status === 502
+            ? 'META_API_ERROR'
+            : error.status === 400 || error.status === 403
+              ? 'META_VALIDATION_ERROR'
+              : 'META_PERSISTENCE_FAILED'
+        : 'META_PERSISTENCE_FAILED';
     return errorResponse(error, corsHeaders, usedRunId, errorCode);
   }
 }
