@@ -27,6 +27,11 @@ const analysisProfilesMigration = readFileSync(
   'utf8'
 );
 
+const campaignOperationalContractMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260713000000_meta_campaign_operational_contract.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -111,5 +116,46 @@ describe('operational dashboard reliability migration safety', () => {
     expect(analysisProfilesMigration).not.toMatch(/pg_get_functiondef/i);
     expect(analysisProfilesMigration).not.toMatch(/regexp_replace/i);
     expect(analysisProfilesMigration).not.toMatch(/v_definition\s*:=\s*replace/i);
+  });
+});
+
+describe('meta campaign operational contract migration safety', () => {
+  it('creates client_meta_campaign_scope with RLS and a validated scope_status', () => {
+    expect(campaignOperationalContractMigration).toContain(
+      'CREATE TABLE IF NOT EXISTS public.client_meta_campaign_scope'
+    );
+    expect(campaignOperationalContractMigration).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(campaignOperationalContractMigration).toContain(
+      "CHECK (scope_status IN ('included', 'excluded', 'archived'))"
+    );
+    expect(campaignOperationalContractMigration).toContain(
+      'REFERENCES public.client_meta_assets(id, user_id)'
+    );
+    expect(campaignOperationalContractMigration).toContain('set_client_meta_campaign_scope');
+  });
+
+  it('replaces the old get_meta_performance_hierarchy overload instead of shadowing it', () => {
+    expect(campaignOperationalContractMigration).toContain(
+      'DROP FUNCTION IF EXISTS public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER)'
+    );
+    expect(campaignOperationalContractMigration).toContain("p_scope_filter TEXT DEFAULT 'operational'");
+    expect(campaignOperationalContractMigration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, TEXT) TO authenticated'
+    );
+  });
+
+  it('surfaces every non-analyzable verdict in its own named bucket instead of dropping campaigns', () => {
+    expect(campaignOperationalContractMigration).toContain('activeNoDeliveryItems');
+    expect(campaignOperationalContractMigration).toContain('activeWithoutActiveStructureItems');
+    expect(campaignOperationalContractMigration).toContain('pausedWithSpendItems');
+    expect(campaignOperationalContractMigration).toContain('unclassifiedDestinationItems');
+    expect(campaignOperationalContractMigration).toContain("'NOT_OPERATIONAL'");
+    expect(campaignOperationalContractMigration).toContain("'ANALYZABLE'");
+  });
+
+  it('is written as direct function definitions, not string-surgery on prior bodies', () => {
+    expect(campaignOperationalContractMigration).not.toMatch(/pg_get_functiondef/i);
+    expect(campaignOperationalContractMigration).not.toMatch(/regexp_replace/i);
+    expect(campaignOperationalContractMigration).not.toMatch(/\breplace\s*\(/i);
   });
 });

@@ -11,35 +11,46 @@ import {
 } from 'lucide-react';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import {
-  deriveCostMetric,
-  deriveScopedMetric,
-  unavailableTraceableMetric,
+  resolveDerivedMetric,
   type TraceableMetric,
 } from '../../lib/performance/traceableMetrics';
 import {
-  loadMetaHierarchy,
-  type MetaHierarchyItem,
-  type MetaHierarchyLevel,
-  type MetaHierarchyPage,
-} from '../../lib/meta/performanceHierarchyService';
+  fetchMetaPerformanceHierarchy,
+  type HierarchicalMetricNode,
+  type HierarchyLevel,
+  type HierarchyResponse,
+} from '../../lib/performance/metaPerformanceHierarchy';
+import { isRunStale } from '../../lib/performance/campaignDecisionEligibility';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { ClientMetaAccount } from '../../lib/meta/clientMetaAssetService';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
+import { CampaignActivityStatusBadge } from '../performance/CampaignActivityStatusBadge';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { MetricReconciliationPanel } from './MetricReconciliationPanel';
 
-const nextLevel: Partial<Record<MetaHierarchyLevel, MetaHierarchyLevel>> = {
+const nextLevel: Partial<Record<HierarchyLevel, HierarchyLevel>> = {
   campaign: 'adset',
   adset: 'ad',
   ad: 'creative',
 };
 
-const levelLabels: Record<MetaHierarchyLevel, string> = {
+const levelLabels: Record<HierarchyLevel, string> = {
   campaign: 'Campanha',
   adset: 'Conjunto',
   ad: 'Anúncio',
   creative: 'Criativo',
 };
+
+const bucketSections: Array<{
+  key: 'activeNoDeliveryItems' | 'activeWithoutActiveStructureItems' | 'pausedWithSpendItems' | 'unclassifiedDestinationItems';
+  totalKey: 'activeNoDeliveryTotal' | 'activeWithoutActiveStructureTotal' | 'pausedWithSpendTotal' | 'unclassifiedDestinationTotal';
+  title: string;
+}> = [
+  { key: 'activeNoDeliveryItems', totalKey: 'activeNoDeliveryTotal', title: 'Ativas sem entrega' },
+  { key: 'activeWithoutActiveStructureItems', totalKey: 'activeWithoutActiveStructureTotal', title: 'Ativas sem estrutura ativa' },
+  { key: 'pausedWithSpendItems', totalKey: 'pausedWithSpendTotal', title: 'Pausadas com gasto' },
+  { key: 'unclassifiedDestinationItems', totalKey: 'unclassifiedDestinationTotal', title: 'Objetivo não classificado' },
+];
 
 function metricNumber(metric: TraceableMetric | undefined): number | null {
   return metric?.available && metric.value !== null ? metric.value : null;
@@ -57,20 +68,6 @@ function currency(value: number | null, code: string | null): string {
 
 function number(value: number | null, suffix = ''): string {
   return value === null ? '—' : `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${suffix}`;
-}
-
-function resolveMetric(metrics: Record<string, TraceableMetric>, metricId: string): TraceableMetric {
-  const existing = metrics[metricId];
-  if (existing?.available) return existing;
-  const spend = metrics.spend;
-  if (metricId === 'link_ctr') return deriveScopedMetric(metricId, metrics.link_clicks, metrics.impressions, 100);
-  if (metricId === 'cpm') return deriveScopedMetric(metricId, spend, metrics.impressions, 1000);
-  if (metricId === 'link_cpc') return deriveCostMetric(metricId, spend, metrics.link_clicks);
-  if (metricId === 'cost_per_messaging_conversation') return deriveCostMetric(metricId, spend, metrics.messaging_conversations_started_total);
-  if (metricId === 'cost_per_lead') return deriveCostMetric(metricId, spend, metrics.leads);
-  if (metricId === 'cost_per_purchase') return deriveCostMetric(metricId, spend, metrics.purchases);
-  if (metricId === 'purchase_roas') return deriveScopedMetric(metricId, metrics.purchase_value, spend);
-  return existing || unavailableTraceableMetric(metricId);
 }
 
 function MetricGrid({ metrics, currencyCode }: { metrics: Record<string, TraceableMetric>; currencyCode: string | null }) {
@@ -98,7 +95,7 @@ function MetricGrid({ metrics, currencyCode }: { metrics: Record<string, Traceab
       ['purchase_roas', 'ROAS', 'number'],
     ];
     return specs.map(([metricId, label, format]) => {
-      const metric = resolveMetric(metrics, metricId);
+      const metric = resolveDerivedMetric(metrics, metricId);
       const value = metricNumber(metric);
       return {
         metricId,
@@ -134,20 +131,20 @@ export function MetaHierarchyExplorer({
   refreshToken?: number;
   onChanged?: () => void;
 }) {
-  const [root, setRoot] = useState<MetaHierarchyPage | null>(null);
-  const [children, setChildren] = useState<Record<string, MetaHierarchyPage>>({});
+  const [root, setRoot] = useState<HierarchyResponse | null>(null);
+  const [children, setChildren] = useState<Record<string, HierarchyResponse>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [targetItem, setTargetItem] = useState<MetaHierarchyItem | null>(null);
-  const [reconciliationItem, setReconciliationItem] = useState<MetaHierarchyItem | null>(null);
+  const [targetItem, setTargetItem] = useState<HierarchicalMetricNode | null>(null);
+  const [reconciliationItem, setReconciliationItem] = useState<HierarchicalMetricNode | null>(null);
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setRoot(await loadMetaHierarchy({ clientMetaAssetId: account.clientMetaAssetId, period, level: 'campaign' }));
+      setRoot(await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign'));
       setChildren({});
       setExpanded({});
     } catch (loadError) {
@@ -166,7 +163,7 @@ export function MetaHierarchyExplorer({
     onChanged?.();
   };
 
-  const loadChildren = async (item: MetaHierarchyItem, level: MetaHierarchyLevel) => {
+  const loadChildren = async (item: HierarchicalMetricNode, level: HierarchyLevel) => {
     const childLevel = nextLevel[level];
     if (!childLevel) return;
     const key = `${level}:${item.id}`;
@@ -177,12 +174,7 @@ export function MetaHierarchyExplorer({
     setLoadingKey(key);
     setError(null);
     try {
-      const page = await loadMetaHierarchy({
-        clientMetaAssetId: account.clientMetaAssetId,
-        period,
-        level: childLevel,
-        parentId: item.id,
-      });
+      const page = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, childLevel, item.id);
       setChildren((current) => ({ ...current, [key]: page }));
       setExpanded((current) => ({ ...current, [key]: true }));
     } catch (loadError) {
@@ -196,12 +188,9 @@ export function MetaHierarchyExplorer({
     if (!root || root.items.length >= root.total) return;
     setLoadingKey('root:more');
     try {
-      const nextPage = await loadMetaHierarchy({
-        clientMetaAssetId: account.clientMetaAssetId,
-        period,
-        level: 'campaign',
-        page: root.page + 1,
-      });
+      const nextPage = await fetchMetaPerformanceHierarchy(
+        account.clientMetaAssetId, period, 'campaign', null, root.page + 1, root.pageSize
+      );
       setRoot((current) => current ? {
         ...nextPage,
         items: [...current.items, ...nextPage.items],
@@ -213,20 +202,16 @@ export function MetaHierarchyExplorer({
     }
   };
 
-  const loadMoreChildren = async (item: MetaHierarchyItem, level: MetaHierarchyLevel) => {
+  const loadMoreChildren = async (item: HierarchicalMetricNode, level: HierarchyLevel) => {
     const childLevel = nextLevel[level];
     const key = `${level}:${item.id}`;
     const currentPage = children[key];
     if (!childLevel || !currentPage || currentPage.items.length >= currentPage.total) return;
     setLoadingKey(`${key}:more`);
     try {
-      const nextPage = await loadMetaHierarchy({
-        clientMetaAssetId: account.clientMetaAssetId,
-        period,
-        level: childLevel,
-        parentId: item.id,
-        page: currentPage.page + 1,
-      });
+      const nextPage = await fetchMetaPerformanceHierarchy(
+        account.clientMetaAssetId, period, childLevel, item.id, currentPage.page + 1, currentPage.pageSize
+      );
       setChildren((current) => ({
         ...current,
         [key]: { ...nextPage, items: [...currentPage.items, ...nextPage.items] },
@@ -238,7 +223,7 @@ export function MetaHierarchyExplorer({
     }
   };
 
-  const syncEntity = async (item: MetaHierarchyItem, level: MetaHierarchyLevel) => {
+  const syncEntity = async (item: HierarchicalMetricNode, level: HierarchyLevel) => {
     const key = `${level}:${item.id}`;
     setLoadingKey(key);
     setError(null);
@@ -258,12 +243,7 @@ export function MetaHierarchyExplorer({
       });
       const childLevel = nextLevel[level];
       if (childLevel) {
-        const page = await loadMetaHierarchy({
-          clientMetaAssetId: account.clientMetaAssetId,
-          period,
-          level: childLevel,
-          parentId: item.id,
-        });
+        const page = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, childLevel, item.id);
         setChildren((current) => ({ ...current, [key]: page }));
         setExpanded((current) => ({ ...current, [key]: true }));
       }
@@ -278,15 +258,24 @@ export function MetaHierarchyExplorer({
   if (loading) return <div className="flex min-h-48 items-center justify-center gap-2 rounded-xl border border-brand-line text-brand-muted"><LoaderCircle className="animate-spin" size={18} /> Carregando campanhas...</div>;
   if (error && !root) return <StateMessage title="Não foi possível carregar a hierarquia" impact={error} action="Tentar novamente" onAction={() => void refreshRoot()} />;
   if (root?.state === 'period_not_synced') return <StateMessage title="Período ainda não sincronizado" impact="Nenhuma campanha confiável será exibida até uma sincronização completa deste período." />;
-  if (!root || root.items.length === 0) return <StateMessage title="Nenhuma campanha ativa encontrada" impact="A conta não possui campanhas ativas coletadas para este período, ou ainda precisa ser sincronizada." action="Atualizar leitura" onAction={() => void refreshRoot()} />;
+  if (!root || root.items.length === 0) return <StateMessage title="Nenhuma campanha analisável encontrada" impact="A conta não possui campanhas analisáveis coletadas para este período, ou ainda precisa ser sincronizada." action="Atualizar leitura" onAction={() => void refreshRoot()} />;
+
+  const stale = isRunStale(root.run ?? null);
 
   return (
     <div data-testid="meta-hierarchy" className="space-y-3">
       {error && <div role="alert" className="rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</div>}
+      {stale && root.run?.finishedAt && (
+        <div role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
+          Sincronização antiga: usando o último snapshot confiável de {new Date(root.run.finishedAt).toLocaleString('pt-BR')}.
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-white">Hierarquia Meta oficial</p>
-          <p className="text-xs text-brand-muted">{root.total} campanha(s) ativa(s) · run {root.run?.id || 'não informado'} · {root.run?.status || 'sem status'}</p>
+          <p className="text-xs text-brand-muted">
+            {root.total} campanha(s) analisável(is) · {root.run?.finishedAt ? `Ativa no último sync (${new Date(root.run.finishedAt).toLocaleString('pt-BR')})` : 'sem sync confiável'}
+          </p>
         </div>
         <button type="button" onClick={() => void refreshRoot()} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"><RefreshCw size={13} /> Atualizar leitura</button>
       </div>
@@ -307,6 +296,17 @@ export function MetaHierarchyExplorer({
         />
       ))}
       {root.items.length < root.total && <button type="button" onClick={() => void loadMoreRoot()} disabled={loadingKey === 'root:more'} className="w-full rounded-xl border border-brand-line px-4 py-3 text-sm font-black text-brand-green disabled:opacity-60">{loadingKey === 'root:more' ? 'Carregando...' : `Carregar mais campanhas (${root.total - root.items.length})`}</button>}
+
+      {bucketSections.map((section) => (
+        <BucketSection
+          key={section.key}
+          title={section.title}
+          items={root[section.key]}
+          total={root[section.totalKey]}
+          currencyCode={account.currency}
+        />
+      ))}
+
       <TargetSettingsDrawer
         open={Boolean(targetItem)}
         onClose={() => setTargetItem(null)}
@@ -326,6 +326,52 @@ export function MetaHierarchyExplorer({
   );
 }
 
+function BucketSection({
+  title,
+  items,
+  total,
+  currencyCode,
+}: {
+  title: string;
+  items: HierarchicalMetricNode[];
+  total: number;
+  currencyCode: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-dashed border-brand-line bg-brand-surface/60">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="text-sm font-bold text-white">{title} ({total})</span>
+        {open ? <ChevronDown size={16} className="text-brand-muted" /> : <ChevronRight size={16} className="text-brand-muted" />}
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-brand-line/70 p-3">
+          {items.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-black/15 p-3">
+              <div className="min-w-0">
+                <p className="truncate font-bold text-white">{item.name || item.id}</p>
+                <p className="mt-1 text-xs text-brand-muted">{item.classifiedObjective || item.objective || 'Objetivo não informado'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-brand-soft">
+                  {currency(metricNumber(item.metrics.spend), currencyCode)}
+                </span>
+                {item.verdict && <CampaignActivityStatusBadge verdict={item.verdict} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EntityNode({
   item,
   level,
@@ -339,17 +385,17 @@ function EntityNode({
   onTarget,
   onReconcile,
 }: {
-  item: MetaHierarchyItem;
-  level: MetaHierarchyLevel;
+  item: HierarchicalMetricNode;
+  level: HierarchyLevel;
   account: ClientMetaAccount;
-  children: Record<string, MetaHierarchyPage>;
+  children: Record<string, HierarchyResponse>;
   expanded: Record<string, boolean>;
   loadingKey: string | null;
-  onExpand: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
-  onLoadMore: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
-  onSync: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
-  onTarget: (item: MetaHierarchyItem) => void;
-  onReconcile: (item: MetaHierarchyItem) => void;
+  onExpand: (item: HierarchicalMetricNode, level: HierarchyLevel) => Promise<void>;
+  onLoadMore: (item: HierarchicalMetricNode, level: HierarchyLevel) => Promise<void>;
+  onSync: (item: HierarchicalMetricNode, level: HierarchyLevel) => Promise<void>;
+  onTarget: (item: HierarchicalMetricNode) => void;
+  onReconcile: (item: HierarchicalMetricNode) => void;
 }) {
   const key = `${level}:${item.id}`;
   const page = children[key];
@@ -370,7 +416,11 @@ function EntityNode({
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate font-black text-white">{item.name || item.id}</p>
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-brand-soft">{levelLabels[level]}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaused ? 'bg-amber-400/10 text-amber-200' : 'bg-emerald-400/10 text-emerald-200'}`}>{item.effectiveStatus || item.status || 'STATUS N/D'}</span>
+              {level === 'campaign' && item.verdict ? (
+                <CampaignActivityStatusBadge verdict={item.verdict} />
+              ) : (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaused ? 'bg-amber-400/10 text-amber-200' : 'bg-emerald-400/10 text-emerald-200'}`}>{item.effectiveStatus || item.status || 'STATUS N/D'}</span>
+              )}
             </div>
             <p className="mt-1 break-all text-xs text-brand-muted">ID: {item.id}</p>
             <p className="mt-1 text-xs text-brand-muted">{item.classifiedObjective || item.objective || 'Objetivo não informado'} · {item.destinationType || 'Destino não informado'} · {item.attributionSetting || 'Atribuição no detalhe da métrica'}</p>

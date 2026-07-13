@@ -434,6 +434,7 @@ DECLARE
   v_dashboard JSONB;
   v_catalog JSONB;
   v_hierarchy JSONB;
+  v_hierarchy_out_of_scope JSONB;
   v_target_history JSONB;
   v_error_seen BOOLEAN;
   v_original_target NUMERIC;
@@ -756,6 +757,76 @@ BEGIN
     ('landing_page_views', 300::numeric)
   ) metrics(metric_id, metric_value);
 
+  -- Operational contract fixtures: one campaign per non-ANALYZABLE verdict, plus
+  -- one excluded via client_meta_campaign_scope, all under the same run so
+  -- get_meta_performance_hierarchy's bucketing can be asserted end-to-end.
+  INSERT INTO public.meta_campaign_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    campaign_name, raw_objective, classified_objective, meta_status, effective_status
+  ) VALUES
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active_no_delivery',
+    'Campanha ativa sem entrega', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active_no_active_adset',
+    'Campanha ativa sem estrutura ativa', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused_with_spend',
+    'Campanha pausada com gasto', 'OUTCOME_LEADS', 'LEADS', 'PAUSED', 'PAUSED'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_excluded_scope',
+    'Campanha excluída da operação', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
+  );
+
+  INSERT INTO public.meta_adset_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, adset_name, optimization_goal, destination_type,
+    attribution_setting, meta_status, effective_status
+  ) VALUES
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active_no_delivery',
+    'adset_active_no_delivery', 'Conjunto ativo sem entrega', 'LEAD_GENERATION', 'WHATSAPP',
+    '7d_click_1d_view', 'ACTIVE', 'ACTIVE'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active_no_active_adset',
+    'adset_paused_under_active_campaign', 'Conjunto pausado', 'LEAD_GENERATION', 'WHATSAPP',
+    '7d_click_1d_view', 'PAUSED', 'PAUSED'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_excluded_scope',
+    'adset_excluded_scope', 'Conjunto da campanha excluída', 'LEAD_GENERATION', 'WHATSAPP',
+    '7d_click_1d_view', 'ACTIVE', 'ACTIVE'
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    attribution_setting, source_level, completeness_status
+  ) VALUES
+  (
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_active_no_active_adset',
+    'spend', 50, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  ),
+  (
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused_with_spend',
+    'spend', 200, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  ),
+  (
+    v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_excluded_scope',
+    'spend', 80, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  );
+
+  PERFORM public.set_client_meta_campaign_scope(
+    v_link_id, 'campaign_excluded_scope', 'Campanha excluída da operação', 'excluded', 'teste smoke'
+  );
+
   INSERT INTO public.meta_sync_runs (
     id, user_id, integration_id, ad_account_id, graph_api_version,
     requested_period, requested_level, run_scope, selected_entity_ids,
@@ -800,10 +871,70 @@ BEGIN
      OR EXISTS (
        SELECT 1
        FROM jsonb_array_elements(v_hierarchy->'items') item
-       WHERE item->>'id' = 'campaign_paused'
+       WHERE item->>'id' IN ('campaign_paused', 'campaign_paused_with_spend', 'campaign_excluded_scope')
           OR item->>'effectiveStatus' = 'PAUSED'
      ) THEN
-    RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
+    RAISE EXCEPTION 'Operational hierarchy did not return analyzable-only campaigns with traceability: %', v_hierarchy;
+  END IF;
+
+  -- ACTIVE + active structure + zero real metric -> activeNoDeliveryItems, never in items.
+  IF (v_hierarchy->>'activeNoDeliveryTotal')::integer <> 1
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'activeNoDeliveryItems') item
+       WHERE item->>'id' = 'campaign_active_no_delivery' AND item->>'verdict' = 'ACTIVE_NO_DELIVERY'
+     )
+     OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_active_no_delivery'
+     ) THEN
+    RAISE EXCEPTION 'activeNoDeliveryItems bucket regressed: %', v_hierarchy;
+  END IF;
+
+  -- ACTIVE campaign, no ACTIVE adset (even with spend) -> activeWithoutActiveStructureItems.
+  IF (v_hierarchy->>'activeWithoutActiveStructureTotal')::integer <> 1
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'activeWithoutActiveStructureItems') item
+       WHERE item->>'id' = 'campaign_active_no_active_adset'
+         AND item->>'verdict' = 'ACTIVE_WITHOUT_ACTIVE_STRUCTURE'
+         AND (item->>'hasActiveAdset')::boolean IS NOT TRUE
+     )
+     OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_active_no_active_adset'
+     ) THEN
+    RAISE EXCEPTION 'activeWithoutActiveStructureItems bucket regressed: %', v_hierarchy;
+  END IF;
+
+  -- Paused campaign with real spend must now be visible (but never ANALYZABLE) --
+  -- this is the headline fix, replacing the old "paused is invisible" assertion.
+  IF (v_hierarchy->>'pausedWithSpendTotal')::integer <> 1
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'pausedWithSpendItems') item
+       WHERE item->>'id' = 'campaign_paused_with_spend' AND item->>'verdict' = 'PAUSED_WITH_SPEND'
+     ) THEN
+    RAISE EXCEPTION 'pausedWithSpendItems bucket regressed: %', v_hierarchy;
+  END IF;
+
+  -- Excluded-scope campaign must not appear in items nor in any side bucket.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(
+      (v_hierarchy->'items') || (v_hierarchy->'activeNoDeliveryItems')
+      || (v_hierarchy->'activeWithoutActiveStructureItems') || (v_hierarchy->'pausedWithSpendItems')
+      || (v_hierarchy->'unclassifiedDestinationItems')
+    ) item
+    WHERE item->>'id' = 'campaign_excluded_scope'
+  ) THEN
+    RAISE EXCEPTION 'Excluded-scope campaign leaked into an operational bucket: %', v_hierarchy;
+  END IF;
+
+  -- "Fora da operação" view: excluded/archived campaigns only, via p_scope_filter.
+  v_hierarchy_out_of_scope := public.get_meta_performance_hierarchy(
+    v_link_id, 'this_month', 'campaign', NULL, 1, 25, 'out_of_scope'
+  );
+  IF (v_hierarchy_out_of_scope->>'total')::integer <> 1
+     OR v_hierarchy_out_of_scope->'items'->0->>'id' <> 'campaign_excluded_scope'
+     OR v_hierarchy_out_of_scope->'items'->0->>'verdict' <> 'NOT_OPERATIONAL' THEN
+    RAISE EXCEPTION 'out_of_scope view regressed: %', v_hierarchy_out_of_scope;
   END IF;
 
   v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
@@ -830,9 +961,36 @@ BEGIN
   END IF;
 
   IF has_function_privilege('anon', 'public.get_client_meta_asset_catalog(TEXT)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, TEXT)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Operational hierarchy RPC privilege boundary is unsafe';
+  END IF;
+
+  -- Regression guard against the ambiguous-overload bug class this migration itself
+  -- fixed once already (upsert_client_analysis_profile): the old 6-arg signature must
+  -- be gone, not just shadowed by the new 7-arg one.
+  IF to_regprocedure('public.get_meta_performance_hierarchy(uuid,text,text,text,integer,integer)') IS NOT NULL THEN
+    RAISE EXCEPTION 'Old 6-arg get_meta_performance_hierarchy overload is still present';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.set_client_meta_campaign_scope(UUID, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'set_client_meta_campaign_scope must not be callable by anon';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.client_meta_campaign_scope', 'INSERT') THEN
+    RAISE EXCEPTION 'authenticated must not have INSERT on client_meta_campaign_scope';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.client_meta_campaign_scope', 'UPDATE') THEN
+    RAISE EXCEPTION 'authenticated must not have UPDATE on client_meta_campaign_scope';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.client_meta_campaign_scope
+    WHERE user_id = v_user_a AND client_meta_asset_id = v_link_id
+      AND campaign_id = 'campaign_excluded_scope' AND scope_status = 'excluded'
+  ) THEN
+    RAISE EXCEPTION 'set_client_meta_campaign_scope did not persist the excluded scope row';
   END IF;
 
   PERFORM public.unlink_client_meta_asset(v_link_id);

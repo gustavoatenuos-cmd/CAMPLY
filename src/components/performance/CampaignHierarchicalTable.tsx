@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Layers3 } from 'lucide-react';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
-import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyLevel } from '../../lib/performance/metaPerformanceHierarchy';
+import {
+  fetchMetaPerformanceHierarchy,
+  type HierarchicalMetricNode,
+  type HierarchyLevel,
+  type HierarchyRunSummary,
+} from '../../lib/performance/metaPerformanceHierarchy';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import type { MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import { TraceableMetricValue } from './TraceableMetricValue';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { resolveDerivedMetric } from '../../lib/performance/traceableMetrics';
+import { resolveObjectiveMetricCells } from '../../lib/performance/campaignObjectiveMetrics';
+import { isRunStale } from '../../lib/performance/campaignDecisionEligibility';
+import { CampaignActivityStatusBadge } from './CampaignActivityStatusBadge';
 
 interface CampaignHierarchicalTableProps {
   account: GlobalPerformanceAccount;
@@ -14,6 +22,7 @@ interface CampaignHierarchicalTableProps {
 
 export function CampaignHierarchicalTable({ account, period }: CampaignHierarchicalTableProps) {
   const [campaigns, setCampaigns] = useState<HierarchicalMetricNode[]>([]);
+  const [run, setRun] = useState<HierarchyRunSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +34,7 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
         const response = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100);
         if (active) {
           setCampaigns(response.items || []);
+          setRun(response.run ?? null);
           setError(null);
         }
       } catch (err) {
@@ -57,13 +67,20 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
   if (campaigns.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
-        Nenhuma campanha ativa encontrada para este período.
+        Nenhuma campanha analisável encontrada para este período.
       </div>
     );
   }
 
+  const stale = isRunStale(run);
+
   return (
     <div className="space-y-3">
+      {stale && run?.finishedAt && (
+        <div role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
+          Sincronização antiga: usando o último snapshot confiável de {new Date(run.finishedAt).toLocaleString('pt-BR')}.
+        </div>
+      )}
       {campaigns.map((campaign) => (
         <HierarchicalNodeRow
           key={campaign.id}
@@ -96,7 +113,7 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
 
   async function handleToggle() {
     if (!nextLevel) return;
-    
+
     if (!expanded && !loaded) {
       setLoadingChildren(true);
       try {
@@ -113,16 +130,7 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
   }
 
   const spendMetric = node.metrics.spend;
-  const purchasesMetric = node.metrics.purchases;
-  const roasMetric = node.metrics.purchase_roas;
-  const costPerPurchase = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-  const convMetric = node.metrics.messaging_conversations_started_total;
-  const costPerConv = deriveCostMetric('cost_per_messaging_conversation', spendMetric, convMetric);
-  const leadsMetric = node.metrics.leads;
-  const costPerLead = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
-  
-  const isSales = node.classifiedObjective === 'SALES';
-  const isLeads = node.classifiedObjective === 'LEADS' || node.classifiedObjective === 'MESSAGING';
+  const cells = resolveObjectiveMetricCells(node.classifiedObjective);
 
   // Indentação visual por nível
   const marginLeft = level === 'campaign' ? '0' : level === 'adset' ? 'ml-6' : 'ml-12';
@@ -131,10 +139,10 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
 
   return (
     <div className={`flex flex-col ${marginLeft}`}>
-      <div 
+      <div
         className={`grid gap-3 rounded-xl border border-brand-line/70 p-4 md:items-center ${bgColor} ${nextLevel ? 'cursor-pointer hover:border-brand-line' : ''}`}
         style={{
-          gridTemplateColumns: 'minmax(240px, 1.7fr) repeat(4, minmax(90px, 0.7fr))'
+          gridTemplateColumns: `minmax(240px, 1.7fr) repeat(${cells.length}, minmax(90px, 0.7fr))`,
         }}
         onClick={() => nextLevel && handleToggle()}
       >
@@ -154,33 +162,25 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
                 </span>
               )}
             </div>
-            <p className="mt-1 truncate text-xs text-brand-muted">
-              {labelText} {node.effectiveStatus && `· ${node.effectiveStatus}`}
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-brand-muted">
+              {labelText}
+              {level === 'campaign' && node.verdict ? (
+                <CampaignActivityStatusBadge verdict={node.verdict} />
+              ) : (
+                node.effectiveStatus && `· ${node.effectiveStatus}`
+              )}
             </p>
           </div>
         </div>
 
-        <MetricCell label="Investido" value={formatCurrency(metricValue(spendMetric), account.currency)} metric={spendMetric} />
-
-        {isSales ? (
-          <>
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-            <MetricCell label="CPA" value={formatCurrency(metricValue(costPerPurchase), account.currency)} metric={costPerPurchase} />
-            <MetricCell label="ROAS" value={formatNumber(metricValue(roasMetric))} metric={roasMetric} />
-          </>
-        ) : isLeads ? (
-          <>
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Custo / Conv" value={formatCurrency(metricValue(costPerConv), account.currency)} metric={costPerConv} />
-          </>
-        ) : (
-          <>
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-          </>
-        )}
+        {cells.map((cell) => (
+          <MetricCell
+            key={cell.metricId}
+            label={cell.label}
+            value={formatCellValue(resolveDerivedMetric(node.metrics, cell.metricId), cell.format, account.currency)}
+            metric={cell.metricId === 'spend' ? spendMetric : resolveDerivedMetric(node.metrics, cell.metricId)}
+          />
+        ))}
       </div>
 
       {expanded && (
@@ -229,6 +229,13 @@ function formatCurrency(value: number | null, currency: string | null): string {
   } catch {
     return `${currency} ${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`;
   }
+}
+
+function formatCellValue(metric: MetricContract, format: 'currency' | 'number' | 'percent', currency: string | null): string {
+  const value = metricValue(metric);
+  if (format === 'currency') return formatCurrency(value, currency);
+  if (format === 'percent') return value === null ? '—' : `${formatNumber(value)}%`;
+  return formatNumber(value);
 }
 
 function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
