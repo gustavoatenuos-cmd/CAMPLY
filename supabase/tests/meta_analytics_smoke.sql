@@ -905,12 +905,20 @@ BEGIN
     RAISE EXCEPTION 'activeWithoutActiveStructureItems bucket regressed: %', v_hierarchy;
   END IF;
 
-  -- Paused campaign with real spend must now be visible (but never ANALYZABLE) --
+  -- Paused campaigns with real spend must now be visible (but never ANALYZABLE) --
   -- this is the headline fix, replacing the old "paused is invisible" assertion.
-  IF (v_hierarchy->>'pausedWithSpendTotal')::integer <> 1
+  -- The pre-existing `campaign_paused` fixture (spend=350, seeded earlier in this
+  -- block for the multiclient dashboard checks) legitimately qualifies too under
+  -- the new contract, alongside the dedicated `campaign_paused_with_spend`
+  -- fixture (spend=200) added for this bucket -- both are expected here.
+  IF (v_hierarchy->>'pausedWithSpendTotal')::integer <> 2
      OR NOT EXISTS (
        SELECT 1 FROM jsonb_array_elements(v_hierarchy->'pausedWithSpendItems') item
        WHERE item->>'id' = 'campaign_paused_with_spend' AND item->>'verdict' = 'PAUSED_WITH_SPEND'
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'pausedWithSpendItems') item
+       WHERE item->>'id' = 'campaign_paused' AND item->>'verdict' = 'PAUSED_WITH_SPEND'
      ) THEN
     RAISE EXCEPTION 'pausedWithSpendItems bucket regressed: %', v_hierarchy;
   END IF;
