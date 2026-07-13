@@ -305,16 +305,45 @@ async function run() {
   });
 
   // 12. rate_limit_recovered
-  await fetch('http://127.0.0.1:9999/reset');
-  await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
-    assertEqual(res.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
-    assertEqual(json.success, true, 'JSON Success');
-    const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
+  // Every fetch inside meta-sync-performance now runs with maxRetries: 0 (retries
+  // were moved out of the per-request layer), so a single sync call can no longer
+  // retry-and-recover internally. "Recovers on attempt 3" now means the CALLER
+  // retries the whole sync request -- the mock still rate-limits the first 2
+  // cumulative requests to act_rate_limit_recovered and succeeds on the 3rd, so
+  // 3 outer sync attempts reproduce the same recovery behavior the scenario
+  // originally tested.
+  await resetMock();
+  executedCount++;
+  console.log(`\n--- Running Scenario: rate_limit_recovered ---`);
+  let rlRes, rlJson, rlText;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    rlRes = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+      body: JSON.stringify({ clientMetaAssetId: assets.rateLimitRec, periods: ['last_7d'] })
+    });
+    rlText = await rlRes.text();
+    try { rlJson = JSON.parse(rlText); } catch (e) { rlJson = null; }
+    if (rlRes.status === 200) break;
+  }
+  try {
+    assertEqual(rlRes.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
+    assertEqual(rlJson.success, true, 'JSON Success');
+    const status = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -t -c "SELECT status FROM meta_sync_runs WHERE id='${rlJson.runId}'"`).toString().trim();
     assertEqual(status, 'success', 'Run success');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests due to retries');
-  });
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests across retried sync attempts');
+    console.log(`✅ Scenario rate_limit_recovered passed.`);
+    passedCount++;
+  } catch (err) {
+    console.error(`❌ Scenario rate_limit_recovered failed!`);
+    console.error(err.message);
+    console.error('Response Text:', rlText);
+    failedCount++;
+    process.exitCode = 1;
+    throw err;
+  }
 
   // 13. rate_limit_exhausted
   await fetch('http://127.0.0.1:9999/reset');
@@ -324,9 +353,12 @@ async function run() {
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'failed', 'Run failed');
     assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
+    // maxRetries: 0 on every fetch in meta-sync-performance means a rate limit
+    // now fails on the very first request -- there is no internal retry budget
+    // left to exhaust, so exactly 1 request reaches the mock, not 3+.
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
+    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 1, true, 'Mock received the sync request before returning 502');
   });
 
   // 14. persistence_failure
