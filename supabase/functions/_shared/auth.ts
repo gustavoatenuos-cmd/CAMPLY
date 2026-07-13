@@ -79,7 +79,13 @@ export async function requireAuthenticatedUser(req: Request) {
   let user = gatewayUser
   if (shouldVerifyRemotely) {
     try {
-      user = (await withAuthTimeout(userClient.auth.getUser(token), 4_000)).data.user || gatewayUser
+      const remoteUser = (await withAuthTimeout(userClient.auth.getUser(token), 4_000)).data.user;
+      user = remoteUser ? {
+        id: remoteUser.id,
+        email: remoteUser.email,
+        role: remoteUser.role,
+        is_anonymous: remoteUser.is_anonymous || false,
+      } : gatewayUser;
     } catch (error) {
       console.warn('Remote Supabase Auth verification unavailable; using Edge gateway verified JWT payload.', {
         message: error instanceof Error ? error.message : String(error),
