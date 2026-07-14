@@ -146,7 +146,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     syncMetaAssetMock.mockResolvedValue({ success: true, status: 'success', runId: 'run-ok' });
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('3 sucesso'));
     expect(screen.getByRole('status')).toHaveTextContent('Sincronização concluída: 3 sucesso.');
@@ -157,7 +158,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     syncMetaAssetMock.mockResolvedValue({ success: true, status: 'partial', runId: 'run-partial', message: 'Alguns adsets falharam' });
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('1 parcial'));
     expect(screen.getByTestId('meta-bulk-sync-progress')).not.toHaveTextContent('falha');
@@ -169,7 +171,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     syncMetaAssetMock.mockResolvedValue({ success: true, status: 'running', runId: null, message: 'Sincronização já em andamento' });
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('1/1'));
     expect(screen.getByTestId('meta-bulk-sync-progress')).not.toHaveTextContent('falha');
@@ -181,7 +184,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     syncMetaAssetMock.mockRejectedValue(new InvokeError('Token Meta expirado', 401));
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-results')).toBeInTheDocument());
     expect(screen.getByTestId('meta-bulk-sync-results')).toHaveTextContent('Token Meta expirado');
@@ -195,7 +199,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     });
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getAllByTestId('meta-bulk-sync-result-row')).toHaveLength(11));
     for (let i = 1; i <= 11; i++) {
@@ -213,7 +218,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
       .mockRejectedValueOnce(new Error('Falha real'));
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(
       'Sincronização concluída: 1 sucesso, 1 parcial, 1 em andamento, 1 falha.'
@@ -239,7 +245,8 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     syncMetaAssetMock.mockRejectedValueOnce(new Error('Falha inicial'));
 
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('meta-sync-linked-clients'));
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-retry')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
 
