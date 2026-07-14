@@ -1,10 +1,13 @@
-import { CalendarClock, Check, Plus, CheckCircle2, Pencil } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { CalendarClock, Check, Plus } from 'lucide-react';
+import { FormEvent, useMemo, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
+import { buildOperationalView, OperationalEntry, ReceivablesFilter } from '../data/receivablesForecast';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
 import { ClientFormModal } from './ClientFormModal';
+import { ReceivablesFilterBar } from './receivables/ReceivablesFilterBar';
+import { OperationalEntryRow } from './receivables/OperationalEntryRow';
 
 interface PersonalFinanceViewProps {
   data: CamplyData;
@@ -14,11 +17,8 @@ interface PersonalFinanceViewProps {
 export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
-  const forecast = buildFinancialForecast(data);
-  const pending = data.receivables.filter((item) => item.status === 'pending').reduce((sum, item) => sum + item.amount, 0);
-  const overdue = data.receivables.filter((item) => item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0);
-  const paid = data.receivables.filter((item) => item.status === 'paid').reduce((sum, item) => sum + item.amount, 0);
-  const projectsToReceive = forecast.items.filter((item) => item.source === 'project' && item.status !== 'paid').reduce((sum, item) => sum + item.amount, 0);
+  const [filter, setFilter] = useState<ReceivablesFilter>('current_next');
+  const view = useMemo(() => buildOperationalView(data), [data]);
 
   const addReceivable = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -57,7 +57,7 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
     event.currentTarget.reset();
   };
 
-  const setStatus = (id: string, status: PaymentStatus) => {
+  const setReceivableStatus = (id: string, status: PaymentStatus) => {
     const receivable = data.receivables.find((item) => item.id === id);
     const client = data.clients.find((item) => item.id === receivable?.clientId);
     const paidAt = status === 'paid' ? new Date().toISOString().slice(0, 10) : undefined;
@@ -82,54 +82,65 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
     }));
   };
 
-  const updateForecastItem = (item: ForecastItem, updates: { status?: PaymentStatus; amount?: number }) => {
+  const updateEntry = (entry: OperationalEntry, updates: { status?: PaymentStatus; amount?: number }) => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    const newStatus = updates.status !== undefined ? updates.status : (item.status === 'upcoming' ? 'pending' : item.status);
-    const newAmount = updates.amount !== undefined ? updates.amount : item.amount;
+    const newStatus = updates.status !== undefined ? updates.status : (entry.status === 'upcoming' ? 'pending' : entry.status);
+    const newAmount = updates.amount !== undefined ? updates.amount : entry.amount;
     const isPaid = newStatus === 'paid';
-    
-    if (item.source === 'client' && item.clientId) {
-      if (item.receivableId) {
+
+    if (entry.source === 'client' && entry.clientId) {
+      if (entry.receivableId) {
         updateData((current) => ({
           ...current,
-          receivables: current.receivables.map(r => r.id === item.receivableId ? { 
-             ...r, 
-             status: newStatus, 
-             amount: newAmount,
-             paidAt: isPaid && !r.paidAt ? todayStr : r.paidAt 
-          } : r)
+          receivables: current.receivables.map((r) => (r.id === entry.receivableId ? {
+            ...r,
+            status: newStatus,
+            amount: newAmount,
+            paidAt: isPaid && !r.paidAt ? todayStr : r.paidAt,
+          } : r)),
         }));
       } else {
         const receivable: Receivable = {
           id: makeId('recv'),
-          clientId: item.clientId,
-          description: item.description,
+          clientId: entry.clientId,
+          description: entry.description,
           amount: newAmount,
-          dueDate: item.dueDate,
+          dueDate: entry.dueDate,
           status: newStatus,
           paidAt: isPaid ? todayStr : undefined,
         };
         updateData((current) => ({
           ...current,
-          receivables: [receivable, ...current.receivables]
+          receivables: [receivable, ...current.receivables],
         }));
       }
-    } else if (item.source === 'project' && item.projectId) {
+    } else if (entry.source === 'project' && entry.projectId) {
       updateData((current) => ({
         ...current,
-        projects: current.projects.map(p => 
-          p.id === item.projectId 
-            ? { 
-                ...p, 
-                paymentStatus: newStatus, 
-                ...(updates.amount !== undefined ? { amountCharged: p.amountReceived + newAmount } : {}),
-                paidAt: isPaid && !p.paidAt ? todayStr : p.paidAt 
-              } 
-            : p
-        )
+        projects: current.projects.map((p) => (p.id === entry.projectId ? {
+          ...p,
+          paymentStatus: newStatus,
+          ...(updates.amount !== undefined ? { amountCharged: p.amountReceived + newAmount } : {}),
+          paidAt: isPaid && !p.paidAt ? todayStr : p.paidAt,
+        } : p)),
       }));
     }
   };
+
+  const recorrenciasEntries = useMemo(() => {
+    if (filter === 'current') return view.currentMonthEntries;
+    if (filter === 'next') return view.nextMonthEntries;
+    if (filter === 'current_next') {
+      return [...view.currentMonthEntries, ...view.nextMonthEntries].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    }
+    return [];
+  }, [filter, view.currentMonthEntries, view.nextMonthEntries]);
+
+  const showAtrasadosMesAtual = filter === 'current' || filter === 'current_next';
+  const showAtrasadosTodos = filter === 'overdue';
+  const showRecorrencias = filter === 'current' || filter === 'next' || filter === 'current_next';
+  const showHistorico = filter === 'all';
+  const visibleProjects = data.projects.filter((project) => filter === 'all' || project.status !== 'done');
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -183,117 +194,71 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
       </Modal>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Total label="Previsto este mês" value={money(forecast.currentMonthTotal)} />
-        <Total label="Atrasado" value={money(overdue + forecast.overdueTotal)} tone="danger" />
-        <Total label="Projetos a receber" value={money(projectsToReceive)} />
-        <Total label="Recebido" value={money(paid)} tone="good" />
+        <Total label="Previsto este mês" value={money(view.cards.currentMonthForecast)} />
+        <Total label="Recebido este mês" value={money(view.cards.currentMonthReceived)} tone="good" />
+        <Total label="Atrasado este mês" value={money(view.cards.currentMonthOverdue)} tone="danger" />
+        <Total label="Previsto próximo mês" value={money(view.cards.nextMonthForecast)} />
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Total label="Mensalidades pendentes" value={money(pending + forecast.currentMonthPending)} />
-        <Total label="Próximos 30 dias" value={money(forecast.next30DaysTotal)} />
-        <Total label="Próximo mês" value={money(forecast.nextMonthTotal)} />
-        <Total label="Próximos 3 meses" value={money(forecast.nextThreeMonthsTotal)} />
-      </div>
+      <ReceivablesFilterBar value={filter} onChange={setFilter} />
 
-      <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
-        <div className="flex items-center gap-2 border-b border-brand-line p-4">
-          <CalendarClock size={17} className="text-brand-green" />
-          <h2 className="font-bold text-white">Previsão automática de recebimentos</h2>
-        </div>
-        {forecast.items.length === 0 ? (
-          <div className="p-5 text-sm text-brand-muted">
-            Cadastre mensalidades recorrentes nos clientes ou projetos pontuais para o sistema montar a previsão.
+      {(showAtrasadosMesAtual || showAtrasadosTodos) && (
+        <EntryListBlock
+          title={showAtrasadosTodos ? 'Atrasados' : 'Atrasados do mês atual'}
+          emptyMessage="Nenhum recebimento em atraso por aqui."
+          entries={showAtrasadosTodos ? view.overdueAllEntries : view.overdueCurrentMonthEntries}
+          onStatusChange={(entry, status) => updateEntry(entry, { status })}
+          onAmountEdit={(entry, amount) => updateEntry(entry, { amount })}
+          onTitleClick={setEditingClientId}
+        />
+      )}
+
+      {showRecorrencias && (
+        <EntryListBlock
+          title="Recorrências previstas"
+          emptyMessage="Cadastre mensalidades recorrentes nos clientes ou projetos pontuais para o sistema montar a previsão."
+          entries={recorrenciasEntries}
+          onStatusChange={(entry, status) => updateEntry(entry, { status })}
+          onAmountEdit={(entry, amount) => updateEntry(entry, { amount })}
+          onTitleClick={setEditingClientId}
+          icon={<CalendarClock size={17} className="text-brand-green" />}
+        />
+      )}
+
+      {showHistorico && (
+        <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
+          <div className="border-b border-brand-line p-4">
+            <h2 className="font-bold text-white">Histórico completo de recebíveis</h2>
           </div>
-        ) : (
-          forecast.items.slice(0, 12).map((item) => (
-            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] xl:items-center">
+          {view.historyEntries.map((entry) => (
+            <div key={entry.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] xl:items-center">
+              <p className="font-semibold text-white">{entry.title}</p>
+              <p className="text-brand-muted">{entry.description}</p>
               <div>
-                <button 
-                  onClick={() => item.clientId && setEditingClientId(item.clientId)}
-                  className="font-semibold text-white hover:text-brand-green transition-colors text-left"
-                  title="Ver configuração do cliente"
-                >
-                  {item.title}
-                </button>
-                <p className="mt-1 text-xs text-brand-muted">{item.description}</p>
+                <p className="text-brand-muted">{formatDate(entry.dueDate)}</p>
+                {entry.paidAt && <p className="mt-1 text-xs font-semibold text-brand-green">Pago: {formatDate(entry.paidAt)}</p>}
               </div>
-              <p className="text-brand-muted">{item.projectName || 'Cliente direto'}</p>
-              <div>
-                <p className="text-brand-muted">Vence: {formatDate(item.dueDate)}</p>
-                {item.paidAt && <p className="mt-1 text-xs font-semibold text-brand-green">Pago: {formatDate(item.paidAt)}</p>}
-              </div>
-              <div className="group flex items-center gap-2">
-                <p className="font-bold text-brand-green">{money(item.amount)}</p>
-                <button 
-                  onClick={() => {
-                    const val = window.prompt(`Novo valor para ${item.title}:`, item.amount.toString());
-                    if (val !== null) {
-                      const num = parseFloat(val.replace(',', '.'));
-                      if (!isNaN(num) && num >= 0) {
-                        updateForecastItem(item, { amount: num });
-                      }
-                    }
-                  }}
-                  className="p-1 text-brand-muted opacity-0 transition-opacity hover:text-white group-hover:opacity-100"
-                  title="Editar valor faturado deste mês"
-                >
-                  <Pencil size={14} />
-                </button>
-              </div>
-              <div className="flex items-center gap-3">
-                <select 
-                  value={item.status} 
-                  onChange={(e) => updateForecastItem(item, { status: e.target.value as PaymentStatus })}
-                  className={`rounded-md border border-brand-line px-2 py-1 text-xs font-bold outline-none ${
-                    item.status === 'paid' ? 'bg-brand-green/20 text-brand-green' : 
-                    item.status === 'overdue' ? 'bg-red-500/20 text-red-500' : 
-                    item.status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' :
-                    'bg-amber-500/20 text-amber-500'
-                  }`}
-                >
-                  {item.status === 'upcoming' && <option value="upcoming">Próximo mês</option>}
-                  <option value="pending">Pendente</option>
-                  <option value="overdue">Atrasado</option>
-                  <option value="paid">Pago</option>
-                </select>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
-        <div className="border-b border-brand-line p-4">
-          <h2 className="font-bold text-white">Mensalidades e recebíveis</h2>
-        </div>
-        {data.receivables.map((item) => {
-          const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
-          return (
-            <div key={item.id} className="grid gap-3 border-b border-brand-line p-4 text-sm last:border-b-0 xl:grid-cols-[1fr_1fr_0.7fr_0.7fr_0.8fr] xl:items-center">
-              <p className="font-semibold text-white">{clientDisplayName(client)}</p>
-              <p className="text-brand-muted">{item.description}</p>
-              <div>
-                <p className="text-brand-muted">{formatDate(item.dueDate)}</p>
-                {item.paidAt && <p className="mt-1 text-xs font-semibold text-brand-green">Pago: {formatDate(item.paidAt)}</p>}
-              </div>
-              <p className="font-bold text-brand-green">{money(item.amount)}</p>
+              <p className="font-bold text-brand-green">{money(entry.amount)}</p>
               <div className="flex items-center gap-2">
-                <select value={item.status} onChange={(event) => setStatus(item.id, event.target.value as PaymentStatus)} className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white">
+                <select
+                  value={entry.status}
+                  onChange={(event) => entry.receivableId && setReceivableStatus(entry.receivableId, event.target.value as PaymentStatus)}
+                  className="rounded-md border border-brand-line bg-brand-surface px-2 py-1 text-xs text-white"
+                >
                   <option value="pending">{paymentStatusLabels.pending}</option>
                   <option value="overdue">{paymentStatusLabels.overdue}</option>
                   <option value="paid">{paymentStatusLabels.paid}</option>
                 </select>
-                {item.status !== 'paid' && (
-                  <button onClick={() => setStatus(item.id, 'paid')} className="rounded-md bg-brand-green/10 p-1.5 text-brand-green">
+                {entry.status !== 'paid' && entry.receivableId && (
+                  <button onClick={() => setReceivableStatus(entry.receivableId!, 'paid')} className="rounded-md bg-brand-green/10 p-1.5 text-brand-green">
                     <Check size={15} />
                   </button>
                 )}
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
         <div className="border-b border-brand-line p-4">
@@ -306,21 +271,21 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
           <p>Taxa Recebida</p>
           <p>A Receber / Recorrência</p>
         </div>
-        {data.projects.map((project) => {
+        {visibleProjects.map((project) => {
           const primaryClient = data.clients.find((clientItem) => clientItem.id === project.clientId);
           const projectClients = data.clients.filter((client) => client.projectId === project.id);
-          
+
           const recurringTotal = projectClients
             .filter((client) => client.managementFeeType === 'recurring')
             .reduce((sum, client) => sum + client.monthlyFee, 0);
           const oneTimeTotal = projectClients
             .filter((client) => client.managementFeeType === 'one_time')
             .reduce((sum, client) => sum + client.monthlyFee, 0);
-            
+
           const projectAmount = project.billingType === 'recurring' ? recurringTotal + oneTimeTotal + project.amountCharged : project.amountCharged;
           const remainingProjectFee = project.paymentStatus === 'paid' ? 0 : Math.max(0, project.amountCharged - project.amountReceived);
-          
-          const remainingTotal = project.billingType === 'recurring' 
+
+          const remainingTotal = project.billingType === 'recurring'
             ? recurringTotal + remainingProjectFee
             : remainingProjectFee;
 
@@ -336,12 +301,12 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
                 <p className="text-brand-muted">{money(project.amountReceived)}</p>
                 <p className="font-bold text-brand-green">{money(remainingTotal)}</p>
               </div>
-              
+
               {project.billingType === 'recurring' && (projectClients.length > 0 || project.amountCharged > 0) && (
                 <div className="bg-brand-ink p-4 pt-0">
                   <div className="mt-1 rounded-lg border border-brand-line bg-brand-surface p-3">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand-soft">Composição do projeto recorrente</p>
-                    {projectClients.map(client => (
+                    {projectClients.map((client) => (
                       <div key={client.id} className="flex justify-between py-1.5 text-sm border-b border-brand-line/50 last:border-0">
                         <span className="text-brand-muted">{clientDisplayName(client)}</span>
                         <span className="font-semibold text-white">{money(client.monthlyFee)} {client.managementFeeType === 'recurring' ? '/mês' : '(pontual)'}</span>
@@ -364,11 +329,45 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
       <ClientFormModal
         data={data}
         updateData={updateData}
-        editingClient={data.clients.find(c => c.id === editingClientId)}
+        editingClient={data.clients.find((c) => c.id === editingClientId)}
         open={!!editingClientId}
         onClose={() => setEditingClientId(null)}
       />
     </section>
+  );
+}
+
+interface EntryListBlockProps {
+  title: string;
+  emptyMessage: string;
+  entries: OperationalEntry[];
+  onStatusChange: (entry: OperationalEntry, status: PaymentStatus) => void;
+  onAmountEdit: (entry: OperationalEntry, amount: number) => void;
+  onTitleClick: (clientId: string) => void;
+  icon?: React.ReactNode;
+}
+
+function EntryListBlock({ title, emptyMessage, entries, onStatusChange, onAmountEdit, onTitleClick, icon }: EntryListBlockProps) {
+  return (
+    <div className="mb-6 overflow-hidden rounded-xl border border-brand-line bg-brand-ink">
+      <div className="flex items-center gap-2 border-b border-brand-line p-4">
+        {icon}
+        <h2 className="font-bold text-white">{title}</h2>
+      </div>
+      {entries.length === 0 ? (
+        <div className="p-5 text-sm text-brand-muted">{emptyMessage}</div>
+      ) : (
+        entries.map((entry) => (
+          <OperationalEntryRow
+            key={entry.id}
+            entry={entry}
+            onStatusChange={onStatusChange}
+            onAmountEdit={onAmountEdit}
+            onTitleClick={onTitleClick}
+          />
+        ))
+      )}
+    </div>
   );
 }
 
@@ -401,159 +400,4 @@ function Total({ label, value, tone = 'default' }: { label: string; value: strin
       <p className={`mt-3 text-2xl font-black ${color}`}>{value}</p>
     </div>
   );
-}
-
-type ForecastStatus = PaymentStatus | 'upcoming';
-
-type ForecastItem = {
-  id: string;
-  source: 'client' | 'project';
-  receivableId?: string;
-  clientId?: string;
-  projectId?: string;
-  title: string;
-  description: string;
-  projectName: string;
-  amount: number;
-  dueDate: string;
-  status: ForecastStatus;
-  paidAt?: string;
-};
-
-function buildFinancialForecast(data: CamplyData) {
-  const today = normalizeDate(new Date());
-  const currentMonthKey = monthKey(toLocalISODate(today));
-  const nextMonthKeyValue = monthKey(addMonths(today, 1));
-  const clientItems = data.clients.flatMap((client): ForecastItem[] => {
-    if (client.status !== 'active' || client.monthlyFee <= 0) return [];
-
-    const project = data.projects.find((item) => item.id === client.projectId);
-    const dueDay = client.dueDay || today.getDate();
-    const monthsToProject = client.managementFeeType === 'recurring' ? [0, 1, 2] : [0];
-
-    return monthsToProject.map((monthOffset) => {
-      const dueDate = dueDateForMonth(addMonths(today, monthOffset), dueDay);
-      const existingReceivable = data.receivables.find(
-        (receivable) =>
-          receivable.clientId === client.id &&
-          monthKey(receivable.dueDate) === monthKey(dueDate),
-      );
-
-      return {
-        id: `client-${client.id}-${monthKey(dueDate)}`,
-        source: 'client',
-        receivableId: existingReceivable?.id,
-        clientId: client.id,
-        projectId: project?.id,
-        title: clientDisplayName(client),
-        description: client.managementFeeType === 'recurring'
-          ? `Mensalidade recorrente - vence dia ${dueDay}`
-          : 'Serviço pontual cadastrado no cliente',
-        projectName: project?.name || '',
-        amount: existingReceivable ? existingReceivable.amount : client.monthlyFee,
-        dueDate: existingReceivable ? existingReceivable.dueDate : dueDate,
-        paidAt: existingReceivable?.paidAt,
-        status: existingReceivable ? existingReceivable.status : inferForecastStatus(dueDate, today, currentMonthKey),
-      };
-    });
-  });
-
-  const projectItems = data.projects
-    .filter((project) => project.billingType === 'one_time')
-    .map((project): ForecastItem => {
-      const amount = Math.max(0, project.amountCharged - project.amountReceived);
-      const dueDate = project.dueDate || toLocalISODate(today);
-      return {
-        id: `project-${project.id}`,
-        source: 'project',
-        projectId: project.id,
-        clientId: project.clientId,
-        title: project.company || project.name,
-        description: `Projeto pontual - ${project.name}`,
-        projectName: project.ownerName || 'Projeto direto',
-        amount,
-        dueDate,
-        paidAt: project.paidAt,
-        status: project.paymentStatus === 'paid' ? 'paid' : inferForecastStatus(dueDate, today, currentMonthKey),
-      };
-    })
-    .filter((item) => item.amount > 0 || item.status === 'paid');
-
-  const items = [...clientItems, ...projectItems].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  const openItems = items.filter((item) => item.status !== 'paid');
-
-  return {
-    items,
-    currentMonthTotal: sumForecast(openItems.filter((item) => monthKey(item.dueDate) === currentMonthKey)),
-    currentMonthPending: sumForecast(openItems.filter((item) => item.source === 'client' && item.status === 'pending' && monthKey(item.dueDate) === currentMonthKey)),
-    overdueTotal: sumForecast(openItems.filter((item) => item.status === 'overdue')),
-    next30DaysTotal: sumForecast(
-      openItems.filter((item) => {
-        const days = daysBetween(today, parseLocalDate(item.dueDate));
-        return days >= 0 && days <= 30;
-      }),
-    ),
-    nextMonthTotal: sumForecast(openItems.filter((item) => monthKey(item.dueDate) === nextMonthKeyValue)),
-    nextThreeMonthsTotal: sumForecast(openItems),
-  };
-}
-
-function forecastStatusLabel(status: ForecastStatus) {
-  if (status === 'paid') return 'Pago';
-  if (status === 'overdue') return 'Atrasado';
-  if (status === 'upcoming') return 'Próximo mês';
-  return 'Pendente';
-}
-
-function forecastStatusClass(status: ForecastStatus) {
-  if (status === 'paid') return 'bg-brand-green/10 text-brand-green';
-  if (status === 'overdue') return 'bg-rose-500/10 text-rose-300';
-  if (status === 'upcoming') return 'bg-sky-400/10 text-sky-200';
-  return 'bg-amber-400/10 text-amber-200';
-}
-
-function inferForecastStatus(dueDate: string, today: Date, currentMonthKey: string): ForecastStatus {
-  const parsedDueDate = parseLocalDate(dueDate);
-  if (parsedDueDate.getTime() < today.getTime()) return 'overdue';
-  return monthKey(dueDate) === currentMonthKey ? 'pending' : 'upcoming';
-}
-
-function sumForecast(items: ForecastItem[]) {
-  return items.reduce((sum, item) => sum + item.amount, 0);
-}
-
-function dueDateForMonth(date: Date, preferredDay: number) {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const lastDay = new Date(year, month + 1, 0).getDate();
-  const safeDay = Math.min(Math.max(preferredDay, 1), lastDay);
-  return toLocalISODate(new Date(year, month, safeDay));
-}
-
-function addMonths(date: Date, amount: number) {
-  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
-}
-
-function monthKey(value: string | Date) {
-  return typeof value === 'string' ? value.slice(0, 7) : toLocalISODate(value).slice(0, 7);
-}
-
-function daysBetween(start: Date, end: Date) {
-  const day = 24 * 60 * 60 * 1000;
-  return Math.round((normalizeDate(end).getTime() - normalizeDate(start).getTime()) / day);
-}
-
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-  return normalizeDate(new Date(year, (month || 1) - 1, day || 1));
-}
-
-function normalizeDate(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function toLocalISODate(date: Date) {
-  const normalized = normalizeDate(date);
-  normalized.setMinutes(normalized.getMinutes() - normalized.getTimezoneOffset());
-  return normalized.toISOString().slice(0, 10);
 }
