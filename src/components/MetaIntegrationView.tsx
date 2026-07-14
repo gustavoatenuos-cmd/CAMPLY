@@ -4,11 +4,24 @@ import { invokeFunction } from '../lib/invokeFunction';
 import {
   loadCachedClientMetaAssetCatalog,
   loadClientMetaAssetCatalog,
+  type ClientMetaAccount,
   type ClientMetaAssetCatalog,
 } from '../lib/meta/clientMetaAssetService';
+import {
+  applyAccountOutcome,
+  buildBulkSyncSummaryMessage,
+  classifySyncOutcome,
+  initializeBulkSyncProgress,
+  isBulkSyncAllFailed,
+  outcomeFromThrownError,
+  type BulkSyncAccountResult,
+  type BulkSyncProgress,
+} from '../lib/meta/bulkSyncDiagnostics';
 import { syncMetaAsset } from '../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
+import { BulkSyncResultsPanel } from './meta/BulkSyncResultsPanel';
+import { SyncStatusBadge } from './meta/SyncStatusBadge';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
@@ -20,13 +33,6 @@ const bulkPeriodLabels: Record<DashboardPeriod, string> = {
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
 };
-
-interface BulkSyncProgress {
-  total: number;
-  completed: number;
-  failed: number;
-  running: boolean;
-}
 
 interface MetaIntegrationViewProps {
   data: CamplyData;
@@ -84,6 +90,11 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [showAvailableAssets, setShowAvailableAssets] = useState(false);
   const [bulkPeriod, setBulkPeriod] = useState<DashboardPeriod>('this_month');
   const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
+  const [retryingAccountId, setRetryingAccountId] = useState<string | null>(null);
+  // Uma sincronização em massa e um "tentar novamente" individual não podem
+  // rodar ao mesmo tempo - as duas mexem nos mesmos contadores agregados de
+  // bulkSync, e uma corrida entre elas corromperia o resultado por conta.
+  const bulkSyncBusy = Boolean(bulkSync?.running) || retryingAccountId !== null;
 
   const loadCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -112,30 +123,77 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     (catalog?.availableAssets || []).filter((asset) => !asset.linkedClientId)
   ), [catalog]);
 
+  const runAccountSync = async (account: ClientMetaAccount): Promise<Pick<BulkSyncAccountResult, 'status' | 'runId' | 'message' | 'error'>> => {
+    try {
+      const result = await syncMetaAsset({
+        clientMetaAssetId: account.clientMetaAssetId,
+        period: bulkPeriod,
+        requestedLevel: 'campaign',
+      });
+      return classifySyncOutcome(result);
+    } catch (syncError) {
+      return outcomeFromThrownError(syncError);
+    }
+  };
+
   const syncLinkedClients = async () => {
-    if (linkedAccounts.length === 0 || bulkSync?.running) return;
+    if (linkedAccounts.length === 0 || bulkSyncBusy) return;
     setError(null);
     setNotice(null);
-    setBulkSync({ total: linkedAccounts.length, completed: 0, failed: 0, running: true });
-    let completed = 0;
-    let failed = 0;
+
+    setBulkSync(initializeBulkSyncProgress(linkedAccounts.map(({ clientId, clientName, account }) => ({
+      clientId,
+      clientName,
+      clientMetaAssetId: account.clientMetaAssetId,
+      accountName: account.accountName,
+      adAccountId: account.adAccountId,
+    }))));
+
     for (const { account } of linkedAccounts) {
-      try {
-        const result = await syncMetaAsset({
-          clientMetaAssetId: account.clientMetaAssetId,
-          period: bulkPeriod,
-          requestedLevel: 'campaign',
-        });
-        if (!result.success || result.status === 'failed') failed += 1;
-      } catch {
-        failed += 1;
-      }
-      completed += 1;
-      setBulkSync({ total: linkedAccounts.length, completed, failed, running: true });
+      setBulkSync((current) => current && applyAccountOutcome(current, account.clientMetaAssetId, { status: 'running' }));
+
+      const outcome = await runAccountSync(account);
+      setBulkSync((current) => current && applyAccountOutcome(current, account.clientMetaAssetId, outcome, 'running'));
     }
-    setBulkSync({ total: linkedAccounts.length, completed, failed, running: false });
-    setNotice(`Sincronização de clientes vinculados concluída: ${completed - failed}/${linkedAccounts.length} conta(s) com sucesso${failed > 0 ? `, ${failed} com falha` : ''}.`);
+
+    setBulkSync((current) => {
+      if (!current) return current;
+      const finished = { ...current, running: false };
+      const summary = buildBulkSyncSummaryMessage(finished);
+      if (isBulkSyncAllFailed(finished)) {
+        setError(summary);
+      } else {
+        setNotice(summary);
+      }
+      return finished;
+    });
     await loadCatalog();
+  };
+
+  const retryAccountSync = async (target: BulkSyncAccountResult) => {
+    if (!bulkSync || bulkSyncBusy) return;
+    const linked = linkedAccounts.find((entry) => entry.account.clientMetaAssetId === target.clientMetaAssetId);
+    if (!linked) return;
+
+    setRetryingAccountId(target.clientMetaAssetId);
+    setBulkSync((current) => current && applyAccountOutcome(
+      current,
+      target.clientMetaAssetId,
+      { status: 'running', message: undefined, error: undefined },
+      target.status
+    ));
+    try {
+      const outcome = await runAccountSync(linked.account);
+      setBulkSync((current) => {
+        if (!current) return current;
+        const next = applyAccountOutcome(current, target.clientMetaAssetId, outcome, 'running');
+        setNotice(buildBulkSyncSummaryMessage(next));
+        return next;
+      });
+      await loadCatalog();
+    } finally {
+      setRetryingAccountId(null);
+    }
   };
 
   const checkStatus = useCallback(async (verifyRemote = false) => {
@@ -311,7 +369,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                   data-testid="meta-sync-linked-clients"
                   type="button"
                   onClick={() => void syncLinkedClients()}
-                  disabled={linkedAccounts.length === 0 || Boolean(bulkSync?.running)}
+                  disabled={linkedAccounts.length === 0 || bulkSyncBusy}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
                 >
                   <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar clientes vinculados
@@ -322,25 +380,37 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
             {bulkSync && (
               <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs font-bold text-brand-soft">
                 {bulkSync.running ? 'Sincronizando' : 'Concluído'}: {bulkSync.completed}/{bulkSync.total} conta(s) vinculada(s)
-                {bulkSync.failed > 0 ? ` · ${bulkSync.failed} com falha` : ''}
+                {' · '}{bulkSync.success} sucesso
+                {bulkSync.partial > 0 ? `, ${bulkSync.partial} parcial` : ''}
+                {bulkSync.failed > 0 ? `, ${bulkSync.failed} falha` : ''}
               </p>
             )}
+
+            {bulkSync && <BulkSyncResultsPanel results={bulkSync.results} onRetry={(target) => void retryAccountSync(target)} retryDisabled={bulkSyncBusy} />}
 
             {catalogError && <div role="alert" className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{catalogError}</div>}
 
             <div className="mt-4 space-y-2">
-              {linkedAccounts.map(({ clientName, account }) => (
-                <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/10"><CheckCircle2 className="text-brand-green" size={15} /></div>
-                    <div>
-                      <p className="font-bold text-white">{clientName}</p>
-                      <p className="text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+              {linkedAccounts.map(({ clientName, account }) => {
+                const syncResult = bulkSync?.results.find((result) => result.clientMetaAssetId === account.clientMetaAssetId);
+                return (
+                  <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-400/10" title="Conta vinculada ao cliente">
+                        <LinkIcon className="text-blue-300" size={15} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-white">{clientName}</p>
+                        <p className="text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {syncResult && <SyncStatusBadge status={syncResult.status} />}
+                      <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
                     </div>
                   </div>
-                  <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
-                </div>
-              ))}
+                );
+              })}
               {catalogLoading && linkedAccounts.length === 0 && (
                 <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Carregando contas vinculadas...</div>
               )}
