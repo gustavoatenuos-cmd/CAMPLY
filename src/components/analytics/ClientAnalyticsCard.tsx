@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
+import { buildClientAnalyticsDecision, deriveMonthPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
+import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
 import { ClientLogo } from '../clients/ClientLogo';
-import { Clock, AlertCircle, CalendarX2 } from 'lucide-react';
-import { PerformanceStatusBadge } from '../performance/PerformanceStatusBadge';
+import { Clock, AlertCircle, CalendarX2, HelpCircle } from 'lucide-react';
 
 interface ClientAnalyticsCardProps {
   performance: EnrichedGlobalClientPerformance;
@@ -13,12 +14,11 @@ interface ClientAnalyticsCardProps {
 }
 
 export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
-  const { client, metrics, clientStatus, score, analysisProfile } = performance;
+  const { client, metrics, clientStatus, analysisProfile } = performance;
   // client é o registro local do workspace (sem perfil analítico); o perfil
   // comercial de fato vem do nível superior, populado a partir de
   // client_analysis_profiles em globalPerformanceDashboard.ts.
   const profile = analysisProfile;
-  const performanceScore = score?.value;
 
   // Actual spend from Meta
   const actualSpend = metrics?.spend?.value ?? 0;
@@ -29,6 +29,24 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
     profile?.budgetPeriod,
     actualSpend
   );
+
+  const decision = useMemo(() => {
+    const now = new Date();
+    return buildClientAnalyticsDecision({
+      client: client ?? { id: performance.clientId, name: performance.clientName, company: '' },
+      analysisProfile: profile,
+      globalPerformance: {
+        clientStatus: performance.clientStatus,
+        dataQuality: performance.dataQuality,
+        lastSuccessfulRun: performance.lastSuccessfulRun,
+      },
+      accountMetrics: performance.metrics ?? {},
+      metricGroups: performance.metricGroups ?? [],
+      resolvedTargets: performance.resolvedTargets ?? [],
+      period: deriveMonthPeriod(now),
+      currentDate: now,
+    });
+  }, [client, performance, profile]);
 
   const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '-';
@@ -98,12 +116,9 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
           </div>
           
           <div className="flex flex-col items-end gap-1">
-            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border
-              ${performanceScore && performanceScore > 80 ? 'bg-green-50 text-green-700 border-green-200' : 
-                performanceScore && performanceScore > 50 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 
-                performanceScore ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-50 text-gray-700 border-gray-200'}
-            `}>
-              Score: {performanceScore ? Math.round(performanceScore) : '-'}
+            <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_TONE[decision.status].badgeClass}`}>
+              {STATUS_TONE[decision.status].icon}
+              {STATUS_TONE[decision.status].label}
             </span>
           </div>
         </div>
@@ -112,10 +127,36 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
       <div className="flex-1 p-4 pt-4">
         {hasDataIssues ? (
           getStatusDisplay()
+        ) : decision.status === 'no_profile' ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+            <HelpCircle className="h-5 w-5 text-gray-400" />
+            <p className="text-sm font-medium text-gray-600">Perfil de análise não configurado</p>
+            <button
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              onClick={() => onOpenDetails(performance)}
+            >
+              Configurar metas
+            </button>
+          </div>
+        ) : decision.status === 'no_data' ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+            <Clock className="h-5 w-5 text-gray-400" />
+            <p className="text-sm font-medium text-gray-600">Sem dados Meta no período</p>
+            <button
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              onClick={() => onOpenDetails(performance)}
+            >
+              Sincronizar Meta
+            </button>
+          </div>
         ) : (
           <>
-            <ClientPrimaryMetricBlock performance={performance} />
-            
+            <ClientAnalyticsStatusPanel decision={decision} />
+
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <ClientPrimaryMetricBlock performance={performance} />
+            </div>
+
             <div className="mt-4 pt-4 border-t border-gray-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>

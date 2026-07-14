@@ -69,7 +69,7 @@ describe('ClientAnalyticsCard', () => {
     expect(screen.getByText(/R\$\s*1\.500,00/)).toBeInTheDocument();
   });
 
-  it('falls back to the unconfigured state when there is no analysis profile at all', () => {
+  it('shows a clear "profile not configured" state with a CTA when there is no analysis profile at all', () => {
     const mockPerformance = {
       clientId: 'c2',
       clientName: 'Cliente Sem Perfil',
@@ -77,8 +77,10 @@ describe('ClientAnalyticsCard', () => {
       accounts: [],
       metrics: {},
       metricGroups: [],
+      resolvedTargets: [],
       score: { value: null },
       dataQuality: { status: 'unavailable', reason: null },
+      lastSuccessfulRun: null,
       analysisProfile: null,
       client: { id: 'c2', name: 'Cliente Sem Perfil' },
     } as unknown as EnrichedGlobalClientPerformance;
@@ -91,7 +93,10 @@ describe('ClientAnalyticsCard', () => {
       />
     );
 
-    expect(screen.getByText('Meta principal não configurada')).toBeInTheDocument();
-    expect(screen.getAllByText('Orçamento não configurado').length).toBeGreaterThan(0);
+    expect(screen.getByText('Perfil de análise não configurado')).toBeInTheDocument();
+    expect(screen.getByText('Configurar metas')).toBeInTheDocument();
+    // Card fica curto e acionável: não mistura o CTA com os blocos de métrica/orçamento zerados.
+    expect(screen.queryByText('Meta principal não configurada')).not.toBeInTheDocument();
+    expect(screen.queryByText('Orçamento não configurado')).not.toBeInTheDocument();
   });
 });
