@@ -202,11 +202,16 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
 
-    await waitFor(() => expect(screen.getAllByTestId('meta-bulk-sync-result-row')).toHaveLength(11));
+    // Todas as 11 linhas já aparecem como 'pending' assim que initializeBulkSyncProgress
+    // roda - esperar só a contagem de linhas corre risco de checar o texto por conta antes
+    // do loop sequencial terminar. Espera o alerta final (só aparece após todas concluírem).
+    await waitFor(() => (
+      expect(screen.getByRole('alert')).toHaveTextContent('Nenhuma conta foi sincronizada. Veja os erros abaixo.')
+    ));
+    expect(screen.getAllByTestId('meta-bulk-sync-result-row')).toHaveLength(11);
     for (let i = 1; i <= 11; i++) {
       expect(screen.getByText(`Falha na conta link-${i}`)).toBeInTheDocument();
     }
-    expect(screen.getByRole('alert')).toHaveTextContent('Nenhuma conta foi sincronizada. Veja os erros abaixo.');
   });
 
   it('shows the aggregated message with correct counts across mixed outcomes', async () => {
