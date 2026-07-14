@@ -1,11 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { X, ExternalLink, Loader2 } from 'lucide-react';
-import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode } from '../../lib/performance/metaPerformanceHierarchy';
+import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyResponse } from '../../lib/performance/metaPerformanceHierarchy';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { isRunStale } from '../../lib/performance/campaignDecisionEligibility';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
+import { CampaignActivityStatusBadge } from '../performance/CampaignActivityStatusBadge';
 
 interface ClientCampaignDrawerProps {
   isOpen: boolean;
@@ -21,7 +23,7 @@ type DrawerState =
   | { kind: 'unauthorized' }
   | { kind: 'empty' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; items: HierarchicalMetricNode[] };
+  | { kind: 'ready'; response: HierarchyResponse };
 
 // Contas sem clientMetaAssetId não têm vínculo analítico oficial e não podem
 // ser usadas para buscar hierarquia — pular silenciosamente para a próxima.
@@ -50,14 +52,20 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
     fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100)
       .then((response) => {
         if (!active) return;
+        const hasAnyItems = response.items.length > 0
+          || response.activeNoDeliveryItems.length > 0
+          || response.activeWithoutActiveStructureItems.length > 0
+          || response.pausedWithSpendItems.length > 0
+          || response.unclassifiedDestinationItems.length > 0;
+
         if (response.state === 'period_not_synced') {
           setState({ kind: 'period_not_synced' });
         } else if (response.state === 'unauthorized') {
           setState({ kind: 'unauthorized' });
-        } else if (response.state === 'empty' || response.items.length === 0) {
+        } else if (response.state === 'empty' || !hasAnyItems) {
           setState({ kind: 'empty' });
         } else {
-          setState({ kind: 'ready', items: response.items });
+          setState({ kind: 'ready', response });
         }
       })
       .catch((err) => {
@@ -130,9 +138,36 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
-              {state.items.map((campaign) => (
+              {isRunStale(state.response.run ?? null) && state.response.run?.finishedAt && (
+                <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  Sincronização antiga: usando o último snapshot confiável de{' '}
+                  {new Date(state.response.run.finishedAt).toLocaleString('pt-BR')}.
+                </div>
+              )}
+              {state.response.items.map((campaign) => (
                 <CampaignRow key={campaign.id} campaign={campaign} account={account} />
               ))}
+              {state.response.pausedWithSpendItems.length > 0 && (
+                <CampaignBucketGroup
+                  title="Pausadas com gasto"
+                  items={state.response.pausedWithSpendItems}
+                  account={account}
+                />
+              )}
+              {state.response.activeNoDeliveryItems.length > 0 && (
+                <CampaignBucketGroup
+                  title="Ativas sem entrega"
+                  items={state.response.activeNoDeliveryItems}
+                  account={account}
+                />
+              )}
+              {state.response.activeWithoutActiveStructureItems.length > 0 && (
+                <CampaignBucketGroup
+                  title="Ativas sem estrutura ativa"
+                  items={state.response.activeWithoutActiveStructureItems}
+                  account={account}
+                />
+              )}
             </div>
           )}
         </div>
@@ -154,7 +189,6 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
   const purchasesMetric = campaign.metrics.purchases;
   const roasMetric = campaign.metrics.purchase_roas;
   const cpaMetric = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-  const status = campaign.effectiveStatus || campaign.status;
 
   return (
     <div className="bg-white border rounded-lg p-4 hover:shadow-sm transition-shadow">
@@ -173,9 +207,7 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
             </a>
           </h4>
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span className={`px-2 py-0.5 rounded-full ${status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-              {status}
-            </span>
+            {campaign.verdict && <CampaignActivityStatusBadge verdict={campaign.verdict} />}
             <span>•</span>
             <span>{campaign.objective || 'Sem objetivo'}</span>
           </div>
@@ -187,6 +219,27 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
         <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
         <MetricCell label="CPA" value={formatCurrency(metricValue(cpaMetric), account.currency)} metric={cpaMetric} />
         <MetricCell label="ROAS" value={roasMetric?.available && roasMetric.value !== null ? `${roasMetric.value.toFixed(2)}x` : '—'} metric={roasMetric} />
+      </div>
+    </div>
+  );
+}
+
+function CampaignBucketGroup({
+  title,
+  items,
+  account,
+}: {
+  title: string;
+  items: HierarchicalMetricNode[];
+  account: GlobalPerformanceAccount;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+      <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">{title} ({items.length})</p>
+      <div className="space-y-3">
+        {items.map((campaign) => (
+          <CampaignRow key={campaign.id} campaign={campaign} account={account} />
+        ))}
       </div>
     </div>
   );

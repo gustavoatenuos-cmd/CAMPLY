@@ -221,6 +221,48 @@ export function deriveScopedMetric(
   };
 }
 
+const DERIVABLE_METRIC_IDS: Record<string, true> = {
+  link_ctr: true,
+  cpm: true,
+  link_cpc: true,
+  cost_per_messaging_conversation: true,
+  cost_per_lead: true,
+  cost_per_purchase: true,
+  purchase_roas: true,
+};
+
+export function isDerivableMetricId(metricId: string): boolean {
+  return metricId in DERIVABLE_METRIC_IDS;
+}
+
+export function resolveDerivedMetric(
+  metrics: Record<string, TraceableMetric>,
+  metricId: string
+): TraceableMetric {
+  const existing = metrics[metricId];
+  if (existing?.available) return existing;
+
+  const spend = metrics.spend;
+  switch (metricId) {
+    case 'link_ctr':
+      return deriveScopedMetric(metricId, metrics.link_clicks, metrics.impressions, 100);
+    case 'cpm':
+      return deriveScopedMetric(metricId, spend, metrics.impressions, 1000);
+    case 'link_cpc':
+      return deriveCostMetric(metricId, spend, metrics.link_clicks);
+    case 'cost_per_messaging_conversation':
+      return deriveCostMetric(metricId, spend, metrics.messaging_conversations_started_total);
+    case 'cost_per_lead':
+      return deriveCostMetric(metricId, spend, metrics.leads);
+    case 'cost_per_purchase':
+      return deriveCostMetric(metricId, spend, metrics.purchases);
+    case 'purchase_roas':
+      return deriveScopedMetric(metricId, metrics.purchase_value, spend);
+    default:
+      return existing || unavailableTraceableMetric(metricId);
+  }
+}
+
 export function metricTraceLabel(metric: TraceableMetric): string {
   const lines = [
     `Métrica: ${metric.metricId}`,

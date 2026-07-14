@@ -351,10 +351,18 @@ const server = http.createServer((req, res) => {
     if (accountId === 'act_partial_test') {
       const page = parsedUrl.query.after || '1';
       if (page === '1') {
-        return res.end(JSON.stringify({
-          data: [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }],
-          paging: { cursors: { after: 'page2' }, next: `http://${MOCK_HOST}/v25.0/${accountId}/insights?after=page2&level=${isAdsetLevel?'adset':'campaign'}` }
-        }));
+        // fetchMetaGraphPaginated is called with maxPages=1 for every insights
+        // fetch (see meta-sync-performance/index.ts), so page 2 is never
+        // requested in practice -- whether a run ends up 'success' or 'partial'
+        // is decided entirely by whether page 1 itself advertises a next page.
+        // mode=complete simulates an account whose data fits in a single page
+        // (no next cursor, genuinely complete); mode=partial simulates an
+        // account with more data than the 1-page cap allows to collect.
+        const data = [{ campaign_id: 'camp_partial', adset_id: 'adset_partial', impressions: '1000', spend: '10.00', reach: '500', date_start, date_stop }];
+        const paging = global.partialMode === 'partial'
+          ? { cursors: { after: 'page2' }, next: `http://${MOCK_HOST}/v25.0/${accountId}/insights?after=page2&level=${isAdsetLevel?'adset':'campaign'}` }
+          : { cursors: { after: 'cursor' } };
+        return res.end(JSON.stringify({ data, paging }));
       } else {
         if (global.partialMode === 'partial') {
           res.statusCode = 500;

@@ -20,8 +20,8 @@ async function runScenario(scenarioName, assetId, accessToken, assertFn, extraPa
   console.log(`\n--- Running Scenario: ${scenarioName} ---`);
   
   // Rule: requestedPeriods -> periods
-  const payload = { metaAssetId: assetId, periods: ['last_7d'], ...extraPayload };
-  const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const payload = { clientMetaAssetId: assetId, periods: ['last_7d'], ...extraPayload };
+  const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -93,10 +93,22 @@ async function run() {
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${integrationId}', '${userId}', '${encryptOut}', 'active');
   "`);
 
-  const setupAccount = (act, intId = integrationId) => {
+  // Operational sync only resolves accounts through client_meta_assets (see
+  // meta-sync-performance/index.ts): client_meta_assets -> client_identity ->
+  // meta_assets -> meta_integrations. A bare meta_assets row (discovered but
+  // never linked to a client) is rejected with META_VALIDATION_ERROR, so every
+  // account fixture here also needs a client_identity + client_meta_assets link
+  // for whichever user is meant to own it before it can be synced.
+  const setupAccount = (act, intId = integrationId, ownerUserId = userId) => {
     const assetId = cryptoLib.randomUUID();
-    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "INSERT INTO meta_assets (id, integration_id, asset_id, asset_type, asset_name) VALUES ('${assetId}', '${intId}', '${act}', 'adaccount', 'Mock ${act}');"`);
-    return assetId;
+    const clientId = `client_${act}`;
+    const linkId = cryptoLib.randomUUID();
+    execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -c "
+      INSERT INTO meta_assets (id, integration_id, asset_id, asset_type, asset_name) VALUES ('${assetId}', '${intId}', '${act}', 'adaccount', 'Mock ${act}');
+      INSERT INTO client_identity (user_id, client_id, display_name) VALUES ('${ownerUserId}', '${clientId}', 'Mock ${act}');
+      INSERT INTO client_meta_assets (id, user_id, client_id, meta_asset_id) VALUES ('${linkId}', '${ownerUserId}', '${clientId}', '${assetId}');
+    "`);
+    return linkId;
   };
 
   const assets = {
@@ -122,7 +134,9 @@ async function run() {
     INSERT INTO auth.users (id, email) VALUES ('${foreignUserId}', 'foreign_${Date.now()}@test.com');
     INSERT INTO meta_integrations (id, user_id, access_token_encrypted, status) VALUES ('${foreignIntegrationId}', '${foreignUserId}', 'token', 'active');
   "`);
-  const foreignAsset = setupAccount('act_foreign', foreignIntegrationId);
+  // Linked to the foreign user, not the main test user -- the main user's
+  // clientMetaAssetId lookup must find no matching client_meta_assets row.
+  const foreignAsset = setupAccount('act_foreign', foreignIntegrationId, foreignUserId);
 
   // 1. simple
   await runScenario('simple', assets.simple, accessToken, (res, json, q) => {
@@ -263,10 +277,10 @@ async function run() {
   // 9. invalid_payload
   executedCount++;
   console.log(`\n--- Running Scenario: invalid_payload ---`);
-  const resInv = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resInv = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-    body: JSON.stringify({ periods: ['invalid_period'] }) // Missing metaAssetId
+    body: JSON.stringify({ periods: ['invalid_period'] }) // Missing clientMetaAssetId
   });
   assertEqual(resInv.status, 400, 'HTTP 400');
   passedCount++;
@@ -275,10 +289,10 @@ async function run() {
   // 10. unauthorized
   executedCount++;
   console.log(`\n--- Running Scenario: unauthorized ---`);
-  const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer fake_token` },
-    body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'] })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'] })
   });
   assertEqual(resUnauth.status, 401, 'HTTP 401');
   passedCount++;
@@ -291,16 +305,45 @@ async function run() {
   });
 
   // 12. rate_limit_recovered
-  await fetch('http://127.0.0.1:9999/reset');
-  await runScenario('rate_limit_recovered', assets.rateLimitRec, accessToken, async (res, json, q) => {
-    assertEqual(res.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
-    assertEqual(json.success, true, 'JSON Success');
-    const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
+  // Every fetch inside meta-sync-performance now runs with maxRetries: 0 (retries
+  // were moved out of the per-request layer), so a single sync call can no longer
+  // retry-and-recover internally. "Recovers on attempt 3" now means the CALLER
+  // retries the whole sync request -- the mock still rate-limits the first 2
+  // cumulative requests to act_rate_limit_recovered and succeeds on the 3rd, so
+  // 3 outer sync attempts reproduce the same recovery behavior the scenario
+  // originally tested.
+  await resetMock();
+  executedCount++;
+  console.log(`\n--- Running Scenario: rate_limit_recovered ---`);
+  let rlRes, rlJson, rlText;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    rlRes = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+      body: JSON.stringify({ clientMetaAssetId: assets.rateLimitRec, periods: ['last_7d'] })
+    });
+    rlText = await rlRes.text();
+    try { rlJson = JSON.parse(rlText); } catch (e) { rlJson = null; }
+    if (rlRes.status === 200) break;
+  }
+  try {
+    assertEqual(rlRes.status, 200, 'HTTP Status 200 since it recovers on attempt 3');
+    assertEqual(rlJson.success, true, 'JSON Success');
+    const status = execSync(`PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -t -c "SELECT status FROM meta_sync_runs WHERE id='${rlJson.runId}'"`).toString().trim();
     assertEqual(status, 'success', 'Run success');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests due to retries');
-  });
+    assertEqual(stats.request_counts['act_rate_limit_recovered'] >= 3, true, 'Mock received at least 3 requests across retried sync attempts');
+    console.log(`✅ Scenario rate_limit_recovered passed.`);
+    passedCount++;
+  } catch (err) {
+    console.error(`❌ Scenario rate_limit_recovered failed!`);
+    console.error(err.message);
+    console.error('Response Text:', rlText);
+    failedCount++;
+    process.exitCode = 1;
+    throw err;
+  }
 
   // 13. rate_limit_exhausted
   await fetch('http://127.0.0.1:9999/reset');
@@ -310,9 +353,12 @@ async function run() {
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'failed', 'Run failed');
     assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
+    // maxRetries: 0 on every fetch in meta-sync-performance means a rate limit
+    // now fails on the very first request -- there is no internal retry budget
+    // left to exhaust, so exactly 1 request reaches the mock, not 3+.
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
-    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
+    assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 1, true, 'Mock received the sync request before returning 502');
   });
 
   // 14. persistence_failure
@@ -448,10 +494,10 @@ async function run() {
   // 22. sync_run_id_rejected
   executedCount++;
   console.log(`\n--- Running Scenario: sync_run_id_rejected ---`);
-  const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-ads', {
+  const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-    body: JSON.stringify({ metaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
   });
   assertEqual(resRej.status, 400, 'HTTP 400');
   passedCount++;
