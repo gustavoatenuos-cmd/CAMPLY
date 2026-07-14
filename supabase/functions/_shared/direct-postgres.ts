@@ -1,5 +1,10 @@
 import postgres from 'npm:postgres@3.4.4'
 
+function isIPv6Address(address: string): boolean {
+  // IPv6 literals contain colons; plain hostnames and IPv4 addresses never do.
+  return address.includes(':')
+}
+
 async function resolveHost(hostname: string): Promise<string> {
   // Try Deno.connect to resolve host (handles underscores in Docker aliases/container names)
   try {
@@ -42,7 +47,11 @@ export async function withDirectPostgres<T>(
       const hostname = match[1]
       if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^[0-9.]+$/.test(hostname)) {
         const resolvedIp = await resolveHost(hostname)
-        dbUrl = dbUrl.replace(`@${hostname}`, `@${resolvedIp}`)
+        // db.<ref>.supabase.co now commonly resolves to IPv6. A bare IPv6 literal
+        // in a URL authority must be bracketed (postgres://user:pass@[::1]:5432/db)
+        // or the driver's URL parser throws "Invalid URL" before ever connecting.
+        const formattedHost = isIPv6Address(resolvedIp) ? `[${resolvedIp}]` : resolvedIp
+        dbUrl = dbUrl.replace(`@${hostname}`, `@${formattedHost}`)
       }
     }
   } catch (err) {
