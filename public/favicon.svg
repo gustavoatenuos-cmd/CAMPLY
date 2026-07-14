@@ -1,1 +1,28 @@
-<svg xmlns=" http://www.w3.org/2000/svg\ viewBox=\0 0 100 100\ fill=\none\><path d=\M 65 20 A 35 35 0 1 0 75 75\ stroke=\#16a34a\ stroke-width=\16\ stroke-linecap=\round\ fill=\none\/><path d=\M 35 65 L 55 50 L 75 30\ stroke=\#16a34a\ stroke-width=\8\ stroke-linecap=\round\ fill=\none\/><circle cx=\35\ cy=\65\ r=\7\ fill=\#ffffff\ stroke=\#16a34a\ stroke-width=\5\/><circle cx=\55\ cy=\50\ r=\7\ fill=\#ffffff\ stroke=\#16a34a\ stroke-width=\5\/><path d=\M 60 30 L 75 30 L 75 45\ stroke=\#16a34a\ stroke-width=\8\ stroke-linecap=\round\ stroke-linejoin=\round\ fill=\none\/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="camply-mark-gradient" x1="8" x2="56" y1="56" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F7A5A" />
+      <stop offset="1" stop-color="#22C55E" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#F8FAFC" />
+  <path
+    d="M44.9 11.6A23.9 23.9 0 1 0 44.9 52"
+    fill="none"
+    stroke="url(#camply-mark-gradient)"
+    stroke-width="9"
+    stroke-linecap="butt"
+  />
+  <path
+    d="M10 49C18 30 28 36 35 31C42 26 47 20 53 11"
+    fill="none"
+    stroke="url(#camply-mark-gradient)"
+    stroke-width="4.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path d="M51 11h9v9" fill="none" stroke="#22C55E" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="18" cy="39" r="7" fill="#F3F4F6" stroke="#0F7A5A" stroke-width="4.5" />
+  <circle cx="33" cy="31" r="5.5" fill="#F3F4F6" stroke="#0F7A5A" stroke-width="4" />
+  <circle cx="45" cy="27" r="5" fill="#F3F4F6" stroke="#0F7A5A" stroke-width="4" />
+</svg>
