@@ -550,7 +550,7 @@ export async function handleRequest(req: Request) {
           on ma.id = cma.meta_asset_id
         join public.meta_integrations mi
           on mi.id = ma.integration_id
-         and mi.user_id = cma.user_id
+         and mi.user_id::text = cma.user_id::text
         where cma.id::text = ${clientMetaAssetId}
           and cma.user_id::text = ${userId}
           and cma.unlinked_at is null
