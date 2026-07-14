@@ -54,21 +54,28 @@ export const primaryChannels: ValueLabel[] = [
   { value: 'app_delivery', label: 'App delivery' },
 ];
 
+// value must always be a metric id accepted by public.is_allowed_performance_metric
+// (see supabase/migrations/20260627000015_multiclient_performance_foundation.sql) --
+// upsert_client_analysis_profile validates primary_conversion_metric against it, and
+// performanceScore.ts / ClientPerformanceTable.tsx look up primaryConversionMetric
+// directly as a Meta metric id. Several business-facing labels intentionally share
+// the same underlying metric id (e.g. every purchase-style event maps to
+// 'purchases') since the allow-list has no finer-grained equivalent.
 export const primaryConversionMetrics: ValueLabel[] = [
-  { value: 'conversa_iniciada', label: 'Conversa iniciada' },
-  { value: 'lead_gerado', label: 'Lead gerado' },
-  { value: 'agendamento_realizado', label: 'Agendamento realizado' },
-  { value: 'compra_site', label: 'Compra no site' },
-  { value: 'compra_checkout', label: 'Compra no checkout' },
-  { value: 'pedido_realizado', label: 'Pedido realizado' },
-  { value: 'orcamento_solicitado', label: 'Orçamento solicitado' },
-  { value: 'ligacao_recebida', label: 'Ligação recebida' },
-  { value: 'rota_solicitada', label: 'Rota solicitada' },
-  { value: 'cadastro_preenchido', label: 'Cadastro preenchido' },
-  { value: 'mensagem_direct', label: 'Mensagem no direct' },
-  { value: 'adicionar_carrinho', label: 'Adicionar ao carrinho' },
-  { value: 'iniciar_checkout', label: 'Iniciar checkout' },
-  { value: 'visualizacao_produto', label: 'Visualização de produto' },
+  { value: 'messaging_conversations_started_total', label: 'Conversa iniciada' },
+  { value: 'leads', label: 'Lead gerado' },
+  { value: 'leads', label: 'Agendamento realizado' },
+  { value: 'purchases', label: 'Compra no site' },
+  { value: 'purchases', label: 'Compra no checkout' },
+  { value: 'purchases', label: 'Pedido realizado' },
+  { value: 'leads', label: 'Orçamento solicitado' },
+  { value: 'leads', label: 'Ligação recebida' },
+  { value: 'leads', label: 'Rota solicitada' },
+  { value: 'leads', label: 'Cadastro preenchido' },
+  { value: 'instagram_direct_conversations_started', label: 'Mensagem no direct' },
+  { value: 'landing_page_views', label: 'Adicionar ao carrinho' },
+  { value: 'landing_page_views', label: 'Iniciar checkout' },
+  { value: 'landing_page_views', label: 'Visualização de produto' },
 ];
 
 export const profileMetricOptions = [
@@ -205,7 +212,7 @@ export function defaultAnalysisProfile(clientId: string, seed?: Partial<ClientAn
     secondaryChannel: seed?.secondaryChannel ?? null,
     secondaryConversionMetric: seed?.secondaryConversionMetric ?? null,
     businessModel: seed?.businessModel || '',
-    primaryConversionMetric: seed?.primaryConversionMetric || 'conversa_iniciada',
+    primaryConversionMetric: seed?.primaryConversionMetric || 'messaging_conversations_started_total',
     secondaryMetrics: seed?.secondaryMetrics?.length ? seed.secondaryMetrics : [],
     primaryChannel: seed?.primaryChannel || 'whatsapp',
     budgetPeriod: seed?.budgetPeriod || 'monthly',
@@ -231,7 +238,7 @@ export function mapClientProfileRow(row: Record<string, unknown>): ClientAnalysi
     secondaryChannel: typeof row.secondary_channel === 'string' && row.secondary_channel.trim() ? row.secondary_channel : null,
     secondaryConversionMetric: typeof row.secondary_conversion_metric === 'string' && row.secondary_conversion_metric.trim() ? row.secondary_conversion_metric : null,
     businessModel: typeof row.business_model === 'string' && row.business_model.trim() ? row.business_model : '',
-    primaryConversionMetric: typeof row.primary_conversion_metric === 'string' && row.primary_conversion_metric.trim() ? row.primary_conversion_metric : 'conversa_iniciada',
+    primaryConversionMetric: typeof row.primary_conversion_metric === 'string' && row.primary_conversion_metric.trim() ? row.primary_conversion_metric : 'messaging_conversations_started_total',
     secondaryMetrics: Array.isArray(row.secondary_metrics) ? row.secondary_metrics.filter((item): item is string => typeof item === 'string') : [],
     primaryChannel: typeof row.primary_channel === 'string' && row.primary_channel.trim() ? row.primary_channel : 'whatsapp',
     budgetPeriod: (row.budget_period === 'daily' || row.budget_period === 'weekly' || row.budget_period === 'monthly') ? row.budget_period : 'monthly',

@@ -2,7 +2,23 @@ import { describe, expect, it } from 'vitest';
 import {
   defaultAnalysisProfile,
   mapClientProfileRow,
+  primaryConversionMetrics,
 } from './clientAnalysisProfile';
+
+// Mirrors public.is_allowed_performance_metric (see
+// supabase/migrations/20260627000015_multiclient_performance_foundation.sql).
+// upsert_client_analysis_profile rejects primary_conversion_metric with
+// "primary_conversion_metric is not allowed" for anything outside this set,
+// so every value the "Conversão principal"/"Conversão secundária" pickers can
+// produce must stay inside it.
+const RPC_ALLOWED_PERFORMANCE_METRICS = new Set([
+  'spend', 'impressions', 'cpm', 'link_clicks', 'link_ctr', 'link_cpc', 'cpa',
+  'whatsapp_conversations_started', 'messenger_conversations_started',
+  'instagram_direct_conversations_started', 'messaging_conversations_started_generic',
+  'messaging_conversations_started_total', 'cost_per_messaging_conversation',
+  'purchases', 'purchase_value', 'purchase_roas', 'leads', 'landing_page_views',
+  'page_load_rate', 'profile_visits', 'video_views', 'thru_plays',
+]);
 
 describe('client analysis profile', () => {
   it('keeps decision gates explicit in the default profile', () => {
@@ -14,6 +30,16 @@ describe('client analysis profile', () => {
       attributionDelayHours: 24,
       analysisEnabled: true,
     });
+  });
+
+  it('defaults primaryConversionMetric to an RPC-allowed metric id', () => {
+    expect(RPC_ALLOWED_PERFORMANCE_METRICS.has(defaultAnalysisProfile('client-1').primaryConversionMetric)).toBe(true);
+  });
+
+  it('never offers a primary conversion metric option the RPC would reject', () => {
+    for (const option of primaryConversionMetrics) {
+      expect(RPC_ALLOWED_PERFORMANCE_METRICS.has(option.value)).toBe(true);
+    }
   });
 
   it('maps custom segment and persisted thresholds without losing values', () => {
