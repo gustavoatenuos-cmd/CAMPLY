@@ -291,14 +291,14 @@ export function ClientFormModal({
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão principal</span>
               <select value={profileDraft.primaryConversionMetric} onChange={(event) => updateProfile({ primaryConversionMetric: event.target.value })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
-                {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                {primaryConversionMetrics.map((item) => <option key={item.label} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-brand-soft">Conversão secundária</span>
               <select value={profileDraft.secondaryConversionMetric || ''} onChange={(event) => updateProfile({ secondaryConversionMetric: event.target.value || null })} className="w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white outline-none focus:border-brand-green">
                 <option value="">Nenhuma</option>
-                {primaryConversionMetrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                {primaryConversionMetrics.map((item) => <option key={item.label} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="block">
