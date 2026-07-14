@@ -86,8 +86,22 @@ const EMPTY_RESPONSE: HierarchyResponse = {
   unclassifiedDestinationTotal: 0,
 };
 
+const ZERO_METRIC_IDS = [
+  'spend', 'impressions', 'reach', 'clicks', 'link_clicks', 'landing_page_views',
+  'whatsapp_conversations_started', 'messenger_conversations_started',
+  'instagram_direct_conversations_started', 'messaging_conversations_started_total',
+  'leads', 'purchases', 'purchase_value',
+] as const;
+
+function zeroMetrics(source: 'campaign' | 'adset' | 'ad', ids: { campaignId?: string; adsetId?: string; adId?: string }) {
+  return Object.fromEntries(ZERO_METRIC_IDS.map((metricId) => [metricId, e2eMetric(metricId, 0, source, ids)]));
+}
+
+const EXCLUDED_CAMPAIGN_ID = 'campaign-excluded-e2e';
+
 function fixtureItems(level: HierarchyLevel, parentId?: string | null): HierarchicalMetricNode[] {
   const campaignId = 'campaign-active-e2e';
+  const engagementCampaignId = 'campaign-engagement-e2e';
   const adsetId = 'adset-active-e2e';
   const adId = 'ad-active-e2e';
   const common = (source: 'campaign' | 'adset' | 'ad', ids: { campaignId?: string; adsetId?: string; adId?: string }) => ({
@@ -107,14 +121,24 @@ function fixtureItems(level: HierarchyLevel, parentId?: string | null): Hierarch
   });
 
   if (level === 'campaign') {
-    return [{
-      id: campaignId, name: 'Campanha ativa mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
-      objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
-      attributionSetting: '7d_click_1d_view', creativeId: null,
-      verdict: 'ANALYZABLE', scopeStatus: 'included',
-      hasActiveAdset: true, adLevelCollected: true, hasActiveAd: true,
-      metrics: common('campaign', { campaignId }),
-    }];
+    return [
+      {
+        id: campaignId, name: 'Campanha ativa mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
+        objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
+        attributionSetting: '7d_click_1d_view', creativeId: null,
+        verdict: 'ANALYZABLE', scopeStatus: 'included',
+        hasActiveAdset: true, adLevelCollected: true, hasActiveAd: true,
+        metrics: common('campaign', { campaignId }),
+      },
+      {
+        id: engagementCampaignId, name: 'Campanha de engajamento mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
+        objective: 'OUTCOME_ENGAGEMENT', classifiedObjective: 'ENGAGEMENT', destinationType: null,
+        attributionSetting: '7d_click_1d_view', creativeId: null,
+        verdict: 'ANALYZABLE', scopeStatus: 'included',
+        hasActiveAdset: true, adLevelCollected: false, hasActiveAd: false,
+        metrics: common('campaign', { campaignId: engagementCampaignId }),
+      },
+    ];
   }
   if (level === 'adset' && parentId === campaignId) {
     return [{
@@ -147,22 +171,71 @@ function fixtureItems(level: HierarchyLevel, parentId?: string | null): Hierarch
   return [];
 }
 
+function fixtureBucketItems(level: HierarchyLevel): {
+  activeNoDeliveryItems: HierarchicalMetricNode[];
+  activeWithoutActiveStructureItems: HierarchicalMetricNode[];
+  pausedWithSpendItems: HierarchicalMetricNode[];
+} {
+  if (level !== 'campaign') {
+    return { activeNoDeliveryItems: [], activeWithoutActiveStructureItems: [], pausedWithSpendItems: [] };
+  }
+  const noDeliveryCampaignId = 'campaign-no-delivery-e2e';
+  const noStructureCampaignId = 'campaign-no-structure-e2e';
+  const pausedSpendCampaignId = 'campaign-paused-spend-e2e';
+  return {
+    activeNoDeliveryItems: [{
+      id: noDeliveryCampaignId, name: 'Campanha ativa sem entrega mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
+      objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
+      attributionSetting: '7d_click_1d_view', creativeId: null,
+      verdict: 'ACTIVE_NO_DELIVERY', scopeStatus: 'included',
+      hasActiveAdset: true, adLevelCollected: false, hasActiveAd: false,
+      metrics: zeroMetrics('campaign', { campaignId: noDeliveryCampaignId }),
+    }],
+    activeWithoutActiveStructureItems: [{
+      id: noStructureCampaignId, name: 'Campanha ativa sem estrutura mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
+      objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
+      attributionSetting: '7d_click_1d_view', creativeId: null,
+      verdict: 'ACTIVE_WITHOUT_ACTIVE_STRUCTURE', scopeStatus: 'included',
+      hasActiveAdset: false, adLevelCollected: false, hasActiveAd: false,
+      metrics: zeroMetrics('campaign', { campaignId: noStructureCampaignId }),
+    }],
+    pausedWithSpendItems: [{
+      id: pausedSpendCampaignId, name: 'Campanha pausada com gasto mock', status: 'PAUSED', effectiveStatus: 'PAUSED',
+      objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
+      attributionSetting: '7d_click_1d_view', creativeId: null,
+      verdict: 'PAUSED_WITH_SPEND', scopeStatus: 'included',
+      hasActiveAdset: false, adLevelCollected: false, hasActiveAd: false,
+      metrics: {
+        ...zeroMetrics('campaign', { campaignId: pausedSpendCampaignId }),
+        spend: e2eMetric('spend', 180, 'campaign', { campaignId: pausedSpendCampaignId }),
+      },
+    }],
+  };
+}
+
+function fixtureExcludedItem(): HierarchicalMetricNode {
+  return {
+    id: EXCLUDED_CAMPAIGN_ID, name: 'Campanha excluída da operação mock', status: 'ACTIVE', effectiveStatus: 'ACTIVE',
+    objective: 'OUTCOME_LEADS', classifiedObjective: 'LEADS', destinationType: 'WHATSAPP',
+    attributionSetting: '7d_click_1d_view', creativeId: null,
+    verdict: 'NOT_OPERATIONAL', scopeStatus: 'excluded',
+    hasActiveAdset: true, adLevelCollected: false, hasActiveAd: false,
+    metrics: zeroMetrics('campaign', { campaignId: EXCLUDED_CAMPAIGN_ID }),
+  };
+}
+
 function fixtureResponse(input: {
   clientMetaAssetId: string;
   period: DashboardPeriod;
   level: HierarchyLevel;
   parentId?: string | null;
+  scopeFilter: HierarchyScopeFilter;
 }): HierarchyResponse {
   if (!metaE2EState.syncedPeriods.has(input.period)) {
     return { ...EMPTY_RESPONSE, state: 'period_not_synced', level: input.level };
   }
-  const items = fixtureItems(input.level, input.parentId);
-  return {
-    ...EMPTY_RESPONSE,
-    state: items.length ? 'ready' : 'empty',
-    level: input.level,
-    total: items.length,
-    items,
+
+  const base = {
     clientId: 'client-e2e',
     clientMetaAssetId: input.clientMetaAssetId,
     metaAssetId: '20000000-0000-0000-0000-00000000e2e0',
@@ -173,6 +246,28 @@ function fixtureResponse(input: {
     dateStart: '2026-07-01',
     dateStop: '2026-07-01',
     run: { id: '30000000-0000-0000-0000-00000000e2e0', status: 'success', startedAt: '2026-07-01T17:00:00.000Z', finishedAt: '2026-07-01T18:00:00.000Z' },
+  };
+
+  if (input.scopeFilter === 'out_of_scope') {
+    const items = input.level === 'campaign' ? [fixtureExcludedItem()] : [];
+    return { ...EMPTY_RESPONSE, ...base, state: items.length ? 'ready' : 'empty', level: input.level, total: items.length, items };
+  }
+
+  const items = fixtureItems(input.level, input.parentId);
+  const buckets = fixtureBucketItems(input.level);
+  return {
+    ...EMPTY_RESPONSE,
+    ...base,
+    state: items.length ? 'ready' : 'empty',
+    level: input.level,
+    total: items.length,
+    items,
+    activeNoDeliveryItems: buckets.activeNoDeliveryItems,
+    activeNoDeliveryTotal: buckets.activeNoDeliveryItems.length,
+    activeWithoutActiveStructureItems: buckets.activeWithoutActiveStructureItems,
+    activeWithoutActiveStructureTotal: buckets.activeWithoutActiveStructureItems.length,
+    pausedWithSpendItems: buckets.pausedWithSpendItems,
+    pausedWithSpendTotal: buckets.pausedWithSpendItems.length,
   };
 }
 
@@ -186,7 +281,7 @@ export async function fetchMetaPerformanceHierarchy(
   scopeFilter: HierarchyScopeFilter = 'operational'
 ): Promise<HierarchyResponse> {
   if (isMetaE2EMode) {
-    return fixtureResponse({ clientMetaAssetId, period, level, parentId });
+    return fixtureResponse({ clientMetaAssetId, period, level, parentId, scopeFilter });
   }
 
   if (!supabase) {
