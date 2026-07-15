@@ -1,8 +1,9 @@
 import { Activity, ArrowRight, CircleDollarSign, MessageCircle, ShieldCheck } from 'lucide-react';
 import type { GlobalClientPerformance, MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import type { DecisionSignal } from '../../lib/performance/performanceScore';
-import { deriveCostMetric, deriveScopedMetric } from '../../lib/performance/traceableMetrics';
+import { deriveScopedMetric } from '../../lib/performance/traceableMetrics';
 import { aggregateMetricTotal, aggregateRatio, type MetricAggregate } from '../../lib/performance/aggregateMetrics';
+import { calculateObjectiveScopedCosts } from '../../lib/performance/objectiveScopedMetrics';
 import { PerformanceScoreBadge } from './PerformanceScoreBadge';
 
 function metricValue(metric: MetricContract | undefined): number | null {
@@ -163,39 +164,30 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
 
   const singleAccount = accounts.length === 1 ? accounts[0] : null;
 
-  // Com várias contas no recorte, os custos médios são agregados de forma
-  // ponderada (soma dos gastos ÷ soma dos resultados), com bloqueio de moeda
+  // Com várias contas no recorte, os demais custos médios (CPM, frequência)
+  // são agregados de forma ponderada (soma ÷ soma), com bloqueio de moeda
   // mista — em vez do antigo placeholder "Por conta" que escondia a leitura.
   const spendAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.spend), { monetary: true });
-  const conversationsAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.messaging_conversations_started_total));
-  const purchasesAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.purchases));
-  const purchaseValueAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.purchase_value), { monetary: true });
   const impressionsAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.impressions));
   const reachAgg = aggregateMetricTotal(accounts.map((account) => account.metrics.reach));
-  const aggCostPerConversation = aggregateRatio(spendAgg, conversationsAgg);
-  const aggCostPerPurchase = aggregateRatio(spendAgg, purchasesAgg);
   const aggCpm = aggregateRatio(spendAgg, impressionsAgg, 1000);
-  const aggRoas = aggregateRatio(purchaseValueAgg, spendAgg);
   const aggFrequency = aggregateRatio(impressionsAgg, reachAgg);
+
+  // CPA, CPL, custo por conversa e ROAS vêm do gasto e do resultado das
+  // campanhas do MESMO objetivo (metricGroups), nunca do gasto total da
+  // conta/cliente — ver src/lib/performance/objectiveScopedMetrics.ts. Isso
+  // vale tanto para uma única conta quanto para o recorte com várias contas.
+  const objectiveCosts = calculateObjectiveScopedCosts(clients.flatMap((client) => client.metricGroups));
 
   const aggregateCurrencyValue = (aggregate: MetricAggregate): string =>
     aggregate.available && aggregate.value !== null ? formatCurrency(aggregate.value, aggregate.currency) : '—';
   const aggregateDecimalValue = (aggregate: MetricAggregate): string =>
     aggregate.available ? formatDecimal(aggregate.value) : '—';
-  const costPerConversation = singleAccount
-    ? deriveCostMetric('cost_per_messaging_conversation', singleAccount.metrics.spend, singleAccount.metrics.messaging_conversations_started_total)
-    : undefined;
-  const costPerPurchase = singleAccount
-    ? deriveCostMetric('cost_per_purchase', singleAccount.metrics.spend, singleAccount.metrics.purchases)
-    : undefined;
   const frequency = singleAccount
     ? deriveScopedMetric('frequency', singleAccount.metrics.impressions, singleAccount.metrics.reach)
     : undefined;
   const cpm = singleAccount
     ? deriveScopedMetric('cpm', singleAccount.metrics.spend, singleAccount.metrics.impressions, 1000)
-    : undefined;
-  const roas = singleAccount
-    ? deriveScopedMetric('purchase_roas', singleAccount.metrics.purchase_value, singleAccount.metrics.spend)
     : undefined;
   const primaryMetrics = accounts.flatMap((account) => [
     account.metrics.spend,
@@ -250,11 +242,11 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <CurrencyMetric label="Investimento" values={currencyTotals} />
           <SummaryMetric label="Conversas iniciadas" value={formatCount(conversations)} />
-          <SummaryMetric label="Custo por conversa" value={singleAccount ? formatCurrency(metricValue(costPerConversation) || 0, singleAccount.currency) : aggregateCurrencyValue(aggCostPerConversation)} unavailable={singleAccount ? !costPerConversation?.available : !aggCostPerConversation.available} />
+          <SummaryMetric label="Custo por conversa" value={aggregateCurrencyValue(objectiveCosts.costPerMessagingConversation)} unavailable={!objectiveCosts.costPerMessagingConversation.available} />
           <SummaryMetric label="Compras" value={formatCount(purchases)} />
-          <SummaryMetric label="Custo por compra" value={singleAccount ? formatCurrency(metricValue(costPerPurchase) || 0, singleAccount.currency) : aggregateCurrencyValue(aggCostPerPurchase)} unavailable={singleAccount ? !costPerPurchase?.available : !aggCostPerPurchase.available} />
+          <SummaryMetric label="Custo por compra" value={aggregateCurrencyValue(objectiveCosts.costPerPurchase)} unavailable={!objectiveCosts.costPerPurchase.available} />
           <CurrencyMetric label="Valor de compras" values={purchaseValueTotals} />
-          <SummaryMetric label="ROAS" value={singleAccount ? formatDecimal(metricValue(roas)) : aggregateDecimalValue(aggRoas)} unavailable={singleAccount ? !roas?.available : !aggRoas.available} />
+          <SummaryMetric label="ROAS" value={aggregateDecimalValue(objectiveCosts.purchaseRoas)} unavailable={!objectiveCosts.purchaseRoas.available} />
           <SummaryMetric label="Alcance" value={singleAccount ? formatCount(metricValue(singleAccount.metrics.reach)) : formatCount(reachAgg.value)} unavailable={singleAccount ? false : !reachAgg.available} />
           <SummaryMetric label="Impressões" value={formatCount(impressions)} />
           <SummaryMetric label="Frequência" value={singleAccount ? formatDecimal(metricValue(frequency)) : aggregateDecimalValue(aggFrequency)} unavailable={singleAccount ? !frequency?.available : !aggFrequency.available} />

@@ -1,6 +1,7 @@
 import React from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { calculateObjectiveScopedCosts } from '../../lib/performance/objectiveScopedMetrics';
 
 interface ClientPrimaryMetricBlockProps {
   performance: EnrichedGlobalClientPerformance;
@@ -12,6 +13,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
   // client_analysis_profiles em globalPerformanceDashboard.ts.
   const profile = performance.analysisProfile;
   const metrics = performance.metrics;
+  const objectiveCosts = calculateObjectiveScopedCosts(performance.metricGroups);
 
   if (!profile?.primaryConversionMetric) {
     return (
@@ -41,8 +43,8 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
 
   const renderSales = () => {
     const purchases = metrics?.purchases?.value ?? 0;
-    const cpa = deriveCostMetric('cost_per_purchase', metrics?.spend, metrics?.purchases);
-    const roas = metrics?.purchase_roas?.value ?? 0;
+    const cpa = objectiveCosts.costPerPurchase;
+    const roas = objectiveCosts.purchaseRoas.value ?? 0;
 
     return (
       <div className="space-y-2 text-sm">
@@ -57,7 +59,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
           </div>
           <div className="bg-gray-50 p-2 rounded flex flex-col">
             <span className="text-xs text-gray-500">CPA</span>
-            <span className="font-semibold">{formatValue(cpa?.value, 'currency')}</span>
+            <span className="font-semibold">{formatValue(cpa.value, 'currency')}</span>
           </div>
           <div className="bg-gray-50 p-2 rounded flex flex-col">
             <span className="text-xs text-gray-500">ROAS</span>
@@ -70,7 +72,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
 
   const renderLeads = () => {
     const leads = metrics?.leads?.value ?? 0;
-    const cpl = deriveCostMetric('cost_per_lead', metrics?.spend, metrics?.leads);
+    const cpl = objectiveCosts.costPerLead;
 
     return (
       <div className="space-y-2 text-sm">
@@ -85,7 +87,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
           </div>
           <div className="bg-gray-50 p-2 rounded flex flex-col">
             <span className="text-xs text-gray-500">Custo / Lead</span>
-            <span className="font-semibold">{formatValue(cpl?.value, 'currency')}</span>
+            <span className="font-semibold">{formatValue(cpl.value, 'currency')}</span>
           </div>
         </div>
       </div>
@@ -94,7 +96,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
 
   const renderConversations = () => {
     const convs = metrics?.messaging_conversations_started_total?.value ?? 0;
-    const cpc = deriveCostMetric('cost_per_messaging_conversation_started', metrics?.spend, metrics?.messaging_conversations_started_total);
+    const cpc = objectiveCosts.costPerMessagingConversation;
 
     return (
       <div className="space-y-2 text-sm">
@@ -109,7 +111,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
           </div>
           <div className="bg-gray-50 p-2 rounded flex flex-col">
             <span className="text-xs text-gray-500">Custo / Conv.</span>
-            <span className="font-semibold">{formatValue(cpc?.value, 'currency')}</span>
+            <span className="font-semibold">{formatValue(cpc.value, 'currency')}</span>
           </div>
         </div>
       </div>
