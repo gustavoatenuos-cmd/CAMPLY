@@ -56,7 +56,10 @@ export function clientSeverity(client: GlobalClientPerformance): 'healthy' | 'at
 function pendingReasons(client: GlobalClientPerformance, profile: ClientAnalysisProfile | null, workspaceClient?: Client): string[] {
   const reasons: string[] = [];
   if (!client.analysisProfile) {
-    reasons.push('Sem perfil de análise');
+    // Mesma frase usada em ClientAnalyticsCard/ClientsView (ver
+    // src/lib/operational/clientOperationalReadiness.ts) para que o motivo de
+    // bloqueio seja idêntico em todas as telas.
+    reasons.push('Perfil de análise não configurado');
     reasons.push('Sem segmento');
   } else if (!client.analysisProfile.analysisEnabled) {
     reasons.push('Análise desativada');

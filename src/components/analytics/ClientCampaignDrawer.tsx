@@ -6,6 +6,7 @@ import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerfo
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
+import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
 
 interface ClientCampaignDrawerProps {
   isOpen: boolean;
@@ -130,6 +131,7 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
+              <CampaignsReadinessWarning performance={performance} />
               {state.items.map((campaign) => (
                 <CampaignRow key={campaign.id} campaign={campaign} account={account} />
               ))}
@@ -137,6 +139,27 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Sinaliza dados parciais/desatentualizados mesmo quando a RPC já retornou
+// 'ready' (a hierarquia hoje não distingue "parcial" de "completo" no state) -
+// mesma regra usada nas outras telas, ver clientOperationalReadiness.ts.
+function CampaignsReadinessWarning({ performance }: { performance: EnrichedGlobalClientPerformance | null }) {
+  if (!performance) return null;
+  const readiness = evaluateClientOperationalReadiness({
+    clientId: performance.clientId,
+    client: null,
+    analysisProfile: null,
+    globalClientStatus: performance.clientStatus,
+    receivableEntries: undefined,
+  });
+  if (readiness.campaigns.status !== 'partial' && readiness.campaigns.status !== 'stale') return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+      {readiness.campaigns.warnings.join(' ')}
     </div>
   );
 }

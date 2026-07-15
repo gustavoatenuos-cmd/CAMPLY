@@ -1,10 +1,24 @@
 import { Edit3, Mail, Plus, Users } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createActivityLog, money, normalizeMonthlyInvestment } from '../data/camplyStore';
+import { buildOperationalView, type OperationalEntry } from '../data/receivablesForecast';
+import { evaluateClientOperationalReadiness, type FinanceReadinessStatus } from '../lib/operational/clientOperationalReadiness';
 import type { CamplyData, ClientStatus } from '../types';
 import { clientDisplayName, clientOptionLabel } from '../data/clientDisplay';
 import { ClientFormModal } from './ClientFormModal';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
+
+const FINANCE_READINESS_TONE: Record<FinanceReadinessStatus, string> = {
+  ready: 'bg-emerald-400/10 text-emerald-200',
+  blocked: 'bg-amber-400/10 text-amber-200',
+  inactive: 'bg-white/5 text-brand-muted',
+};
+
+const FINANCE_READINESS_LABEL: Record<FinanceReadinessStatus, string> = {
+  ready: 'Financeiro OK',
+  blocked: 'Cobrança pendente',
+  inactive: 'Fora da operação',
+};
 
 export { clientDisplayName, clientOptionLabel };
 
@@ -20,6 +34,28 @@ export function ClientsView({ data, updateData, persistClientData }: ClientsView
   const [selectedClientId, setSelectedClientId] = useState(data.clients[0]?.id || '');
   const [metaWorkspaceKey, setMetaWorkspaceKey] = useState(0);
   const editingClient = data.clients.find((client) => client.id === editingClientId);
+
+  // Só a área "finance" é computável aqui - perfil de análise e catálogo Meta
+  // vivem em RPCs assíncronas que este componente não carrega (ver Analytics
+  // por Cliente e Integração Meta, que já usam a camada central para essas áreas).
+  const operationalView = useMemo(() => buildOperationalView(data), [data]);
+  const receivableEntriesByClient = useMemo(() => {
+    const map = new Map<string, OperationalEntry[]>();
+    // buildOperationalView exclui linhas em atraso de currentMonthEntries (elas
+    // vão para overdueCurrentMonthEntries) - sem incluir esse balde aqui, um
+    // cliente com cobrança atrasada apareceria como "Financeiro OK".
+    [
+      ...operationalView.currentMonthEntries,
+      ...operationalView.nextMonthEntries,
+      ...operationalView.overdueCurrentMonthEntries,
+    ].forEach((entry) => {
+      if (!entry.clientId) return;
+      const list = map.get(entry.clientId) ?? [];
+      list.push(entry);
+      map.set(entry.clientId, list);
+    });
+    return map;
+  }, [operationalView]);
 
   const setStatus = (id: string, status: ClientStatus) => {
     const selected = data.clients.find((client) => client.id === id);
@@ -56,7 +92,16 @@ export function ClientsView({ data, updateData, persistClientData }: ClientsView
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-            {data.clients.map((client) => (
+            {data.clients.map((client) => {
+              const project = data.projects.find((p) => p.id === client.projectId);
+              const readiness = evaluateClientOperationalReadiness({
+                clientId: client.id,
+                client,
+                project,
+                analysisProfile: null,
+                receivableEntries: receivableEntriesByClient.get(client.id) ?? [],
+              });
+              return (
               <article key={client.id} className={`rounded-2xl border bg-brand-surface p-5 transition ${selectedClientId === client.id ? 'border-brand-green/60' : 'border-brand-line'}`}>
                 <button type="button" onClick={() => setSelectedClientId(client.id)} className="w-full text-left">
                   <div className="flex items-start justify-between gap-3">
@@ -65,7 +110,16 @@ export function ClientsView({ data, updateData, persistClientData }: ClientsView
                       <h2 className="mt-1 text-xl font-black text-white">{clientDisplayName(client)}</h2>
                       <p className="mt-1 text-sm text-brand-muted">Responsável: {client.name}</p>
                     </div>
-                    <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold uppercase text-brand-soft">{client.status}</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold uppercase text-brand-soft">{client.status}</span>
+                      <span
+                        data-testid="client-finance-readiness-badge"
+                        title={[...readiness.finance.missing, ...readiness.finance.warnings].join(', ') || undefined}
+                        className={`rounded-full px-2 py-1 text-[10px] font-bold ${FINANCE_READINESS_TONE[readiness.finance.status]}`}
+                      >
+                        {FINANCE_READINESS_LABEL[readiness.finance.status]}
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-xl bg-brand-ink/50 p-3"><p className="text-xs text-brand-muted">Gestão</p><p className="mt-1 font-black text-white">{money(client.monthlyFee)}</p></div>
@@ -81,7 +135,8 @@ export function ClientsView({ data, updateData, persistClientData }: ClientsView
                   <button type="button" onClick={() => setSelectedClientId(client.id)} className="ml-auto rounded-lg bg-brand-green/10 px-3 py-2 text-xs font-black text-brand-green">Analisar Meta</button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
 
