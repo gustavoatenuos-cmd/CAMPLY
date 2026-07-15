@@ -11,7 +11,7 @@ serve(async (req) => {
     status: 'failed',
     error: {
       code: 'LEGACY_ENDPOINT_DISABLED',
-      message: 'Endpoint legado desativado. Use meta-sync-ads com metaAssetId.',
+      message: 'Endpoint legado desativado. Use meta-sync-performance com metaAssetId.',
     },
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
