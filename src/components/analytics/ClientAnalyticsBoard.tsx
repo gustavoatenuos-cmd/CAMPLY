@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
+import { readPendingClientSelection } from '../../lib/performance/pendingClientSelection';
 import { ClientAnalyticsCard } from './ClientAnalyticsCard';
 import { ClientCampaignDrawer } from './ClientCampaignDrawer';
 import { Search, Filter } from 'lucide-react';
@@ -15,9 +16,21 @@ type FilterStatus = 'ALL' | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NO_DATA' | 'NO
 export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyticsBoardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
-  
+
   const [selectedPerformance, setSelectedPerformance] = useState<EnrichedGlobalClientPerformance | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Aplica o cliente vindo do card "Ver análise" (OverviewView) assim que os
+  // clientes carregarem — só uma vez, para não sobrescrever uma busca que o
+  // usuário já tenha digitado manualmente depois disso.
+  const appliedPendingSelection = useRef(false);
+  useEffect(() => {
+    if (appliedPendingSelection.current || clients.length === 0) return;
+    const pendingClientId = readPendingClientSelection();
+    const match = pendingClientId && clients.find((client) => client.clientId === pendingClientId);
+    if (match) setSearchTerm(match.clientName);
+    appliedPendingSelection.current = true;
+  }, [clients]);
 
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
