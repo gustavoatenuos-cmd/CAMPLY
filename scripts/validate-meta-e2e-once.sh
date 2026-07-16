@@ -3,7 +3,6 @@ set -euo pipefail
 
 echo "=== VALIDAÇÃO LOCAL DO META ANALYTICS ENGINE ==="
 
-FUNCTION_PID=""
 MOCK_CONTAINER_NAME="camply-mock-graph"
 SUPABASE_CLI="${SUPABASE_CLI:-./node_modules/.bin/supabase}"
 
@@ -11,6 +10,88 @@ if [[ ! -x "$SUPABASE_CLI" ]]; then
   echo "Erro: Supabase CLI local não encontrada. Execute npm ci antes da validação."
   exit 1
 fi
+
+# Aguarda um endpoint HTTP ficar saudável com tentativas e timeout limitados por
+# tentativa — nunca um curl sem limite, que pode travar indefinidamente e
+# esconder qual endpoint realmente falhou (era o bug real por trás do "Edge
+# Functions não responderam após 30 segundos", que na prática travava ~9min
+# num único curl pendurado em vez de falhar em 30 tentativas de ~1s).
+wait_for_edge_function() {
+  local name="$1"
+  local url="$2"
+  local method="${3:-GET}"
+  local max_attempts="${4:-30}"
+  local attempt http_code curl_exit
+
+  echo "--- Aguardando '$name' em $url (method=$method, até $max_attempts tentativas) ---"
+  for attempt in $(seq 1 "$max_attempts"); do
+    if http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+      --connect-timeout 3 --max-time 5 -X "$method" "$url"); then
+      curl_exit=0
+    else
+      curl_exit=$?
+    fi
+
+    echo "[$name] tentativa $attempt/$max_attempts -> curl_exit=$curl_exit http_code=${http_code:-N/A}"
+
+    if [[ "$curl_exit" -eq 0 && "$http_code" =~ ^[23] ]]; then
+      echo "[$name] respondeu com sucesso (HTTP $http_code)."
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  echo "Erro: '$name' não respondeu com sucesso em $url após $max_attempts tentativas."
+  return 1
+}
+
+# Despeja o máximo de contexto possível quando um health check falha, para que
+# a causa real (runtime não subiu, erro de import Deno, container reiniciando,
+# porta não exposta, etc.) apareça no log da CI em vez de só "não respondeu".
+# Localiza containers por nome parcial/filtro, não por nome fixo, já que o
+# nome exato pode mudar entre versões da CLI do Supabase.
+dump_diagnostics() {
+  local failed_function="$1"
+  echo "=== DIAGNÓSTICO: falha ao aguardar '$failed_function' ==="
+
+  echo "--- supabase status ---"
+  "$SUPABASE_CLI" status || true
+
+  echo "--- docker ps -a (todos os containers, com portas) ---"
+  docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' || true
+
+  echo "--- containers encerrados (exited) ---"
+  docker ps -a --filter "status=exited" --format 'table {{.Names}}\t{{.Status}}' || true
+
+  local edge_container
+  edge_container=$(docker ps -a --filter "name=edge_runtime" --format '{{.Names}}' | head -n1)
+  if [[ -z "$edge_container" ]]; then
+    edge_container=$(docker ps -a --format '{{.Names}}' | grep -i "edge" | head -n1 || true)
+  fi
+  if [[ -n "$edge_container" ]]; then
+    echo "--- logs do Edge Runtime ($edge_container), últimas 200 linhas ---"
+    docker logs --tail 200 "$edge_container" || true
+  else
+    echo "--- nenhum container de Edge Runtime encontrado (procurado por 'edge_runtime'/'edge') ---"
+  fi
+
+  local gateway_container
+  gateway_container=$(docker ps -a --format '{{.Names}}' | grep -iE "kong|gateway" | head -n1 || true)
+  if [[ -n "$gateway_container" ]]; then
+    echo "--- logs do Gateway ($gateway_container), últimas 100 linhas ---"
+    docker logs --tail 100 "$gateway_container" || true
+  else
+    echo "--- nenhum container de gateway encontrado (procurado por 'kong'/'gateway') ---"
+  fi
+
+  if docker ps -a --format '{{.Names}}' | grep -qx "$MOCK_CONTAINER_NAME"; then
+    echo "--- logs do Mock Graph API ($MOCK_CONTAINER_NAME), últimas 100 linhas ---"
+    docker logs --tail 100 "$MOCK_CONTAINER_NAME" || true
+  fi
+
+  echo "=== FIM DO DIAGNÓSTICO ==="
+}
 
 cleanup() {
   echo "--- Executando cleanup ---"
@@ -131,29 +212,24 @@ docker run -d --name "$MOCK_CONTAINER_NAME" \
   -e MOCK_HOST="mock-graph:9999" \
   node:18 node /scripts/mock-graph.cjs
 
-echo "Aguardando Mock API ficar saudável..."
-TIMEOUT=30
-until curl -s http://localhost:9999/health > /dev/null; do
-  sleep 1
-  ((TIMEOUT--))
-  if [[ $TIMEOUT -le 0 ]]; then
-    echo "Erro: Mock API não respondeu após 30 segundos."
-    docker logs "$MOCK_CONTAINER_NAME"
-    exit 1
-  fi
-done
+if ! wait_for_edge_function "mock-graph" "http://localhost:9999/health" "GET" 30; then
+  echo "--- logs do Mock Graph API ($MOCK_CONTAINER_NAME) ---"
+  docker logs "$MOCK_CONTAINER_NAME" || true
+  dump_diagnostics "mock-graph"
+  exit 1
+fi
 echo "Mock API está saudável."
 
-echo "Aguardando Edge Functions (mock) ficarem saudáveis..."
-TIMEOUT=30
-until curl -s -f http://localhost:54321/functions/v1/meta-sync-performance -X OPTIONS > /dev/null && curl -s -f http://localhost:54321/functions/v1/meta-oauth-callback -X OPTIONS > /dev/null; do
-  sleep 1
-  ((TIMEOUT--))
-  if [[ $TIMEOUT -le 0 ]]; then
-    echo "Erro: Edge Functions não responderam após 30 segundos."
-    exit 1
-  fi
-done
+if ! wait_for_edge_function "meta-sync-performance" "http://localhost:54321/functions/v1/meta-sync-performance" "OPTIONS" 30; then
+  dump_diagnostics "meta-sync-performance"
+  exit 1
+fi
+
+if ! wait_for_edge_function "meta-oauth-callback" "http://localhost:54321/functions/v1/meta-oauth-callback" "OPTIONS" 30; then
+  dump_diagnostics "meta-oauth-callback"
+  exit 1
+fi
+
 echo "Edge Functions estão saudáveis."
 
 # RLS / OAuth
