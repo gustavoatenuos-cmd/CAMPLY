@@ -9,6 +9,7 @@ export type PeriodCompletenessStatus =
   | 'partial_page'
   | 'timeout'
   | 'api_error'
+  | 'rate_limit_exhausted'
   | 'validation_error'
   | 'complete';
 
