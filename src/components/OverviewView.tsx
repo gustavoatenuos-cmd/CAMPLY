@@ -25,9 +25,13 @@ import {
 import type { PerformanceEvaluation, PerformanceStatus } from '../lib/performance/types';
 import { GlobalSummaryCards } from './performance/GlobalSummaryCards';
 import { ClientPerformanceTable } from './performance/ClientPerformanceTable';
+import { ClientPerformanceCardGrid } from './performance/ClientPerformanceCardGrid';
+import { ClientPriorityBoard } from './performance/ClientPriorityBoard';
 import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
 import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
+import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
+import { setPendingClientSelection } from '../lib/performance/pendingClientSelection';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
@@ -342,18 +346,34 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     });
   }, [clients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
 
-  // Ordena a central por gravidade (críticos primeiro) e, dentro do mesmo
-  // nível, por investimento — quem gasta mais aparece antes.
-  const severityOrder: Record<ReturnType<typeof clientSeverity>, number> = { critical: 0, attention: 1, healthy: 2, no_data: 3 };
-  const sortedClients = useMemo(() => [...filteredClients].sort((a, b) => {
-    const bySeverity = severityOrder[clientSeverity(a)] - severityOrder[clientSeverity(b)];
-    if (bySeverity !== 0) return bySeverity;
-    const spendOf = (client: GlobalClientPerformance) => client.accounts.reduce((total, account) => {
-      const metric = account.metrics.spend;
-      return total + (metric?.available && typeof metric.value === 'number' ? metric.value : 0);
-    }, 0);
-    return spendOf(b) - spendOf(a);
-  }), [filteredClients]);
+  // Prioridade operacional do recorte: mesmo diagnóstico (motivo + status Meta)
+  // usado no bloco de prioridade e nos cards por cliente, para que a ordem da
+  // tabela detalhada nunca divirja do que essas duas seções mostram.
+  const priorityEntries = useMemo(
+    () => buildClientPriorityEntries(filteredClients, data.clients),
+    [filteredClients, data.clients]
+  );
+  const priorityGroups = useMemo(() => groupByPriorityTier(priorityEntries), [priorityEntries]);
+  const sortedClients = useMemo(
+    () => [...priorityGroups.action_now, ...priorityGroups.attention, ...priorityGroups.healthy].map((entry) => entry.client),
+    [priorityGroups]
+  );
+
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const registerCardRef = useCallback((clientId: string, element: HTMLDivElement | null) => {
+    cardRefs.current[clientId] = element;
+  }, []);
+  const handleSelectPriorityClient = useCallback((clientId: string) => {
+    cardRefs.current[clientId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+  const handleViewClientAnalytics = useCallback((clientId: string) => {
+    setPendingClientSelection(clientId);
+    setActiveView('clientAnalytics');
+  }, [setActiveView]);
+  const handleEditClient = useCallback((clientId: string) => {
+    setPendingClientSelection(clientId);
+    setActiveView('clients');
+  }, [setActiveView]);
 
   const priorities = useMemo(() => filteredClients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
@@ -491,7 +511,23 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               onStatusFilterChange={setStatusFilter}
             />
 
-            <ClientPerformanceTable clients={sortedClients} period={period} />
+            <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
+
+            <ClientPerformanceCardGrid
+              entries={priorityEntries}
+              period={period}
+              onViewAnalytics={handleViewClientAnalytics}
+              onEditClient={handleEditClient}
+              registerCardRef={registerCardRef}
+            />
+
+            <CollapsibleSection
+              title="Tabela detalhada"
+              subtitle="Visão de auditoria e comparação por conta — clique em uma linha para abrir as campanhas."
+              defaultOpen={isMetaE2EMode}
+            >
+              <ClientPerformanceTable clients={sortedClients} period={period} />
+            </CollapsibleSection>
 
             <CollapsibleSection
               title="Análise comercial por segmento"

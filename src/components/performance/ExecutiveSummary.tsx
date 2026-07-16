@@ -1,6 +1,7 @@
-import { Activity, Banknote, MessageCircle, ShoppingBag, UserRound } from 'lucide-react';
+import { Activity, Banknote, MessageCircle, ShieldCheck, ShieldAlert, ShoppingBag, UserRound } from 'lucide-react';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
 import { aggregateMetricTotal, aggregateRatio, type MetricAggregate } from '../../lib/performance/aggregateMetrics';
+import { classifyAccountReliability } from '../../lib/performance/clientPriorityGrouping';
 import { clientSeverity } from './CommercialDecisionOverview';
 
 export type HealthFilter = 'all' | 'healthy' | 'attention' | 'critical' | 'no_data';
@@ -95,6 +96,9 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   const counts: Record<Exclude<HealthFilter, 'all'>, number> = { healthy: 0, attention: 0, critical: 0, no_data: 0 };
   for (const client of clients) counts[clientSeverity(client)] += 1;
 
+  const reliableAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'reliable').length;
+  const problemAccounts = accounts.length - reliableAccounts;
+
   const partialNote = spend.partial || conversations.partial || purchases.partial
     ? 'Alguma conta tem dados parciais neste período — os totais podem mudar após a próxima sincronização.'
     : null;
@@ -134,13 +138,15 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCell icon={Banknote} label="Investimento" value={investmentValue} detail={`${spend.accountsUsed} conta${spend.accountsUsed === 1 ? '' : 's'} com gasto no período`} />
         <SummaryCell icon={MessageCircle} label="Conversas" value={formatCount(conversations.value)} />
         <SummaryCell icon={UserRound} label="Leads" value={formatCount(leads.value)} />
         <SummaryCell icon={ShoppingBag} label="Compras" value={formatCount(purchases.value)} />
         <SummaryCell icon={Activity} label="Custo por conversa" value={aggregateCurrency(costPerConversation)} detail="média ponderada do recorte" />
         <SummaryCell icon={Activity} label="Custo por compra" value={aggregateCurrency(costPerPurchase)} detail="média ponderada do recorte" />
+        <SummaryCell icon={ShieldCheck} label="Contas com sync confiável" value={formatCount(reliableAccounts)} detail={`de ${accounts.length} conta${accounts.length === 1 ? '' : 's'} no recorte`} />
+        <SummaryCell icon={ShieldAlert} label="Contas com problema" value={formatCount(problemAccounts)} detail="falha, parcial ou sem sucesso registrado" />
       </div>
 
       {partialNote && <p className="mt-3 text-xs text-amber-300/90">{partialNote}</p>}

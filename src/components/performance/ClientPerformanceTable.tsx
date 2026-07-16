@@ -9,6 +9,7 @@ import type {
 import type { PerformanceEvaluation, PerformanceStatus } from '../../lib/performance/types';
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { PerformanceStatusBadge } from './PerformanceStatusBadge';
+import { PacingBar } from './PacingBar';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
@@ -81,40 +82,6 @@ function rowStyle(status: PerformanceStatus): string {
       return 'border-l-[3px] border-l-transparent';
   }
 }
-
-// ─── Barra de pacing ──────────────────────────────────────────────────────────
-
-/** Exibe uma mini barra de progresso (80px × 4px) + valor colorido.
- *  A largura representa a SEVERIDADE do desvio (0 % = perfeito, 100 % = desvio extremo).
- *  Verde < 10 %, âmbar 10–25 %, vermelho > 25 %.
- */
-function PacingBar({ pct }: { pct: number }) {
-  const abs = Math.abs(pct);
-  const barWidth = Math.min(abs * 3, 100); // escala: desvio de 33 % = barra cheia
-  const colorClass =
-    abs > 25 ? 'bg-red-500'   :
-    abs > 10 ? 'bg-amber-400' :
-               'bg-green-500';
-  const textClass =
-    abs > 25 ? 'text-red-400'   :
-    abs > 10 ? 'text-amber-400' :
-               'text-green-400';
-
-  return (
-    <div>
-      <div className="mb-1 h-1 w-[80px] overflow-hidden rounded-full bg-white/10">
-        <div
-          className={`h-full rounded-full transition-all ${colorClass}`}
-          style={{ width: `${barWidth}%` }}
-        />
-      </div>
-      <p className={`text-[10px] font-semibold ${textClass}`}>
-        {pct > 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
-      </p>
-    </div>
-  );
-}
-
 
 function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
   return (

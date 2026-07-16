@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   AlertTriangle,
   BriefcaseBusiness,
@@ -6,38 +6,63 @@ import {
   ChevronRight,
   Clock3,
   Database,
-  ExternalLink,
+  PenSquare,
+  SquareStack,
 } from 'lucide-react';
-import type { GlobalClientPerformance, MetricContract, GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
+import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
-import type { Client } from '../../types';
 import { ClientLogo } from '../clients/ClientLogo';
-import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
+import { OperationalHealthBadge } from './OperationalHealthBadge';
+import { PacingBar } from './PacingBar';
 import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { TraceableMetricValue } from './TraceableMetricValue';
+import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
+import { operationalHealthTagFor, summarizeDiagnosis, type ClientPriorityEntry } from '../../lib/performance/clientPriorityGrouping';
+import { effectiveClientProfile } from './CommercialDecisionOverview';
 
 interface ClientPerformanceCardGridProps {
-  clients: GlobalClientPerformance[];
-  workspaceClients: Client[];
+  entries: ClientPriorityEntry[];
   period: DashboardPeriod;
+  onViewAnalytics: (clientId: string) => void;
+  onEditClient: (clientId: string) => void;
+  registerCardRef?: (clientId: string, element: HTMLDivElement | null) => void;
+}
+
+function getMetric(client: GlobalClientPerformance, metricName: string) {
+  const metric = client.metrics?.[metricName];
+  return metric?.available && typeof metric.value === 'number' ? metric.value : null;
+}
+
+function formatCurrency(val: number | null, currency = 'BRL') {
+  if (val === null) return '—';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val);
+}
+
+function formatNumber(val: number | null) {
+  if (val === null) return '—';
+  return new Intl.NumberFormat('pt-BR').format(val);
+}
+
+function formatMetricNumber(metricId: string, value: number | null, currency: string): string {
+  if (value === null) return '—';
+  return metricId.startsWith('cost_per') || metricId === 'spend' ? formatCurrency(value, currency) : formatNumber(value);
 }
 
 export function ClientPerformanceCardGrid({
-  clients,
-  workspaceClients,
+  entries,
   period,
+  onViewAnalytics,
+  onEditClient,
+  registerCardRef,
 }: ClientPerformanceCardGridProps) {
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
 
   const toggleClient = (clientId: string) => {
-    setExpandedClients((prev) => ({
-      ...prev,
-      [clientId]: !prev[clientId],
-    }));
+    setExpandedClients((prev) => ({ ...prev, [clientId]: !prev[clientId] }));
   };
 
-  if (clients.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-brand-line bg-brand-ink/30 p-8 text-center">
         <AlertTriangle className="mb-4 text-brand-muted" size={32} />
@@ -47,89 +72,73 @@ export function ClientPerformanceCardGrid({
     );
   }
 
-  function getMetric(client: GlobalClientPerformance, metricName: string) {
-    const metric = client.metrics?.[metricName];
-    return metric?.available && typeof metric.value === 'number' ? metric.value : null;
-  }
-
-  function formatCurrency(val: number | null, currency = 'BRL') {
-    if (val === null) return '—';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(val);
-  }
-
-  function formatNumber(val: number | null) {
-    if (val === null) return '—';
-    return new Intl.NumberFormat('pt-BR').format(val);
-  }
-
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {clients.map((client) => {
-        const workspaceClient = workspaceClients.find((c) => c.id === client.clientId);
+      {entries.map(({ client, workspaceClient, tier, reasons }) => {
         const logoUrl = workspaceClient?.logoUrl;
         const currency = client.accounts[0]?.currency || 'BRL';
+        const profile = effectiveClientProfile(client);
 
-        // Metricas agregadas do cliente
         const spend = getMetric(client, 'spend');
-        
-        // Conversões (Vendas)
         const purchasesMetric = client.metrics?.['purchases'];
         const purchases = getMetric(client, 'purchases');
         const costPerPurchase = deriveCostMetric('cost_per_purchase', client.metrics?.['spend'], purchasesMetric);
         const purchaseRoas = getMetric(client, 'purchase_roas');
-
-        // Conversões (Leads/Conversas)
         const conversationsMetric = client.metrics?.['messaging_conversations_started_total'];
         const conversations = getMetric(client, 'messaging_conversations_started_total');
         const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', client.metrics?.['spend'], conversationsMetric);
-
-        // Engajamento
         const linkClicks = getMetric(client, 'link_clicks');
         const linkCtr = getMetric(client, 'link_ctr');
 
+        const primaryMetricId = profile?.primaryConversionMetric;
+        const primaryEvaluation = primaryMetricId
+          ? client.evaluations.find((evaluation) => evaluation.metricId === primaryMetricId && !evaluation.campaignId)
+          : undefined;
+
+        const plannedBudget = profile?.plannedBudget ?? null;
+        const remaining = plannedBudget !== null && spend !== null ? plannedBudget - spend : null;
+
         const isExpanded = !!expandedClients[client.clientId];
+        const tag = operationalHealthTagFor({ tier, reasons });
+        const diagnosis = summarizeDiagnosis(reasons);
 
         return (
           <div
             key={client.clientId}
+            ref={(element) => registerCardRef?.(client.clientId, element)}
+            data-testid="client-performance-card"
             className="flex flex-col rounded-xl border border-brand-line bg-brand-ink shadow-sm transition-all overflow-hidden"
           >
-            {/* Header / Basic Info */}
+            {/* Header */}
             <div className="flex items-start justify-between border-b border-brand-line/50 p-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <ClientLogo name={workspaceClient?.name || client.clientName} logoUrl={logoUrl} />
-                <div>
-                  <h3 className="font-bold text-white text-base leading-tight truncate max-w-[200px]">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-bold leading-tight text-white">
                     {workspaceClient?.name || client.clientName}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-brand-muted flex items-center gap-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="flex items-center gap-1 text-xs text-brand-muted">
                       <BriefcaseBusiness size={12} />
                       {workspaceClient?.segment || 'Multinicho'}
+                    </span>
+                    <span className="truncate text-xs text-brand-muted">
+                      · {client.accounts[0]?.accountName || 'Sem conta vinculada'}
+                      {client.accounts.length > 1 ? ` +${client.accounts.length - 1}` : ''}
                     </span>
                   </div>
                 </div>
               </div>
-              
-              <div className="flex flex-col items-end gap-1">
-                <PerformanceStatusBadge status={client.score?.status === 'excellent' || client.score?.status === 'healthy' ? 'on_track' : client.score?.status as any || 'insufficient_data'} />
-                {client.score && (
-                  <span className="text-[10px] font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">
-                    Score: {client.score.value?.toFixed(0) || '—'}
-                  </span>
-                )}
-              </div>
+              <OperationalHealthBadge tag={tag} />
             </div>
 
             {/* Performance Overview */}
             <div className="grid grid-cols-2 gap-px bg-brand-line/50 p-px">
-              {/* Investimento (sempre útil) */}
               <div className="bg-brand-ink p-3 flex flex-col justify-center">
-                <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Investimento Total</p>
+                <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Investimento total</p>
                 <p className="text-lg font-black text-white">{formatCurrency(spend, currency)}</p>
               </div>
 
-              {/* Vendas ou Conversas */}
               <div className="bg-brand-ink p-3 flex flex-col justify-center">
                 {purchases && purchases > 0 ? (
                   <>
@@ -137,23 +146,58 @@ export function ClientPerformanceCardGrid({
                     <p className="text-lg font-black text-white">
                       {formatNumber(purchases)} <span className="text-xs font-normal text-emerald-400">({purchaseRoas !== null ? purchaseRoas.toFixed(2) + 'x' : '—'})</span>
                     </p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerPurchase}>{formatCurrency(costPerPurchase?.value, currency)}</TraceableMetricValue></p>
+                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerPurchase}>{formatCurrency(costPerPurchase?.value ?? null, currency)}</TraceableMetricValue></p>
                   </>
                 ) : conversations && conversations > 0 ? (
                   <>
-                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Conversas (Mensagens)</p>
+                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Conversas (mensagens)</p>
                     <p className="text-lg font-black text-white">{formatNumber(conversations)}</p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerConversation}>{formatCurrency(costPerConversation?.value, currency)}</TraceableMetricValue></p>
+                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerConversation}>{formatCurrency(costPerConversation?.value ?? null, currency)}</TraceableMetricValue></p>
                   </>
                 ) : (
                   <>
-                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Cliques no Link (CTR)</p>
+                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Cliques no link (CTR)</p>
                     <p className="text-lg font-black text-white">
                       {formatNumber(linkClicks)} <span className="text-xs font-normal text-brand-muted">({linkCtr !== null ? linkCtr.toFixed(2) + '%' : '—'})</span>
                     </p>
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Meta principal + orçamento/pacing */}
+            <div className="grid grid-cols-2 gap-px bg-brand-line/50 p-px">
+              <div className="bg-brand-ink p-3 flex flex-col justify-center">
+                <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Meta principal</p>
+                {primaryMetricId ? (
+                  <>
+                    <p className="text-xs font-bold text-white">{metricLabels[primaryMetricId] || primaryMetricId}</p>
+                    <p className="mt-0.5 text-[11px] text-brand-muted">
+                      Realizado {formatMetricNumber(primaryMetricId, primaryEvaluation?.actualValue ?? null, currency)} · esperado {formatMetricNumber(primaryMetricId, primaryEvaluation?.targetValue ?? null, currency)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-brand-muted">Não configurada</p>
+                )}
+              </div>
+
+              <div className="bg-brand-ink p-3 flex flex-col justify-center">
+                <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Orçamento planejado</p>
+                <p className="text-xs font-bold text-white">{formatCurrency(plannedBudget, currency)}</p>
+                <p className="mt-0.5 text-[11px] text-brand-muted">
+                  Restante: {remaining === null ? '—' : formatCurrency(remaining, currency)}
+                </p>
+                {client.budgetPacing && (
+                  <div className="mt-1.5">
+                    <PacingBar pct={client.budgetPacing.differencePercent} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Diagnóstico */}
+            <div className="border-t border-brand-line/50 bg-brand-surface/20 px-4 py-2.5">
+              <p className="text-[11px] leading-5 text-brand-muted">{diagnosis}</p>
             </div>
 
             {/* Status Sync */}
@@ -165,31 +209,37 @@ export function ClientPerformanceCardGrid({
                   <Clock3 size={10} className="text-amber-400" />
                 )}
                 <span>
-                  {client.lastSuccessfulRun?.finishedAt 
-                    ? new Date(client.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') 
+                  {client.lastSuccessfulRun?.finishedAt
+                    ? new Date(client.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
                     : 'Sem sincronização'}
                 </span>
               </div>
             </div>
 
             {/* Actions */}
-            <div className="flex gap-px bg-brand-line/50 p-px mt-auto">
+            <div className="grid grid-cols-3 gap-px bg-brand-line/50 p-px mt-auto">
+              <button
+                onClick={() => onViewAnalytics(client.clientId)}
+                className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-brand-soft hover:bg-white/[0.03] hover:text-white transition-colors"
+              >
+                Ver análise
+              </button>
               <button
                 onClick={() => toggleClient(client.clientId)}
-                className="flex flex-1 items-center justify-center gap-2 bg-brand-ink py-2.5 text-xs font-bold text-brand-soft hover:bg-white/[0.03] hover:text-white transition-colors"
+                data-testid="client-performance-card-toggle-campaigns"
+                className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-brand-soft hover:bg-white/[0.03] hover:text-white transition-colors"
               >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                Ver Campanhas
+                Campanhas
               </button>
-              
-              <a
-                href="#"
-                onClick={(e) => { e.preventDefault(); /* Navegar para workspace futuramente */ }}
-                className="flex items-center justify-center gap-2 bg-brand-ink px-4 py-2.5 text-xs font-bold text-brand-muted hover:bg-white/[0.03] hover:text-white transition-colors"
-                title="Abrir no Workspace Meta"
+              <button
+                onClick={() => onEditClient(client.clientId)}
+                className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-brand-muted hover:bg-white/[0.03] hover:text-white transition-colors"
+                title="Editar cliente/metas"
               >
-                <ExternalLink size={14} />
-              </a>
+                <PenSquare size={13} />
+                Editar
+              </button>
             </div>
 
             {/* Expanded Content (Micro-drilldown) */}
@@ -198,10 +248,13 @@ export function ClientPerformanceCardGrid({
                 {client.accounts.length === 0 ? (
                   <p className="text-xs text-brand-muted text-center py-4">Nenhuma conta com dados ativos no período.</p>
                 ) : (
-                  client.accounts.map(acc => (
-                    <div key={acc.adAccountId} className="mb-4 last:mb-0">
-                      <h4 className="font-bold text-xs mb-2 text-white opacity-80">{acc.accountName}</h4>
-                      <CampaignHierarchicalTable account={acc} period={period} />
+                  client.accounts.map((account) => (
+                    <div key={account.adAccountId} className="mb-4 last:mb-0">
+                      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-white/80">
+                        <SquareStack size={12} />
+                        {account.accountName}
+                      </h4>
+                      <CampaignHierarchicalTable account={account} period={period} />
                     </div>
                   ))
                 )}

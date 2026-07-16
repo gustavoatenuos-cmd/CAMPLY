@@ -1,0 +1,77 @@
+import '@testing-library/jest-dom/vitest';
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, afterEach } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { ExecutiveSummary } from './ExecutiveSummary';
+import type { GlobalClientPerformance, GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
+
+function account(overrides: Partial<GlobalPerformanceAccount> = {}): GlobalPerformanceAccount {
+  return {
+    clientMetaAssetId: 'a1',
+    metaAssetId: 'a1',
+    integrationId: 'i1',
+    adAccountId: 'act_1',
+    accountName: 'Conta 1',
+    currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
+    dateStart: null,
+    dateStop: null,
+    metrics: {},
+    budgetPacing: null,
+    dataQuality: { status: 'complete', reason: null },
+    lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
+    lastAttempt: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
+    ...overrides,
+  };
+}
+
+function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientPerformance {
+  return {
+    clientId: 'c1',
+    clientName: 'Cliente 1',
+    clientStatus: 'available',
+    accounts: [account()],
+    metrics: {},
+    metricGroups: [],
+    resolvedTargets: [],
+    evaluations: [],
+    budgetPacing: null,
+    score: { value: 80, status: 'healthy' } as any,
+    dataQuality: { status: 'complete', reason: null },
+    lastSuccessfulRun: null,
+    lastAttempt: null,
+    hasNewerPartial: false,
+    hasNewerFailure: false,
+    analysisProfile: null,
+    ...overrides,
+  };
+}
+
+describe('ExecutiveSummary', () => {
+  afterEach(() => cleanup());
+
+  it('counts accounts with a reliable sync separately from accounts with a problem', () => {
+    const reliableClient = client({ clientId: 'c1', accounts: [account({ clientMetaAssetId: 'a1' })] });
+    const problemClient = client({
+      clientId: 'c2',
+      accounts: [account({ clientMetaAssetId: 'a2', dataQuality: { status: 'unavailable', reason: 'account_not_connected' }, lastSuccessfulRun: null, lastAttempt: null })],
+    });
+
+    render(<ExecutiveSummary clients={[reliableClient, problemClient]} statusFilter="all" onStatusFilterChange={() => {}} />);
+
+    expect(screen.getByText('Contas com sync confiável')).toBeInTheDocument();
+    expect(screen.getByText('Contas com problema')).toBeInTheDocument();
+    // Uma conta confiável e uma com problema, entre os 2 clientes do recorte.
+    const values = screen.getAllByText('1');
+    expect(values.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders the health filter chips with counts', () => {
+    render(<ExecutiveSummary clients={[client()]} statusFilter="all" onStatusFilterChange={() => {}} />);
+    expect(screen.getByText(/Saudáveis/)).toBeInTheDocument();
+    expect(screen.getByText(/Atenção/)).toBeInTheDocument();
+    expect(screen.getByText(/Críticos/)).toBeInTheDocument();
+  });
+});

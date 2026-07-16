@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { createActivityLog, money, normalizeMonthlyInvestment } from '../data/camplyStore';
 import { buildOperationalView, type OperationalEntry } from '../data/receivablesForecast';
 import { evaluateClientOperationalReadiness, type FinanceReadinessStatus } from '../lib/operational/clientOperationalReadiness';
+import { readPendingClientSelection } from '../lib/performance/pendingClientSelection';
 import type { CamplyData, ClientStatus } from '../types';
 import { clientDisplayName, clientOptionLabel } from '../data/clientDisplay';
 import { ClientFormModal } from './ClientFormModal';
@@ -31,7 +32,11 @@ interface ClientsViewProps {
 export function ClientsView({ data, updateData, persistClientData }: ClientsViewProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
-  const [selectedClientId, setSelectedClientId] = useState(data.clients[0]?.id || '');
+  const [selectedClientId, setSelectedClientId] = useState(() => {
+    const pending = readPendingClientSelection();
+    if (pending && data.clients.some((client) => client.id === pending)) return pending;
+    return data.clients[0]?.id || '';
+  });
   const [metaWorkspaceKey, setMetaWorkspaceKey] = useState(0);
   const editingClient = data.clients.find((client) => client.id === editingClientId);
 
