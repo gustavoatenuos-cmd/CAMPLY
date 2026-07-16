@@ -146,7 +146,7 @@ echo "Mock API está saudável."
 
 echo "Aguardando Edge Functions (mock) ficarem saudáveis..."
 TIMEOUT=30
-until curl -s -f http://localhost:54321/functions/v1/meta-sync-ads -X OPTIONS > /dev/null && curl -s -f http://localhost:54321/functions/v1/meta-oauth-callback -X OPTIONS > /dev/null; do
+until curl -s -f http://localhost:54321/functions/v1/meta-sync-performance -X OPTIONS > /dev/null && curl -s -f http://localhost:54321/functions/v1/meta-oauth-callback -X OPTIONS > /dev/null; do
   sleep 1
   ((TIMEOUT--))
   if [[ $TIMEOUT -le 0 ]]; then
