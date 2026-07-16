@@ -595,7 +595,7 @@ export async function handleRequest(req: Request) {
       collectionContractVersion: COLLECTION_CONTRACT_VERSION,
       metricDefinitionVersion: METRIC_DEFINITION_VERSION,
       graphApiVersion: META_GRAPH_VERSION,
-      endpoint: 'meta-sync-ads',
+      endpoint: 'meta-sync-performance',
       clientMetaAssetId,
       clientId: resolvedClientId,
       metaAssetId: resolvedMetaAssetId,
