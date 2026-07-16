@@ -1,7 +1,8 @@
 import { CalendarClock, Check, Plus } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 import { createActivityLog, formatDate, makeId, money, paymentStatusLabels } from '../data/camplyStore';
-import { buildOperationalView, OperationalEntry, ReceivablesFilter } from '../data/receivablesForecast';
+import { buildOperationalView, isClientActive, OperationalEntry, ReceivablesFilter } from '../data/receivablesForecast';
+import { evaluateClientOperationalReadiness } from '../lib/operational/clientOperationalReadiness';
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Receivable } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
@@ -136,6 +137,39 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
     return [];
   }, [filter, view.currentMonthEntries, view.nextMonthEntries]);
 
+  // Clientes ativos que a camada central de prontidão considera "bloqueados" no
+  // financeiro - sem recorrência/lançamento válido para o mês atual/próximo -
+  // para dar um checklist claro do que falta, em vez de só omiti-los em silêncio.
+  const financeReadinessGaps = useMemo(() => {
+    const entriesByClient = new Map<string, OperationalEntry[]>();
+    // buildOperationalView move linhas em atraso para overdueCurrentMonthEntries,
+    // fora de currentMonthEntries - sem incluir esse balde aqui, um cliente com
+    // cobrança atrasada seria lido como "sem lançamento" (bloqueado) em vez de
+    // "em atraso" (aviso), ou pior, como "pronto" se também tiver o lançamento
+    // do próximo mês.
+    [...view.currentMonthEntries, ...view.nextMonthEntries, ...view.overdueCurrentMonthEntries].forEach((entry) => {
+      if (!entry.clientId) return;
+      const list = entriesByClient.get(entry.clientId) ?? [];
+      list.push(entry);
+      entriesByClient.set(entry.clientId, list);
+    });
+
+    return data.clients
+      .filter((client) => isClientActive(client))
+      .map((client) => {
+        const project = data.projects.find((p) => p.id === client.projectId);
+        const readiness = evaluateClientOperationalReadiness({
+          clientId: client.id,
+          client,
+          project,
+          analysisProfile: null,
+          receivableEntries: entriesByClient.get(client.id) ?? [],
+        });
+        return { client, readiness };
+      })
+      .filter(({ readiness }) => readiness.finance.status === 'blocked');
+  }, [data.clients, data.projects, view.currentMonthEntries, view.nextMonthEntries]);
+
   const showAtrasadosMesAtual = filter === 'current' || filter === 'current_next';
   const showAtrasadosTodos = filter === 'overdue';
   const showRecorrencias = filter === 'current' || filter === 'next' || filter === 'current_next';
@@ -199,6 +233,27 @@ export function PersonalFinanceView({ data, updateData }: PersonalFinanceViewPro
         <Total label="Atrasado este mês" value={money(view.cards.currentMonthOverdue)} tone="danger" />
         <Total label="Previsto próximo mês" value={money(view.cards.nextMonthForecast)} />
       </div>
+
+      {financeReadinessGaps.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-300/30 bg-amber-300/10 p-4">
+          <p className="font-black text-amber-100">Clientes ativos sem cobrança configurada</p>
+          <p className="mt-1 text-sm text-amber-100/80">
+            Esses clientes não entram na previsão até terem recorrência ou lançamento configurado para o mês atual/próximo.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {financeReadinessGaps.map(({ client, readiness }) => (
+              <span
+                key={client.id}
+                data-testid="finance-readiness-gap"
+                className="rounded-lg bg-black/20 px-3 py-2 text-xs font-bold text-amber-50"
+              >
+                {clientDisplayName(client)}
+                <span className="mt-1 block font-normal text-amber-100/70">{readiness.finance.missing.join(', ')}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ReceivablesFilterBar value={filter} onChange={setFilter} />
 

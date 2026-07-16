@@ -20,8 +20,10 @@ import {
 import { syncMetaAsset } from '../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
+import { evaluateClientOperationalReadiness, summarizeMetaReadinessAcrossClients } from '../lib/operational/clientOperationalReadiness';
 import { BulkSyncResultsPanel } from './meta/BulkSyncResultsPanel';
 import { SyncStatusBadge } from './meta/SyncStatusBadge';
+import { MetaReadinessBadge } from './operational/MetaReadinessBadge';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
@@ -118,6 +120,24 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const linkedAccounts = useMemo(() => (catalog?.clients || []).flatMap((client) => (
     client.accounts.map((account) => ({ clientId: client.clientId, clientName: client.clientName, account }))
   )), [catalog]);
+
+  // Prontidão Meta de cada conta já vinculada, a partir do último sync conhecido
+  // (independente de um bulk sync ter acabado de rodar) - camada central usada em
+  // todas as telas operacionais, ver src/lib/operational/clientOperationalReadiness.ts.
+  const linkedAccountsReadiness = useMemo(() => linkedAccounts.map((entry) => ({
+    ...entry,
+    readiness: evaluateClientOperationalReadiness({
+      clientId: entry.clientId,
+      client: null,
+      analysisProfile: null,
+      metaAccounts: [entry.account],
+      period: bulkPeriod,
+    }),
+  })), [linkedAccounts, bulkPeriod]);
+
+  const metaReadinessSummary = useMemo(() => summarizeMetaReadinessAcrossClients(
+    linkedAccountsReadiness.map(({ readiness }) => readiness.meta)
+  ), [linkedAccountsReadiness]);
 
   const availableUnlinkedAssets = useMemo(() => (
     (catalog?.availableAssets || []).filter((asset) => !asset.linkedClientId)
@@ -390,8 +410,15 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
 
             {catalogError && <div role="alert" className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{catalogError}</div>}
 
+            {!bulkSync && metaReadinessSummary.allDegraded && (
+              <p data-testid="meta-readiness-aggregate-warning" className="mt-3 text-xs font-bold text-amber-200">
+                Nenhuma conta vinculada está com leitura completa
+                {metaReadinessSummary.dominantCause ? `: ${metaReadinessSummary.dominantCause}` : '.'}
+              </p>
+            )}
+
             <div className="mt-4 space-y-2">
-              {linkedAccounts.map(({ clientName, account }) => {
+              {linkedAccountsReadiness.map(({ clientName, account, readiness }) => {
                 const syncResult = bulkSync?.results.find((result) => result.clientMetaAssetId === account.clientMetaAssetId);
                 return (
                   <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3">
@@ -405,7 +432,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {syncResult && <SyncStatusBadge status={syncResult.status} />}
+                      {syncResult ? <SyncStatusBadge status={syncResult.status} /> : <MetaReadinessBadge status={readiness.meta.status} />}
                       <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
                     </div>
                   </div>

@@ -2,10 +2,11 @@ import React, { useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
 import { buildClientAnalyticsDecision, deriveMonthPeriod } from '../../lib/performance/clientAnalyticsDecision';
+import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
 import { ClientLogo } from '../clients/ClientLogo';
-import { Clock, AlertCircle, CalendarX2, HelpCircle } from 'lucide-react';
+import { Clock, HelpCircle } from 'lucide-react';
 
 interface ClientAnalyticsCardProps {
   performance: EnrichedGlobalClientPerformance;
@@ -14,7 +15,7 @@ interface ClientAnalyticsCardProps {
 }
 
 export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
-  const { client, metrics, clientStatus, analysisProfile } = performance;
+  const { client, metrics, analysisProfile } = performance;
   // client é o registro local do workspace (sem perfil analítico); o perfil
   // comercial de fato vem do nível superior, populado a partir de
   // client_analysis_profiles em globalPerformanceDashboard.ts.
@@ -48,6 +49,15 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
     });
   }, [client, performance, profile]);
 
+  const readiness = useMemo(() => evaluateClientOperationalReadiness({
+    clientId: performance.clientId,
+    client: client ?? null,
+    analysisProfile: profile,
+    globalClientStatus: performance.clientStatus,
+    receivableEntries: undefined,
+    analyticsDecision: decision,
+  }), [client, performance.clientId, performance.clientStatus, profile, decision]);
+
   const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '-';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -64,35 +74,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
     }
   };
 
-  const getStatusDisplay = () => {
-    if (clientStatus === 'not_connected') {
-      return (
-        <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
-          <AlertCircle className="h-4 w-4" />
-          <span>Conta Meta não vinculada</span>
-        </div>
-      );
-    }
-    if (clientStatus === 'never_synced') {
-      return (
-        <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
-          <Clock className="h-4 w-4" />
-          <span>Nunca sincronizado</span>
-        </div>
-      );
-    }
-    if (clientStatus === 'period_not_synced') {
-      return (
-        <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded text-gray-500 gap-2 text-sm mt-4">
-          <CalendarX2 className="h-4 w-4" />
-          <span>Período atual não sincronizado</span>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const hasDataIssues = ['not_connected', 'never_synced', 'period_not_synced'].includes(clientStatus);
+  const hasDataIssues = readiness.analytics.status === 'blocked';
 
   return (
     <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -125,32 +107,29 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
       </div>
 
       <div className="flex-1 p-4 pt-4">
-        {hasDataIssues ? (
-          getStatusDisplay()
-        ) : decision.status === 'no_profile' ? (
+        {readiness.analytics.status === 'blocked' ? (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
             <HelpCircle className="h-5 w-5 text-gray-400" />
-            <p className="text-sm font-medium text-gray-600">Perfil de análise não configurado</p>
-            <button
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-              onClick={() => onOpenDetails(performance)}
-            >
-              Configurar metas
-            </button>
-          </div>
-        ) : decision.status === 'no_data' ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
-            <Clock className="h-5 w-5 text-gray-400" />
-            <p className="text-sm font-medium text-gray-600">Sem dados Meta no período</p>
-            <button
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-              onClick={() => onOpenDetails(performance)}
-            >
-              Sincronizar Meta
-            </button>
+            <p className="text-sm font-medium text-gray-600">
+              {readiness.analytics.missing[0] || readiness.analytics.warnings[0] || 'Cliente ainda não pode ser analisado'}
+            </p>
+            {readiness.analytics.action && (
+              <button
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                onClick={() => onOpenDetails(performance)}
+              >
+                {readiness.analytics.action}
+              </button>
+            )}
           </div>
         ) : (
           <>
+            {readiness.analytics.status === 'limited' && readiness.analytics.warnings.length > 0 && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span>{readiness.analytics.warnings.join(' ')}</span>
+              </div>
+            )}
             <ClientAnalyticsStatusPanel decision={decision} />
 
             <div className="mt-4 pt-4 border-t border-gray-100">

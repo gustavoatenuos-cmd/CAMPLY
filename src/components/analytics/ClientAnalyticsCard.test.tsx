@@ -94,9 +94,105 @@ describe('ClientAnalyticsCard', () => {
     );
 
     expect(screen.getByText('Perfil de análise não configurado')).toBeInTheDocument();
-    expect(screen.getByText('Configurar metas')).toBeInTheDocument();
+    expect(screen.getByText('Configurar metas do cliente')).toBeInTheDocument();
     // Card fica curto e acionável: não mistura o CTA com os blocos de métrica/orçamento zerados.
     expect(screen.queryByText('Meta principal não configurada')).not.toBeInTheDocument();
     expect(screen.queryByText('Orçamento não configurado')).not.toBeInTheDocument();
+  });
+
+  it('blocks with "Sincronizar Meta" when the profile exists but the account was never synced', () => {
+    const mockPerformance = {
+      clientId: 'c3',
+      clientName: 'Cliente Nunca Sincronizado',
+      clientStatus: 'never_synced',
+      accounts: [],
+      metrics: {},
+      metricGroups: [],
+      resolvedTargets: [],
+      score: { value: null },
+      dataQuality: { status: 'unavailable', reason: null },
+      lastSuccessfulRun: null,
+      analysisProfile: {
+        clientId: 'c3',
+        vertical: 'varejo',
+        subsegment: 'moda',
+        customVertical: null,
+        customSubsegment: null,
+        operationType: 'online',
+        salesModels: [],
+        secondaryChannel: null,
+        secondaryConversionMetric: null,
+        businessModel: '',
+        primaryConversionMetric: 'purchases',
+        secondaryMetrics: [],
+        primaryChannel: 'site_ecommerce',
+        budgetPeriod: 'monthly',
+        plannedBudget: null,
+        minimumEvaluationSpend: 0,
+        minimumImpressions: 0,
+        minimumResults: 0,
+        attributionDelayHours: 0,
+        analysisEnabled: true,
+      },
+      client: { id: 'c3', name: 'Cliente Nunca Sincronizado' },
+    } as unknown as EnrichedGlobalClientPerformance;
+
+    render(
+      <ClientAnalyticsCard
+        performance={mockPerformance}
+        onOpenCampaigns={vi.fn()}
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Sincronizar Meta')).toBeInTheDocument();
+  });
+
+  it('surfaces a partial-sync warning instead of hiding it when data is only partially available', () => {
+    const mockPerformance = {
+      clientId: 'c4',
+      clientName: 'Cliente Parcial',
+      clientStatus: 'partial',
+      accounts: [],
+      metrics: { spend: { value: 500, available: true } },
+      metricGroups: [],
+      resolvedTargets: [],
+      score: { value: 60 },
+      dataQuality: { status: 'partial', reason: null },
+      lastSuccessfulRun: { finishedAt: new Date().toISOString() },
+      analysisProfile: {
+        clientId: 'c4',
+        vertical: 'varejo',
+        subsegment: 'moda',
+        customVertical: null,
+        customSubsegment: null,
+        operationType: 'online',
+        salesModels: [],
+        secondaryChannel: null,
+        secondaryConversionMetric: null,
+        businessModel: '',
+        primaryConversionMetric: 'purchases',
+        secondaryMetrics: [],
+        primaryChannel: 'site_ecommerce',
+        budgetPeriod: 'monthly',
+        plannedBudget: null,
+        minimumEvaluationSpend: 0,
+        minimumImpressions: 0,
+        minimumResults: 0,
+        attributionDelayHours: 0,
+        analysisEnabled: true,
+      },
+      client: { id: 'c4', name: 'Cliente Parcial' },
+    } as unknown as EnrichedGlobalClientPerformance;
+
+    render(
+      <ClientAnalyticsCard
+        performance={mockPerformance}
+        onOpenCampaigns={vi.fn()}
+        onOpenDetails={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Sincronização parcial: alguns dados podem estar incompletos/)).toBeInTheDocument();
   });
 });

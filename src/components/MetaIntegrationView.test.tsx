@@ -114,6 +114,34 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).toBeDisabled());
     expect(syncMetaAssetMock).not.toHaveBeenCalled();
   });
+
+  it('shows a "Bloqueado" readiness badge for a linked account that was never synced', async () => {
+    render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Bloqueado');
+  });
+
+  it('shows a "Pronto" readiness badge for a linked account with a fresh successful sync', async () => {
+    const freshSuccess = {
+      id: 'run-fresh',
+      status: 'success' as const,
+      period: 'this_month',
+      level: 'campaign',
+      scope: 'full_account',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+    loadClientMetaAssetCatalogMock.mockResolvedValue({
+      clients: [{ clientId: 'client-1', clientName: 'Cliente Vinculado', accounts: [{ ...linkedAccount, lastSuccess: freshSuccess }] }],
+      availableAssets: [],
+    });
+
+    render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Pronto');
+  });
 });
 
 function catalogWithAccounts(count: number) {

@@ -144,6 +144,31 @@ describe('ClientCampaignDrawer', () => {
     expect(link.href).not.toContain('client-1');
   });
 
+  it('mostra aviso de leitura parcial quando o cliente está com sincronização parcial', async () => {
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'ready',
+      total: 1,
+      items: [{
+        id: 'camp-1',
+        name: 'Campanha Parcial',
+        status: 'ACTIVE',
+        effectiveStatus: 'ACTIVE',
+        objective: 'OUTCOME_LEADS',
+        classifiedObjective: 'LEADS',
+        destinationType: 'WHATSAPP',
+        attributionSetting: '7d_click_1d_view',
+        creativeId: null,
+        metrics: { spend: metric(50), purchases: metric(1), purchase_roas: metric(1) },
+      }],
+    });
+    const performance = { ...makePerformance([makeAccount()]), clientStatus: 'partial' } as EnrichedGlobalClientPerformance;
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
+
+    expect(await screen.findByText('Campanha Parcial')).toBeInTheDocument();
+    expect(screen.getByText(/Sincronização parcial: dados de campanha podem estar incompletos/)).toBeInTheDocument();
+  });
+
   it('mostra mensagem amigável quando a RPC falha, sem usar o texto genérico antigo', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchHierarchyMock.mockRejectedValue(new Error('RPC boom'));
