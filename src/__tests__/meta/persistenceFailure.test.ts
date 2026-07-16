@@ -42,6 +42,7 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   fetchMetaGraph: vi.fn(),
   fetchMetaGraphPaginated: vi.fn(),
   META_GRAPH_VERSION: 'v25.0',
+  MetaRateLimitError: class MetaRateLimitError extends Error {},
 }));
 
 let handleRequest: any;

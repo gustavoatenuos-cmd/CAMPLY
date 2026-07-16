@@ -19,6 +19,7 @@ export type PeriodCompletenessStatus =
   | 'partial_page'
   | 'timeout'
   | 'api_error'
+  | 'rate_limit_exhausted'
   | 'validation_error'
   | 'complete';
 
@@ -111,6 +112,9 @@ const errorPriority: Record<Exclude<PeriodCompletenessStatus, 'complete' | 'zero
   partial_page: 3,
   timeout: 4,
   api_error: 5,
+  // More specific than a generic api_error, so it wins when merged with one —
+  // an operator can act on "Meta throttled us" in a way they can't on "some API error".
+  rate_limit_exhausted: 6,
 };
 
 const isCollectionError = (
