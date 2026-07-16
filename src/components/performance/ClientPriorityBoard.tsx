@@ -11,6 +11,7 @@ import {
   type PriorityTier,
 } from '../../lib/performance/clientPriorityGrouping';
 import { OperationalHealthBadge } from './OperationalHealthBadge';
+import { resolveClientPrimaryName } from '../../data/clientDisplay';
 
 interface ClientPriorityBoardProps {
   entries: ClientPriorityEntry[];
@@ -56,7 +57,9 @@ function ClientPriorityRow({ entry, onSelectClient }: { entry: ClientPriorityEnt
       className="flex w-full items-start justify-between gap-3 rounded-xl border border-transparent bg-black/15 p-3 text-left transition hover:border-white/10 hover:bg-black/25"
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-white">{entry.client.clientName}</p>
+        <p className="truncate text-sm font-bold text-white">
+          {resolveClientPrimaryName(entry.workspaceClient, entry.client.analysisProfile, entry.client)}
+        </p>
         <p className="mt-1 truncate text-xs text-brand-muted">
           {reasons.length > 0 ? reasons.map((reason) => reasonLabel(reason)).join(' · ') : 'Sem pendências'}
         </p>

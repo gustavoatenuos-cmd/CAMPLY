@@ -32,7 +32,6 @@ import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, e
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
 import { setPendingClientSelection } from '../lib/performance/pendingClientSelection';
-import { clientDisplayName } from '../data/clientDisplay';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
@@ -281,19 +280,15 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         period,
         dashboardRpc: capabilities.dashboardRpc,
       });
-      
-      // Nome oficial do cliente vem sempre do helper canônico (company || name
-      // || segment) em vez de reimplementar a regra aqui — só cai de volta ao
-      // nome que a RPC já trouxe (c.clientName) quando o registro de workspace
-      // não tem nenhum desses três campos preenchidos.
-      const enrichedResult = result.map(c => {
-        const workspaceClient = data.clients.find(w => w.id === c.clientId);
-        if (!workspaceClient) return c;
-        const displayName = clientDisplayName(workspaceClient);
-        return displayName === 'Cliente sem nome' ? c : { ...c, clientName: displayName };
-      });
-      
-      setClients(enrichedResult);
+
+      // c.clientName já vem resolvido pelo backend (client_identity.display_name,
+      // nunca vazio) — não reimplementar a regra de nome aqui. resolveClientPrimaryName
+      // (data/clientDisplay.ts) é a única fonte usada nos componentes de leitura
+      // (board de prioridade, cards, tabela); sobrescrever clientName neste ponto
+      // só reintroduziria risco de mostrar um campo errado do registro local
+      // do workspace (ex.: `name` guardando o responsável/contratante em vez do
+      // cliente) por cima de um valor que já está correto.
+      setClients(result);
       setLastLoadedAt(new Date());
     } catch {
       setError('dashboard_unavailable');

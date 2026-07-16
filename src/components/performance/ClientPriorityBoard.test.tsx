@@ -92,4 +92,19 @@ describe('ClientPriorityBoard', () => {
     render(<ClientPriorityBoard entries={entries} onSelectClient={() => {}} />);
     expect(screen.queryByText(/Motivo técnico:/)).not.toBeInTheDocument();
   });
+
+  it('never shows the project contractor/responsible name from the workspace record as the title', () => {
+    // Reproduces the reported bug: a whole project's clients had `name`
+    // holding the contractor's name ("Joao") while `company` (and the
+    // backend-resolved clientName) had the real client name.
+    const entryWithBadWorkspaceName: ClientPriorityEntry = {
+      client: client('donatellus', 'Donatellus'),
+      workspaceClient: { name: 'Joao', company: 'Donatellus', segment: 'alimentacao' } as any,
+      tier: 'healthy',
+      reasons: ['healthy'],
+    };
+    render(<ClientPriorityBoard entries={[entryWithBadWorkspaceName]} onSelectClient={() => {}} />);
+    expect(screen.getByText('Donatellus')).toBeInTheDocument();
+    expect(screen.queryByText('Joao')).not.toBeInTheDocument();
+  });
 });

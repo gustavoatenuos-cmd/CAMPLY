@@ -62,11 +62,24 @@ describe('ClientPerformanceCardGrid', () => {
   it('renders a card per client using the same priority-entry data as the priority board', () => {
     const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
-    // The card trusts client.clientName as the single source of truth for the
-    // display name (resolved once, upstream in OverviewView via the official
-    // clientDisplayName helper) instead of re-deriving it from workspaceClient
-    // itself — no duplicate/parallel naming logic at the component level.
+    // resolveClientPrimaryName trusts the backend-resolved client.clientName
+    // over anything derived from the local workspace record — no duplicate/
+    // parallel naming logic at the component level.
     expect(screen.getByText('Test Global Client')).toBeInTheDocument();
+  });
+
+  it('never shows the project contractor/responsible name from the workspace record as the title', () => {
+    // Reproduces the reported bug: an entire project's clients had `name`
+    // holding the contractor's name ("Joao") while `company` (and the
+    // backend-resolved clientName) had the real client name.
+    const contractorNamedWorkspaceClient: Client = { ...workspaceClient, id: 'c2', name: 'Joao', company: 'Donatellus' };
+    const entries = buildClientPriorityEntries(
+      [baseGlobalClient({ clientId: 'c2', clientName: 'Donatellus' })],
+      [contractorNamedWorkspaceClient]
+    );
+    render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
+    expect(screen.getByText('Donatellus')).toBeInTheDocument();
+    expect(screen.queryByText('Joao')).not.toBeInTheDocument();
   });
 
   it('shows the operational health badge and the diagnosis summary for a client missing data and a profile', () => {
