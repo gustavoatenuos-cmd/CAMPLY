@@ -280,15 +280,15 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         period,
         dashboardRpc: capabilities.dashboardRpc,
       });
-      
-      const enrichedResult = result.map(c => {
-        const workspaceClient = data.clients.find(w => w.id === c.clientId);
-        return workspaceClient 
-          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
-          : c;
-      });
-      
-      setClients(enrichedResult);
+
+      // c.clientName já vem resolvido pelo backend (client_identity.display_name,
+      // nunca vazio) — não reimplementar a regra de nome aqui. resolveClientPrimaryName
+      // (data/clientDisplay.ts) é a única fonte usada nos componentes de leitura
+      // (board de prioridade, cards, tabela); sobrescrever clientName neste ponto
+      // só reintroduziria risco de mostrar um campo errado do registro local
+      // do workspace (ex.: `name` guardando o responsável/contratante em vez do
+      // cliente) por cima de um valor que já está correto.
+      setClients(result);
       setLastLoadedAt(new Date());
     } catch {
       setError('dashboard_unavailable');

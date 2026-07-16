@@ -74,4 +74,37 @@ describe('ClientPriorityBoard', () => {
     fireEvent.click(screen.getByText('Ver todos (8)'));
     expect(screen.getByText('Saudável 7')).toBeInTheDocument();
   });
+
+  it('shows the technical reason under a partial client when the backend reported one', () => {
+    const partialEntry: ClientPriorityEntry = {
+      client: { ...client('p', 'Cliente Parcial'), dataQuality: { status: 'partial', reason: 'partial_page' } },
+      workspaceClient: undefined,
+      tier: 'attention',
+      reasons: ['sync_partial'],
+    };
+    render(<ClientPriorityBoard entries={[partialEntry]} onSelectClient={() => {}} />);
+    expect(screen.getByText(/Motivo técnico:/)).toBeInTheDocument();
+    expect(screen.getByText(/número máximo de páginas/)).toBeInTheDocument();
+  });
+
+  it('does not show a technical reason line for a healthy client', () => {
+    const entries = [entry('c', 'Cliente C', 'healthy', ['healthy'])];
+    render(<ClientPriorityBoard entries={entries} onSelectClient={() => {}} />);
+    expect(screen.queryByText(/Motivo técnico:/)).not.toBeInTheDocument();
+  });
+
+  it('never shows the project contractor/responsible name from the workspace record as the title', () => {
+    // Reproduces the reported bug: a whole project's clients had `name`
+    // holding the contractor's name ("Joao") while `company` (and the
+    // backend-resolved clientName) had the real client name.
+    const entryWithBadWorkspaceName: ClientPriorityEntry = {
+      client: client('donatellus', 'Donatellus'),
+      workspaceClient: { name: 'Joao', company: 'Donatellus', segment: 'alimentacao' } as any,
+      tier: 'healthy',
+      reasons: ['healthy'],
+    };
+    render(<ClientPriorityBoard entries={[entryWithBadWorkspaceName]} onSelectClient={() => {}} />);
+    expect(screen.getByText('Donatellus')).toBeInTheDocument();
+    expect(screen.queryByText('Joao')).not.toBeInTheDocument();
+  });
 });

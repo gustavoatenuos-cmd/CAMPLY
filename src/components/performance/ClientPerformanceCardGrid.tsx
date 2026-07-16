@@ -20,6 +20,7 @@ import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { operationalHealthTagFor, summarizeDiagnosis, type ClientPriorityEntry } from '../../lib/performance/clientPriorityGrouping';
 import { effectiveClientProfile } from './CommercialDecisionOverview';
+import { resolveClientPrimaryName } from '../../data/clientDisplay';
 
 interface ClientPerformanceCardGridProps {
   entries: ClientPriorityEntry[];
@@ -100,7 +101,8 @@ export function ClientPerformanceCardGrid({
 
         const isExpanded = !!expandedClients[client.clientId];
         const tag = operationalHealthTagFor({ tier, reasons });
-        const diagnosis = summarizeDiagnosis(reasons);
+        const diagnosis = summarizeDiagnosis(client, reasons);
+        const primaryName = resolveClientPrimaryName(workspaceClient, profile, client);
 
         return (
           <div
@@ -112,10 +114,10 @@ export function ClientPerformanceCardGrid({
             {/* Header */}
             <div className="flex items-start justify-between border-b border-brand-line/50 p-4">
               <div className="flex items-center gap-3 min-w-0">
-                <ClientLogo name={workspaceClient?.name || client.clientName} logoUrl={logoUrl} />
+                <ClientLogo name={primaryName} logoUrl={logoUrl} />
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-bold leading-tight text-white">
-                    {workspaceClient?.name || client.clientName}
+                    {primaryName}
                   </h3>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="flex items-center gap-1 text-xs text-brand-muted">

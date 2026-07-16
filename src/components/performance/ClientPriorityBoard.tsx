@@ -6,10 +6,12 @@ import {
   operationalHealthTagFor,
   PRIORITY_TIER_LABELS,
   reasonLabel,
+  technicalSyncReason,
   type ClientPriorityEntry,
   type PriorityTier,
 } from '../../lib/performance/clientPriorityGrouping';
 import { OperationalHealthBadge } from './OperationalHealthBadge';
+import { resolveClientPrimaryName } from '../../data/clientDisplay';
 
 interface ClientPriorityBoardProps {
   entries: ClientPriorityEntry[];
@@ -45,6 +47,7 @@ function ClientPriorityRow({ entry, onSelectClient }: { entry: ClientPriorityEnt
   const tag = operationalHealthTagFor(entry);
   const spend = formatSpend(entry);
   const reasons = entry.reasons.filter((reason) => reason !== 'healthy');
+  const technicalReason = tag === 'sync_partial' || tag === 'sync_failed' ? technicalSyncReason(entry.client) : null;
 
   return (
     <button
@@ -54,10 +57,15 @@ function ClientPriorityRow({ entry, onSelectClient }: { entry: ClientPriorityEnt
       className="flex w-full items-start justify-between gap-3 rounded-xl border border-transparent bg-black/15 p-3 text-left transition hover:border-white/10 hover:bg-black/25"
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-white">{entry.workspaceClient?.name || entry.client.clientName}</p>
+        <p className="truncate text-sm font-bold text-white">
+          {resolveClientPrimaryName(entry.workspaceClient, entry.client.analysisProfile, entry.client)}
+        </p>
         <p className="mt-1 truncate text-xs text-brand-muted">
           {reasons.length > 0 ? reasons.map((reason) => reasonLabel(reason)).join(' · ') : 'Sem pendências'}
         </p>
+        {technicalReason && (
+          <p className="mt-0.5 truncate text-[10px] text-brand-muted/80">Motivo técnico: {technicalReason}</p>
+        )}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         <OperationalHealthBadge tag={tag} />
