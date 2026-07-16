@@ -67,7 +67,7 @@ export interface ClientBenchmarks {
 export type CampaignStatus = 'setup' | 'launching' | 'live' | 'optimize' | 'waiting' | 'paused';
 export type ClientStatus = 'active' | 'lead' | 'paused';
 export type PaymentStatus = 'pending' | 'paid' | 'overdue';
-export type ProjectStatus = 'planning' | 'active' | 'waiting' | 'done';
+export type ProjectStatus = 'planning' | 'active' | 'waiting' | 'done' | 'archived';
 export type Priority = 'low' | 'medium' | 'high';
 export type BillingType = 'recurring' | 'one_time';
 export type InvestmentPeriod = 'daily' | 'weekly' | 'monthly';

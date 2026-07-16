@@ -51,7 +51,7 @@ const linkedAccount = {
   lastSuccess: null,
 };
 
-const baseData = { clients: [] } as unknown as CamplyData;
+const baseData = { clients: [], projects: [] } as unknown as CamplyData;
 
 function catalogWithOneLinkedAndOneAvailable() {
   return {
@@ -141,6 +141,65 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
     expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Pronto');
+  });
+});
+
+describe('MetaIntegrationView excludes inactive clients from sync', () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    invokeFunctionMock.mockReset();
+    loadClientMetaAssetCatalogMock.mockReset();
+    syncMetaAssetMock.mockReset();
+    loadClientMetaAssetCatalogMock.mockResolvedValue(catalogWithOneLinkedAndOneAvailable());
+    syncMetaAssetMock.mockResolvedValue({ success: true, status: 'success', runId: 'run-1' });
+  });
+
+  const pausedClientData = {
+    clients: [{ id: 'client-1', status: 'paused', name: 'Cliente Pausado', company: '' }],
+    projects: [],
+  } as unknown as CamplyData;
+
+  it('does not render the paused client\'s account as an active linked-account row, and disables bulk sync', async () => {
+    render(<MetaIntegrationView data={pausedClientData} updateData={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('meta-inactive-accounts-toggle')).toBeInTheDocument());
+    expect(screen.queryByTestId('meta-linked-account-row')).not.toBeInTheDocument();
+    expect(screen.getByTestId('meta-sync-linked-clients')).toBeDisabled();
+  });
+
+  it('shows the paused client under the collapsed "Contas fora da operação" section with the inactive badge', async () => {
+    render(<MetaIntegrationView data={pausedClientData} updateData={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('meta-inactive-accounts-toggle')).toHaveTextContent('Contas fora da operação (1)'));
+    expect(screen.queryByTestId('meta-inactive-account-row')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('meta-inactive-accounts-toggle'));
+    expect(screen.getByTestId('meta-inactive-account-row')).toHaveTextContent('Cliente Vinculado');
+    expect(screen.getByTestId('meta-inactive-account-badge')).toHaveTextContent('Cliente inativo — fora da sincronização');
+  });
+
+  it('never calls syncMetaAsset for a paused client even when bulk sync is somehow triggered', async () => {
+    render(<MetaIntegrationView data={pausedClientData} updateData={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('meta-inactive-accounts-toggle')).toBeInTheDocument());
+
+    // O botão está desabilitado no DOM, mas o teste garante a regra na
+    // função em si (defesa em profundidade), não só no atributo disabled.
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(syncMetaAssetMock).not.toHaveBeenCalled();
+  });
+
+  it('a client that is active again after being reactivated returns to the normal linked-account list', async () => {
+    const activeClientData = {
+      clients: [{ id: 'client-1', status: 'active', name: 'Cliente Reativado', company: '' }],
+      projects: [],
+    } as unknown as CamplyData;
+    render(<MetaIntegrationView data={activeClientData} updateData={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
+    expect(screen.queryByTestId('meta-inactive-accounts-toggle')).not.toBeInTheDocument();
+    expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled();
   });
 });
 

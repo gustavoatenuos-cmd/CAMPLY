@@ -4,6 +4,7 @@ import { createActivityLog, formatDate, inferProjectPaymentStatus, makeId, money
 import { Modal } from './ui/Modal';
 import { CamplyData, PaymentStatus, Project, ProjectStatus, ProjectType } from '../types';
 import { clientOptionLabel } from './ClientsView';
+import { isProjectOperationallyActive } from '../data/receivablesForecast';
 
 interface ProjectsViewProps {
   data: CamplyData;
@@ -221,6 +222,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                 <option value="planning">{projectStatusLabels.planning}</option>
                 <option value="waiting">{projectStatusLabels.waiting}</option>
                 <option value="done">{projectStatusLabels.done}</option>
+                <option value="archived">{projectStatusLabels.archived}</option>
               </select>
             </label>
             {projectBillingType === 'one_time' && (
@@ -276,7 +278,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
 
       {/* KPI cards — bg-brand-surface (contraste correto sobre o fundo bg-brand-ink) */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Summary label="Projetos ativos" value={data.projects.filter((project) => project.status !== 'done').length.toString()} />
+        <Summary label="Projetos ativos" value={data.projects.filter((project) => isProjectOperationallyActive(project)).length.toString()} />
         <Summary label="Clientes em projetos" value={groupedClients.length.toString()} />
         <Summary label="Recorrência dos clientes" value={`${money(recurringRevenue)}/mês`} highlight />
         <Summary label="Pontuais dos clientes" value={money(oneTimeRevenue)} />
@@ -331,6 +333,7 @@ export function ProjectsView({ data, updateData }: ProjectsViewProps) {
                   <option value="active">{projectStatusLabels.active}</option>
                   <option value="waiting">{projectStatusLabels.waiting}</option>
                   <option value="done">{projectStatusLabels.done}</option>
+                  <option value="archived">{projectStatusLabels.archived}</option>
                 </select>
                 <button
                   onClick={() => {
