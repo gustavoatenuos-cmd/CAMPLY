@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildOperationalView } from './receivablesForecast';
+import {
+  buildOperationalView,
+  isClientOperationallyActive,
+  isProjectActive,
+  isProjectOperationallyActive,
+  shouldSyncClientMetaAccount,
+} from './receivablesForecast';
 import { CamplyData, Client, Project, Receivable } from '../types';
 
 const REFERENCE_DATE = new Date(2026, 6, 14); // 2026-07-14
@@ -206,5 +212,52 @@ describe('buildOperationalView', () => {
     expect(mensalidadeRow?.amount).toBe(1000);
     // A cobrança avulsa não é consumida pela previsão recorrente: continua aparecendo como linha própria.
     expect(view.currentMonthEntries.some((entry) => entry.receivableId === 'recv-adhoc')).toBe(true);
+  });
+});
+
+describe('isProjectActive', () => {
+  it('treats "done" and "archived" as inactive, everything else as active', () => {
+    expect(isProjectActive(makeProject({ status: 'active' }))).toBe(true);
+    expect(isProjectActive(makeProject({ status: 'planning' }))).toBe(true);
+    expect(isProjectActive(makeProject({ status: 'waiting' }))).toBe(true);
+    expect(isProjectActive(makeProject({ status: 'done' }))).toBe(false);
+    expect(isProjectActive(makeProject({ status: 'archived' }))).toBe(false);
+  });
+
+  it('treats a missing project as active (a client with no project is not blocked by one)', () => {
+    expect(isProjectActive(undefined)).toBe(true);
+  });
+});
+
+describe('isClientOperationallyActive / isProjectOperationallyActive / shouldSyncClientMetaAccount', () => {
+  it('is only active when both the client and its project are active', () => {
+    const activeClient = makeClient({ status: 'active' });
+    const activeProject = makeProject({ status: 'active' });
+    expect(isClientOperationallyActive(activeClient, activeProject)).toBe(true);
+    expect(isClientOperationallyActive(activeClient, undefined)).toBe(true);
+  });
+
+  it('is inactive when the client itself is paused, regardless of the project', () => {
+    const pausedClient = makeClient({ status: 'paused' });
+    const activeProject = makeProject({ status: 'active' });
+    expect(isClientOperationallyActive(pausedClient, activeProject)).toBe(false);
+  });
+
+  it('never lets an active client through when its own project is archived/done (project cannot pull a client back into the active view)', () => {
+    const activeClient = makeClient({ status: 'active' });
+    expect(isClientOperationallyActive(activeClient, makeProject({ status: 'archived' }))).toBe(false);
+    expect(isClientOperationallyActive(activeClient, makeProject({ status: 'done' }))).toBe(false);
+  });
+
+  it('isProjectOperationallyActive matches isProjectActive', () => {
+    expect(isProjectOperationallyActive(makeProject({ status: 'archived' }))).toBe(false);
+    expect(isProjectOperationallyActive(makeProject({ status: 'active' }))).toBe(true);
+  });
+
+  it('shouldSyncClientMetaAccount follows the same rule as isClientOperationallyActive', () => {
+    const client = makeClient({ status: 'active' });
+    const project = makeProject({ status: 'archived' });
+    expect(shouldSyncClientMetaAccount(client, project)).toBe(false);
+    expect(shouldSyncClientMetaAccount(makeClient({ status: 'active' }), makeProject({ status: 'active' }))).toBe(true);
   });
 });

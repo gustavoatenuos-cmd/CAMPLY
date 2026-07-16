@@ -10,7 +10,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CamplyData, Insight, ViewId } from '../types';
+import type { CamplyData, ClientStatus, Insight, ViewId } from '../types';
+import { createActivityLog } from '../data/camplyStore';
 import {
   loadGlobalPerformanceDashboard,
   type GlobalClientPerformance,
@@ -32,7 +33,9 @@ import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, e
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
 import { setPendingClientSelection } from '../lib/performance/pendingClientSelection';
+import { isClientOperationallyActive } from '../data/receivablesForecast';
 import { CollapsibleSection } from './ui/CollapsibleSection';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
@@ -225,7 +228,7 @@ function DashboardUnavailable({
   );
 }
 
-export function OverviewView({ data, setActiveView }: OverviewViewProps) {
+export function OverviewView({ data, updateData, setActiveView }: OverviewViewProps) {
   const storedFilters = useMemo(loadStoredFilters, []);
   const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'last_90d');
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
@@ -238,6 +241,8 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
   const [statusFilter, setStatusFilter] = useState<DecisionFilter>(storedFilters.decision || 'all');
   const [segmentFilter, setSegmentFilter] = useState(storedFilters.segment || 'all');
   const [subsegmentFilter, setSubsegmentFilter] = useState(storedFilters.subsegment || 'all');
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [deactivatingClientId, setDeactivatingClientId] = useState<string | null>(null);
 
   useEffect(() => {
     window.sessionStorage.setItem(DASHBOARD_FILTERS_KEY, JSON.stringify({
@@ -297,12 +302,25 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     }
   }, [capabilities, period, data.clients]);
 
+  // Fonte única (data/receivablesForecast.ts) para decidir se o cliente por
+  // trás de uma linha do dashboard está na operação ativa — cruza o clientId
+  // retornado pelo RPC com o cadastro local (Client + Project) para aplicar
+  // a mesma regra usada em ClientsView, Recebimentos e sincronização Meta.
+  const isEntryOperationallyActive = useCallback((clientId: string) => {
+    const workspaceClient = data.clients.find((candidate) => candidate.id === clientId);
+    const project = data.projects.find((candidate) => candidate.id === workspaceClient?.projectId);
+    return isClientOperationallyActive(workspaceClient, project);
+  }, [data.clients, data.projects]);
+
   const handleSyncAll = useCallback(async () => {
     if (!capabilities) return;
     setLoading(true);
     setError(null);
     try {
-      const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected');
+      // Sincronização em massa nunca inclui cliente/projeto inativo, mesmo se
+      // "Incluir inativos" estiver marcado para leitura — esse toggle só afeta
+      // o que aparece na tela, não o que entra em sincronização.
+      const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected' && isEntryOperationallyActive(c.clientId));
       const syncPromises = activeClientsWithAssets.flatMap(c => 
         c.accounts.map(account => 
           syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' })
@@ -320,15 +338,23 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
       setError('dashboard_unavailable');
       setLoading(false);
     }
-  }, [capabilities, clients, period, loadDashboard]);
+  }, [capabilities, clients, period, loadDashboard, isEntryOperationallyActive]);
 
   useEffect(() => {
     if (capabilities) void loadDashboard();
   }, [capabilities, loadDashboard]);
 
+  // Cliente/projeto inativo não aparece na operação principal por padrão —
+  // resumo executivo, board de prioridade e cards só veem clientes ativos a
+  // menos que "Incluir inativos" esteja marcado.
+  const operationalClients = useMemo(
+    () => includeInactive ? clients : clients.filter((client) => isEntryOperationallyActive(client.clientId)),
+    [clients, includeInactive, isEntryOperationallyActive]
+  );
+
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
-    const { summaries, pending } = buildCommercialSummaries(clients, data.clients, 'vertical');
+    const { summaries, pending } = buildCommercialSummaries(operationalClients, data.clients, 'vertical');
     const selectedSummary = summaries.find((summary) => summary.key === segmentFilter);
     const segmentClientIds = segmentFilter === 'all'
       ? null
@@ -337,14 +363,14 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         : subsegmentFilter !== 'all'
           ? new Set((selectedSummary?.clients || []).filter(c => effectiveClientProfile(c)?.subsegment === subsegmentFilter).map((client) => client.clientId))
           : new Set((selectedSummary?.clients || []).map((client) => client.clientId));
-    return clients.filter((client) => {
+    return operationalClients.filter((client) => {
       if (segmentClientIds && !segmentClientIds.has(client.clientId)) return false;
       if (statusFilter !== 'all' && clientSeverity(client) !== statusFilter) return false;
       if (!normalizedSearch) return true;
       return client.clientName.toLocaleLowerCase('pt-BR').includes(normalizedSearch)
         || client.accounts.some((account) => account.accountName.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
     });
-  }, [clients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
+  }, [operationalClients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
 
   // Prioridade operacional do recorte: mesmo diagnóstico (motivo + status Meta)
   // usado no bloco de prioridade e nos cards por cliente, para que a ordem da
@@ -374,6 +400,30 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     setPendingClientSelection(clientId);
     setActiveView('clients');
   }, [setActiveView]);
+
+  const setClientStatus = useCallback((clientId: string, status: ClientStatus) => {
+    const selected = data.clients.find((client) => client.id === clientId);
+    updateData((current) => ({
+      ...current,
+      clients: current.clients.map((client) => client.id === clientId ? { ...client, status } : client),
+      activityLogs: selected ? [createActivityLog({
+        action: 'client_status_changed',
+        title: `Status alterado: ${selected.name}`,
+        description: `Cliente movido para ${status}.`,
+        projectId: selected.projectId,
+        clientId: selected.id,
+        campaignId: '', receivableId: '', taskId: '',
+      }), ...current.activityLogs] : current.activityLogs,
+    }));
+  }, [data.clients, updateData]);
+
+  const confirmDeactivateClient = useCallback(() => {
+    if (!deactivatingClientId) return;
+    setClientStatus(deactivatingClientId, 'paused');
+    setDeactivatingClientId(null);
+  }, [deactivatingClientId, setClientStatus]);
+
+  const reactivateClient = useCallback((clientId: string) => setClientStatus(clientId, 'active'), [setClientStatus]);
 
   const priorities = useMemo(() => filteredClients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
@@ -487,6 +537,16 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
             <span>Clientes exibidos: <strong className="text-white">{filteredClients.length}</strong> de <strong className="text-white">{clients.length}</strong></span>
+            <span>•</span>
+            <label className="flex items-center gap-2 text-xs text-brand-muted">
+              <input
+                type="checkbox"
+                checked={includeInactive}
+                onChange={(event) => setIncludeInactive(event.target.checked)}
+                className="h-3.5 w-3.5 accent-brand-green"
+              />
+              Incluir inativos
+            </label>
           </div>
         </header>
 
@@ -506,7 +566,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         ) : (
           <>
             <ExecutiveSummary
-              clients={clients}
+              clients={operationalClients}
               statusFilter={statusFilter}
               onStatusFilterChange={setStatusFilter}
             />
@@ -518,6 +578,9 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               period={period}
               onViewAnalytics={handleViewClientAnalytics}
               onEditClient={handleEditClient}
+              onDeactivateClient={setDeactivatingClientId}
+              onReactivateClient={reactivateClient}
+              isClientOperationallyActive={isEntryOperationallyActive}
               registerCardRef={registerCardRef}
             />
 
@@ -619,6 +682,16 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={deactivatingClientId !== null}
+        title="Desativar cliente?"
+        description="Desativar este cliente remove ele da operação ativa e da sincronização em massa, mas mantém o histórico salvo."
+        confirmLabel="Desativar cliente"
+        tone="danger"
+        onCancel={() => setDeactivatingClientId(null)}
+        onConfirm={confirmDeactivateClient}
+      />
     </motion.section>
   );
 }

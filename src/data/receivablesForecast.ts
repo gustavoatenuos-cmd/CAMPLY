@@ -38,8 +38,37 @@ export interface OperationalView {
   historyEntries: OperationalEntry[];
 }
 
-export const isProjectActive = (project?: Project) => !project || project.status !== 'done';
+export const isProjectActive = (project?: Project) => !project || (project.status !== 'done' && project.status !== 'archived');
 export const isClientActive = (client?: Client) => client?.status === 'active';
+
+/**
+ * Fonte única para decidir se um cliente está na operação ativa (dashboard,
+ * cards, board de prioridade, Recebimentos operacionais, sincronização Meta
+ * em massa). Nenhum componente deve reimplementar esta regra: um cliente só
+ * é operacionalmente ativo quando o próprio cadastro está `status: 'active'`
+ * E o projeto ao qual ele está vinculado (quando houver) também está ativo —
+ * um projeto arquivado/concluído nunca deve "puxar" um cliente de volta para
+ * a visão ativa.
+ */
+export function isClientOperationallyActive(client?: Client, project?: Project): boolean {
+  return isClientActive(client) && isProjectActive(project);
+}
+
+/** Fonte única para decidir se um projeto deve gerar card operacional ou cobrança — hoje idêntico a `isProjectActive`, com nome que expressa a intenção no domínio de ativação/arquivamento. */
+export function isProjectOperationallyActive(project?: Project): boolean {
+  return isProjectActive(project);
+}
+
+/**
+ * Decide se uma conta Meta vinculada a um cliente deve entrar em
+ * sincronização (individual ou em massa). Segue exatamente a mesma regra de
+ * `isClientOperationallyActive`: o vínculo `client_meta_assets` continua
+ * salvo para histórico/reativação, mas a conta não é chamada enquanto o
+ * cliente ou seu projeto estiverem fora da operação ativa.
+ */
+export function shouldSyncClientMetaAccount(client?: Client, project?: Project): boolean {
+  return isClientOperationallyActive(client, project);
+}
 
 export function toLocalISODate(date: Date) {
   const normalized = normalizeDate(date);
@@ -116,7 +145,7 @@ function buildClientEntries(data: CamplyData, today: Date, currentMonthKey: stri
     if (client.managementFeeType === 'one_time' && findMatchingReceivable(data.receivables, client)) return [];
 
     const project = data.projects.find((item) => item.id === client.projectId);
-    const active = isClientActive(client) && isProjectActive(project);
+    const active = isClientOperationallyActive(client, project);
     const dueDay = client.dueDay || today.getDate();
     const monthOffsets = client.managementFeeType === 'recurring' ? [0, 1] : [0];
 
@@ -152,7 +181,7 @@ function buildProjectEntries(data: CamplyData, today: Date, currentMonthKey: str
     .filter((project) => project.billingType === 'one_time')
     .map((project): OperationalEntry => {
       const client = data.clients.find((item) => item.id === project.clientId);
-      const active = isProjectActive(project) && isClientActive(client);
+      const active = isClientOperationallyActive(client, project);
       const amount = Math.max(0, project.amountCharged - project.amountReceived);
       const dueDate = project.dueDate || toLocalISODate(today);
       return {
@@ -191,7 +220,7 @@ function mapReceivableEntry(data: CamplyData, receivable: CamplyData['receivable
     monthKey: monthKeyOf(receivable.dueDate),
     paidAt: receivable.paidAt,
     status: receivable.status,
-    active: isClientActive(client) && isProjectActive(project),
+    active: isClientOperationallyActive(client, project),
   };
 }
 

@@ -138,4 +138,47 @@ describe('ClientPerformanceCardGrid', () => {
     fireEvent.click(screen.getByTestId('client-performance-card-toggle-campaigns'));
     expect(screen.getByText('Conta Principal')).toBeInTheDocument();
   });
+
+  it('does not render a deactivate/reactivate button when the prop is omitted', () => {
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
+    expect(screen.queryByTestId('client-card-deactivate-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('client-card-reactivate-button')).not.toBeInTheDocument();
+  });
+
+  it('shows "Desativar" for an operationally active client and calls onDeactivateClient with its id', () => {
+    const onDeactivateClient = vi.fn();
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    render(
+      <ClientPerformanceCardGrid
+        entries={entries}
+        period="last_30d"
+        onViewAnalytics={() => {}}
+        onEditClient={() => {}}
+        onDeactivateClient={onDeactivateClient}
+        isClientOperationallyActive={() => true}
+      />
+    );
+    expect(screen.queryByTestId('client-card-reactivate-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('client-card-deactivate-button'));
+    expect(onDeactivateClient).toHaveBeenCalledWith('c1');
+  });
+
+  it('shows "Reativar" for an operationally inactive client and calls onReactivateClient with its id', () => {
+    const onReactivateClient = vi.fn();
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    render(
+      <ClientPerformanceCardGrid
+        entries={entries}
+        period="last_30d"
+        onViewAnalytics={() => {}}
+        onEditClient={() => {}}
+        onReactivateClient={onReactivateClient}
+        isClientOperationallyActive={() => false}
+      />
+    );
+    expect(screen.queryByTestId('client-card-deactivate-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('client-card-reactivate-button'));
+    expect(onReactivateClient).toHaveBeenCalledWith('c1');
+  });
 });

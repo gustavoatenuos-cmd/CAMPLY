@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import {
   AlertTriangle,
+  Ban,
   BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
   Clock3,
   Database,
   PenSquare,
+  RotateCcw,
   SquareStack,
 } from 'lucide-react';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
@@ -27,6 +29,12 @@ interface ClientPerformanceCardGridProps {
   period: DashboardPeriod;
   onViewAnalytics: (clientId: string) => void;
   onEditClient: (clientId: string) => void;
+  /** Abre a confirmação de desativação (o diálogo em si vive no componente pai). */
+  onDeactivateClient?: (clientId: string) => void;
+  /** Reativação não exige confirmação — mesmo padrão do ClientsView. */
+  onReactivateClient?: (clientId: string) => void;
+  /** Decide se o card mostra "Desativar cliente" ou "Reativar cliente"; quando omitido, o botão não aparece. */
+  isClientOperationallyActive?: (clientId: string) => boolean;
   registerCardRef?: (clientId: string, element: HTMLDivElement | null) => void;
 }
 
@@ -55,6 +63,9 @@ export function ClientPerformanceCardGrid({
   period,
   onViewAnalytics,
   onEditClient,
+  onDeactivateClient,
+  onReactivateClient,
+  isClientOperationallyActive,
   registerCardRef,
 }: ClientPerformanceCardGridProps) {
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
@@ -103,6 +114,7 @@ export function ClientPerformanceCardGrid({
         const tag = operationalHealthTagFor({ tier, reasons });
         const diagnosis = summarizeDiagnosis(client, reasons);
         const primaryName = resolveClientPrimaryName(workspaceClient, profile, client);
+        const isEntryActive = isClientOperationallyActive ? isClientOperationallyActive(client.clientId) : true;
 
         return (
           <div
@@ -219,7 +231,7 @@ export function ClientPerformanceCardGrid({
             </div>
 
             {/* Actions */}
-            <div className="grid grid-cols-3 gap-px bg-brand-line/50 p-px mt-auto">
+            <div className={`grid gap-px bg-brand-line/50 p-px mt-auto ${onDeactivateClient || onReactivateClient ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <button
                 onClick={() => onViewAnalytics(client.clientId)}
                 className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-brand-soft hover:bg-white/[0.03] hover:text-white transition-colors"
@@ -242,6 +254,31 @@ export function ClientPerformanceCardGrid({
                 <PenSquare size={13} />
                 Editar
               </button>
+              {isEntryActive ? (
+                onDeactivateClient && (
+                  <button
+                    onClick={() => onDeactivateClient(client.clientId)}
+                    data-testid="client-card-deactivate-button"
+                    className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-400/10 transition-colors"
+                    title="Desativar cliente"
+                  >
+                    <Ban size={13} />
+                    Desativar
+                  </button>
+                )
+              ) : (
+                onReactivateClient && (
+                  <button
+                    onClick={() => onReactivateClient(client.clientId)}
+                    data-testid="client-card-reactivate-button"
+                    className="flex items-center justify-center gap-1.5 bg-brand-ink py-2.5 text-xs font-bold text-emerald-300 hover:bg-emerald-400/10 transition-colors"
+                    title="Reativar cliente"
+                  >
+                    <RotateCcw size={13} />
+                    Reativar
+                  </button>
+                )
+              )}
             </div>
 
             {/* Expanded Content (Micro-drilldown) */}

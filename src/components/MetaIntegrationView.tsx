@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Facebook, Link as LinkIcon, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Facebook, Link as LinkIcon, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
+import { isClientOperationallyActive } from '../data/receivablesForecast';
 import { invokeFunction } from '../lib/invokeFunction';
 import {
   loadCachedClientMetaAssetCatalog,
@@ -90,6 +91,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [showAvailableAssets, setShowAvailableAssets] = useState(false);
+  const [showInactiveAccounts, setShowInactiveAccounts] = useState(false);
   const [bulkPeriod, setBulkPeriod] = useState<DashboardPeriod>('this_month');
   const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
   const [retryingAccountId, setRetryingAccountId] = useState<string | null>(null);
@@ -121,10 +123,35 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     client.accounts.map((account) => ({ clientId: client.clientId, clientName: client.clientName, account }))
   )), [catalog]);
 
+  // O catálogo (client_meta_assets/client_identity) não sabe nada sobre o
+  // status operacional local do cliente (active/paused/lead) — isso só existe
+  // no cadastro do workspace. Cruza por clientId para decidir quais contas
+  // vinculadas entram na sincronização em massa e quais ficam só visíveis
+  // para histórico/reativação, mesma regra central de data/receivablesForecast.ts.
+  const isLinkedClientOperationallyActive = useCallback((clientId: string) => {
+    const workspaceClient = data.clients.find((candidate) => candidate.id === clientId);
+    // Sem registro local correspondente (ex.: workspace ainda carregando, ou
+    // fora de sincronia momentânea com o catálogo) — não bloquear a conta por
+    // um dado que não conseguimos confirmar; só exclui quando o cadastro local
+    // existe e diz explicitamente que o cliente/projeto está fora da operação.
+    if (!workspaceClient) return true;
+    const project = data.projects.find((candidate) => candidate.id === workspaceClient.projectId);
+    return isClientOperationallyActive(workspaceClient, project);
+  }, [data.clients, data.projects]);
+
+  const activeLinkedAccounts = useMemo(
+    () => linkedAccounts.filter((entry) => isLinkedClientOperationallyActive(entry.clientId)),
+    [linkedAccounts, isLinkedClientOperationallyActive]
+  );
+  const inactiveLinkedAccounts = useMemo(
+    () => linkedAccounts.filter((entry) => !isLinkedClientOperationallyActive(entry.clientId)),
+    [linkedAccounts, isLinkedClientOperationallyActive]
+  );
+
   // Prontidão Meta de cada conta já vinculada, a partir do último sync conhecido
   // (independente de um bulk sync ter acabado de rodar) - camada central usada em
   // todas as telas operacionais, ver src/lib/operational/clientOperationalReadiness.ts.
-  const linkedAccountsReadiness = useMemo(() => linkedAccounts.map((entry) => ({
+  const linkedAccountsReadiness = useMemo(() => activeLinkedAccounts.map((entry) => ({
     ...entry,
     readiness: evaluateClientOperationalReadiness({
       clientId: entry.clientId,
@@ -133,7 +160,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       metaAccounts: [entry.account],
       period: bulkPeriod,
     }),
-  })), [linkedAccounts, bulkPeriod]);
+  })), [activeLinkedAccounts, bulkPeriod]);
 
   const metaReadinessSummary = useMemo(() => summarizeMetaReadinessAcrossClients(
     linkedAccountsReadiness.map(({ readiness }) => readiness.meta)
@@ -157,11 +184,13 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   };
 
   const syncLinkedClients = async () => {
-    if (linkedAccounts.length === 0 || bulkSyncBusy) return;
+    // Cliente/projeto inativo nunca entra na sincronização em massa — o
+    // vínculo continua salvo, só não é chamado enquanto fora da operação ativa.
+    if (activeLinkedAccounts.length === 0 || bulkSyncBusy) return;
     setError(null);
     setNotice(null);
 
-    setBulkSync(initializeBulkSyncProgress(linkedAccounts.map(({ clientId, clientName, account }) => ({
+    setBulkSync(initializeBulkSyncProgress(activeLinkedAccounts.map(({ clientId, clientName, account }) => ({
       clientId,
       clientName,
       clientMetaAssetId: account.clientMetaAssetId,
@@ -169,7 +198,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       adAccountId: account.adAccountId,
     }))));
 
-    for (const { account } of linkedAccounts) {
+    for (const { account } of activeLinkedAccounts) {
       setBulkSync((current) => current && applyAccountOutcome(current, account.clientMetaAssetId, { status: 'running' }));
 
       const outcome = await runAccountSync(account);
@@ -192,7 +221,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
 
   const retryAccountSync = async (target: BulkSyncAccountResult) => {
     if (!bulkSync || bulkSyncBusy) return;
-    const linked = linkedAccounts.find((entry) => entry.account.clientMetaAssetId === target.clientMetaAssetId);
+    const linked = activeLinkedAccounts.find((entry) => entry.account.clientMetaAssetId === target.clientMetaAssetId);
     if (!linked) return;
 
     setRetryingAccountId(target.clientMetaAssetId);
@@ -389,7 +418,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                   data-testid="meta-sync-linked-clients"
                   type="button"
                   onClick={() => void syncLinkedClients()}
-                  disabled={linkedAccounts.length === 0 || bulkSyncBusy}
+                  disabled={activeLinkedAccounts.length === 0 || bulkSyncBusy}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
                 >
                   <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar clientes vinculados
@@ -444,7 +473,44 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
               {!catalogLoading && linkedAccounts.length === 0 && (
                 <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Nenhuma conta vinculada a um cliente ainda. Vincule uma conta abaixo, em "contas disponíveis para vínculo".</div>
               )}
+              {!catalogLoading && linkedAccounts.length > 0 && activeLinkedAccounts.length === 0 && (
+                <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Nenhuma conta ativa no momento — veja "Contas fora da operação" abaixo.</div>
+              )}
             </div>
+
+            {inactiveLinkedAccounts.length > 0 && (
+              <div className="mt-4 border-t border-brand-line pt-4">
+                <button
+                  type="button"
+                  data-testid="meta-inactive-accounts-toggle"
+                  onClick={() => setShowInactiveAccounts((current) => !current)}
+                  className="inline-flex items-center gap-2 text-xs font-bold text-brand-soft"
+                >
+                  {showInactiveAccounts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  Contas fora da operação ({inactiveLinkedAccounts.length})
+                </button>
+                {showInactiveAccounts && (
+                  <div className="mt-3 space-y-2">
+                    {inactiveLinkedAccounts.map(({ clientId, clientName, account }) => (
+                      <div key={account.clientMetaAssetId} data-testid="meta-inactive-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-brand-line bg-brand-ink/30 p-3 opacity-70">
+                        <div className="flex items-center gap-3">
+                          <div className="grid h-8 w-8 place-items-center rounded-lg bg-white/5" title="Conta vinculada a cliente inativo">
+                            <LinkIcon className="text-brand-muted" size={15} />
+                          </div>
+                          <div>
+                            <p className="font-bold text-white">{clientName}</p>
+                            <p className="text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+                          </div>
+                        </div>
+                        <span data-testid="meta-inactive-account-badge" className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-muted" title={`Cliente ${clientId} está fora da operação ativa`}>
+                          Cliente inativo — fora da sincronização
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-5 border-t border-brand-line pt-4">
               <button

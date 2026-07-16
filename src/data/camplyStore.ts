@@ -27,6 +27,7 @@ export const projectStatusLabels: Record<ProjectStatus, string> = {
   active: 'Em andamento',
   waiting: 'Aguardando',
   done: 'Concluído',
+  archived: 'Arquivado',
 };
 
 export const initialData: CamplyData = {
