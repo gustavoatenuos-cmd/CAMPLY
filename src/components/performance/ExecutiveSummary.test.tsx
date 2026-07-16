@@ -74,4 +74,27 @@ describe('ExecutiveSummary', () => {
     expect(screen.getByText(/Atenção/)).toBeInTheDocument();
     expect(screen.getByText(/Críticos/)).toBeInTheDocument();
   });
+
+  it('shows only macro volume metrics — never an aggregated average cost across clients/objectives', () => {
+    const withSpend = client({
+      clientId: 'c1',
+      accounts: [account({ clientMetaAssetId: 'a1', metrics: { spend: { value: 500, available: true, currency: 'BRL', completenessStatus: 'complete' } as any, reach: { value: 12000, available: true, currency: null, completenessStatus: 'complete' } as any } })],
+      metrics: { purchases: { value: 10, available: true, currency: null, completenessStatus: 'complete' } as any },
+    });
+
+    render(<ExecutiveSummary clients={[withSpend]} statusFilter="all" onStatusFilterChange={() => {}} />);
+
+    expect(screen.getByText('Investimento total')).toBeInTheDocument();
+    expect(screen.getByText('Conversas totais')).toBeInTheDocument();
+    expect(screen.getByText('Compras totais')).toBeInTheDocument();
+    expect(screen.getByText('Leads totais')).toBeInTheDocument();
+    expect(screen.getByText('Alcance total')).toBeInTheDocument();
+    expect(screen.getByText('12.000')).toBeInTheDocument();
+
+    expect(screen.queryByText(/custo por conversa/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/custo por compra/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^cpa$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^cpl$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/roas médio/i)).not.toBeInTheDocument();
+  });
 });

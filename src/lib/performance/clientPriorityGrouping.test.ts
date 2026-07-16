@@ -292,13 +292,26 @@ describe('reasonLabel / summarizeDiagnosis', () => {
   });
 
   it('summarizes multiple reasons into one short sentence', () => {
-    const text = summarizeDiagnosis(['sync_partial', 'no_conversion']);
+    const text = summarizeDiagnosis(baseClient(), ['sync_partial', 'no_conversion']);
     expect(text.toLowerCase()).toContain('parcial');
     expect(text.toLowerCase()).toContain('convers');
   });
 
   it('summarizes a healthy diagnosis', () => {
-    expect(summarizeDiagnosis(['healthy']).toLowerCase()).toMatch(/saud/);
+    expect(summarizeDiagnosis(baseClient(), ['healthy']).toLowerCase()).toMatch(/saud/);
+  });
+
+  it('appends the technical reason when the client is partial and the backend reported one', () => {
+    const client = baseClient({ dataQuality: { status: 'partial', reason: 'rate_limit_exhausted' } });
+    const text = summarizeDiagnosis(client, ['sync_partial']);
+    expect(text).toContain('Motivo técnico:');
+    expect(text.toLowerCase()).toContain('limitou a taxa de requisições');
+  });
+
+  it('does not append a technical reason when the backend did not report one', () => {
+    const client = baseClient({ dataQuality: { status: 'partial', reason: null } });
+    const text = summarizeDiagnosis(client, ['sync_partial']);
+    expect(text).not.toContain('Motivo técnico:');
   });
 });
 

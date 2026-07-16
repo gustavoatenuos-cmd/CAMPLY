@@ -1,6 +1,7 @@
 import type { Client } from '../../types';
 import { clientSeverity, effectiveClientProfile } from '../../components/performance/CommercialDecisionOverview';
 import type { GlobalClientPerformance, GlobalPerformanceAccount, MetricContract } from './globalPerformanceDashboard';
+import { describeDataQualityReason } from './dataQualityReason';
 
 /**
  * Camada de leitura para o dashboard operacional (OverviewView): agrupa os
@@ -174,11 +175,26 @@ export function reasonLabel(reason: ClientDiagnosisReason): string {
   return REASON_LABELS[reason];
 }
 
+/**
+ * Motivo técnico exato por trás de uma sincronização parcial ou falha (ex.:
+ * "partial_page", "rate_limit_exhausted", "timeout"), traduzido para uma
+ * frase legível. `sync_partial`/`sync_failed` sozinhos só dizem "algo não
+ * fechou" — isso complementa com o porquê, quando o backend informou um.
+ */
+export function technicalSyncReason(client: GlobalClientPerformance): string | null {
+  if (client.dataQuality.status === 'complete') return null;
+  return describeDataQualityReason(client.dataQuality.reason);
+}
+
 /** Frase curta de diagnóstico exibida no card do cliente. */
-export function summarizeDiagnosis(reasons: ClientDiagnosisReason[]): string {
+export function summarizeDiagnosis(client: GlobalClientPerformance, reasons: ClientDiagnosisReason[]): string {
   const meaningful = reasons.filter((reason) => reason !== 'healthy');
   if (meaningful.length === 0) return 'Situação saudável — sem pendências identificadas.';
-  return `${meaningful.map((reason) => reasonLabel(reason)).join('; ')}.`;
+  const base = `${meaningful.map((reason) => reasonLabel(reason)).join('; ')}.`;
+  const technical = (reasons.includes('sync_partial') || reasons.includes('sync_failed'))
+    ? technicalSyncReason(client)
+    : null;
+  return technical ? `${base} Motivo técnico: ${technical}` : base;
 }
 
 export const PRIORITY_TIER_LABELS: Record<PriorityTier, string> = {

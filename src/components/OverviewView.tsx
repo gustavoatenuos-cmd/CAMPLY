@@ -32,6 +32,7 @@ import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, e
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
 import { setPendingClientSelection } from '../lib/performance/pendingClientSelection';
+import { clientDisplayName } from '../data/clientDisplay';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
@@ -281,11 +282,15 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
         dashboardRpc: capabilities.dashboardRpc,
       });
       
+      // Nome oficial do cliente vem sempre do helper canônico (company || name
+      // || segment) em vez de reimplementar a regra aqui — só cai de volta ao
+      // nome que a RPC já trouxe (c.clientName) quando o registro de workspace
+      // não tem nenhum desses três campos preenchidos.
       const enrichedResult = result.map(c => {
         const workspaceClient = data.clients.find(w => w.id === c.clientId);
-        return workspaceClient 
-          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName }
-          : c;
+        if (!workspaceClient) return c;
+        const displayName = clientDisplayName(workspaceClient);
+        return displayName === 'Cliente sem nome' ? c : { ...c, clientName: displayName };
       });
       
       setClients(enrichedResult);

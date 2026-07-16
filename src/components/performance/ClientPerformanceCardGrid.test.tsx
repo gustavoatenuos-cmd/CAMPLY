@@ -62,7 +62,11 @@ describe('ClientPerformanceCardGrid', () => {
   it('renders a card per client using the same priority-entry data as the priority board', () => {
     const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
-    expect(screen.getByText('Workspace Client Name')).toBeInTheDocument();
+    // The card trusts client.clientName as the single source of truth for the
+    // display name (resolved once, upstream in OverviewView via the official
+    // clientDisplayName helper) instead of re-deriving it from workspaceClient
+    // itself — no duplicate/parallel naming logic at the component level.
+    expect(screen.getByText('Test Global Client')).toBeInTheDocument();
   });
 
   it('shows the operational health badge and the diagnosis summary for a client missing data and a profile', () => {

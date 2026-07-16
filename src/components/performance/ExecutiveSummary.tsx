@@ -1,6 +1,6 @@
-import { Activity, Banknote, MessageCircle, ShieldCheck, ShieldAlert, ShoppingBag, UserRound } from 'lucide-react';
+import { Banknote, Eye, MessageCircle, ShieldCheck, ShieldAlert, ShoppingBag, UserRound } from 'lucide-react';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
-import { aggregateMetricTotal, aggregateRatio, type MetricAggregate } from '../../lib/performance/aggregateMetrics';
+import { aggregateMetricTotal } from '../../lib/performance/aggregateMetrics';
 import { classifyAccountReliability } from '../../lib/performance/clientPriorityGrouping';
 import { clientSeverity } from './CommercialDecisionOverview';
 
@@ -27,12 +27,6 @@ function formatCurrency(value: number, currency: string | null): string {
 
 function formatCount(value: number | null): string {
   return value === null ? '—' : value.toLocaleString('pt-BR');
-}
-
-function aggregateCurrency(aggregate: MetricAggregate): string {
-  return aggregate.available && aggregate.value !== null
-    ? formatCurrency(aggregate.value, aggregate.currency)
-    : '—';
 }
 
 interface SummaryCellProps {
@@ -63,9 +57,13 @@ const healthChipStyles: Record<Exclude<HealthFilter, 'all'>, { active: string; i
 };
 
 /**
- * Faixa executiva do dashboard: os números que respondem "como está a
- * operação?" em uma linha — investimento, resultados, custos médios e a
- * saúde dos clientes. Os chips de saúde também filtram a central abaixo.
+ * Faixa executiva do dashboard: apenas volume macro da operação —
+ * investimento, resultados brutos e quantas contas estão com sync
+ * confiável. Não mostra custo agregado (CPA/CPL/custo por conversa/ROAS):
+ * esses números misturam clientes, objetivos e metas diferentes quando
+ * somados globalmente, e só fazem sentido dentro do card de cada cliente,
+ * onde existe o contexto da meta configurada. Os chips de saúde também
+ * filtram a central abaixo.
  */
 export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }: ExecutiveSummaryProps) {
   const accounts = clients.flatMap((client) => client.accounts);
@@ -74,8 +72,7 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   const conversations = aggregateMetricTotal(clients.map((client) => client.metrics.messaging_conversations_started_total));
   const leads = aggregateMetricTotal(clients.map((client) => client.metrics.leads));
   const purchases = aggregateMetricTotal(clients.map((client) => client.metrics.purchases));
-  const costPerConversation = aggregateRatio(spend, conversations);
-  const costPerPurchase = aggregateRatio(spend, purchases);
+  const reach = aggregateMetricTotal(accounts.map((account) => account.metrics.reach));
 
   // Investimento por moeda: mantém a soma honesta mesmo com contas em moedas
   // diferentes (caso em que o agregado único fica indisponível).
@@ -99,7 +96,7 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   const reliableAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'reliable').length;
   const problemAccounts = accounts.length - reliableAccounts;
 
-  const partialNote = spend.partial || conversations.partial || purchases.partial
+  const partialNote = spend.partial || conversations.partial || purchases.partial || leads.partial || reach.partial
     ? 'Alguma conta tem dados parciais neste período — os totais podem mudar após a próxima sincronização.'
     : null;
 
@@ -139,12 +136,11 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCell icon={Banknote} label="Investimento" value={investmentValue} detail={`${spend.accountsUsed} conta${spend.accountsUsed === 1 ? '' : 's'} com gasto no período`} />
-        <SummaryCell icon={MessageCircle} label="Conversas" value={formatCount(conversations.value)} />
-        <SummaryCell icon={UserRound} label="Leads" value={formatCount(leads.value)} />
-        <SummaryCell icon={ShoppingBag} label="Compras" value={formatCount(purchases.value)} />
-        <SummaryCell icon={Activity} label="Custo por conversa" value={aggregateCurrency(costPerConversation)} detail="média ponderada do recorte" />
-        <SummaryCell icon={Activity} label="Custo por compra" value={aggregateCurrency(costPerPurchase)} detail="média ponderada do recorte" />
+        <SummaryCell icon={Banknote} label="Investimento total" value={investmentValue} detail={`${spend.accountsUsed} conta${spend.accountsUsed === 1 ? '' : 's'} com gasto no período`} />
+        <SummaryCell icon={MessageCircle} label="Conversas totais" value={formatCount(conversations.value)} />
+        <SummaryCell icon={ShoppingBag} label="Compras totais" value={formatCount(purchases.value)} />
+        <SummaryCell icon={UserRound} label="Leads totais" value={formatCount(leads.value)} />
+        <SummaryCell icon={Eye} label="Alcance total" value={formatCount(reach.value)} />
         <SummaryCell icon={ShieldCheck} label="Contas com sync confiável" value={formatCount(reliableAccounts)} detail={`de ${accounts.length} conta${accounts.length === 1 ? '' : 's'} no recorte`} />
         <SummaryCell icon={ShieldAlert} label="Contas com problema" value={formatCount(problemAccounts)} detail="falha, parcial ou sem sucesso registrado" />
       </div>

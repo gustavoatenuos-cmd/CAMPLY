@@ -74,4 +74,22 @@ describe('ClientPriorityBoard', () => {
     fireEvent.click(screen.getByText('Ver todos (8)'));
     expect(screen.getByText('Saudável 7')).toBeInTheDocument();
   });
+
+  it('shows the technical reason under a partial client when the backend reported one', () => {
+    const partialEntry: ClientPriorityEntry = {
+      client: { ...client('p', 'Cliente Parcial'), dataQuality: { status: 'partial', reason: 'partial_page' } },
+      workspaceClient: undefined,
+      tier: 'attention',
+      reasons: ['sync_partial'],
+    };
+    render(<ClientPriorityBoard entries={[partialEntry]} onSelectClient={() => {}} />);
+    expect(screen.getByText(/Motivo técnico:/)).toBeInTheDocument();
+    expect(screen.getByText(/número máximo de páginas/)).toBeInTheDocument();
+  });
+
+  it('does not show a technical reason line for a healthy client', () => {
+    const entries = [entry('c', 'Cliente C', 'healthy', ['healthy'])];
+    render(<ClientPriorityBoard entries={entries} onSelectClient={() => {}} />);
+    expect(screen.queryByText(/Motivo técnico:/)).not.toBeInTheDocument();
+  });
 });

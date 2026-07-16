@@ -100,7 +100,7 @@ export function ClientPerformanceCardGrid({
 
         const isExpanded = !!expandedClients[client.clientId];
         const tag = operationalHealthTagFor({ tier, reasons });
-        const diagnosis = summarizeDiagnosis(reasons);
+        const diagnosis = summarizeDiagnosis(client, reasons);
 
         return (
           <div
@@ -112,10 +112,10 @@ export function ClientPerformanceCardGrid({
             {/* Header */}
             <div className="flex items-start justify-between border-b border-brand-line/50 p-4">
               <div className="flex items-center gap-3 min-w-0">
-                <ClientLogo name={workspaceClient?.name || client.clientName} logoUrl={logoUrl} />
+                <ClientLogo name={client.clientName} logoUrl={logoUrl} />
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-bold leading-tight text-white">
-                    {workspaceClient?.name || client.clientName}
+                    {client.clientName}
                   </h3>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="flex items-center gap-1 text-xs text-brand-muted">
