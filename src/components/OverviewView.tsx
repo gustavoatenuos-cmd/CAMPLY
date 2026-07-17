@@ -312,29 +312,39 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
     return isClientOperationallyActive(workspaceClient, project);
   }, [data.clients, data.projects]);
 
-  const handleSyncAll = useCallback(async () => {
+  // "Atualizar Dashboard" e "Sincronizar período" NÃO fazem a mesma coisa:
+  // atualizar só relê o que já está salvo (útil se outra sincronização, ex.
+  // MetaIntegrationView, acabou de rodar); sincronizar dispara o sync real
+  // para o período exibido agora. Misturar os dois é o que fazia o botão
+  // único disparar sync toda vez que o usuário só queria reler a tela.
+  const handleRefreshDashboard = useCallback(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  const handleSyncPeriod = useCallback(async () => {
     if (!capabilities) return;
     setLoading(true);
     setError(null);
     try {
-      // Sincronização em massa nunca inclui cliente/projeto inativo, mesmo se
-      // "Incluir inativos" estiver marcado para leitura — esse toggle só afeta
-      // o que aparece na tela, não o que entra em sincronização.
+      // Sincronização nunca inclui cliente/projeto inativo, mesmo se "Incluir
+      // inativos" estiver marcado para leitura — esse toggle só afeta o que
+      // aparece na tela, não o que entra em sincronização. Roda exatamente
+      // para o período selecionado no Dashboard (`period`), nunca outro.
       const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected' && isEntryOperationallyActive(c.clientId));
-      const syncPromises = activeClientsWithAssets.flatMap(c => 
-        c.accounts.map(account => 
+      const syncPromises = activeClientsWithAssets.flatMap(c =>
+        c.accounts.map(account =>
           syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' })
             .catch(err => { console.error('Erro sync', err); return null; })
         )
       );
-      
+
       if (syncPromises.length > 0) {
         await Promise.all(syncPromises);
       }
-      
+
       await loadDashboard();
     } catch (err) {
-      console.error('Erro na sincronização geral:', err);
+      console.error('Erro na sincronização do período:', err);
       setError('dashboard_unavailable');
       setLoading(false);
     }
@@ -351,6 +361,21 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
     () => includeInactive ? clients : clients.filter((client) => isEntryOperationallyActive(client.clientId)),
     [clients, includeInactive, isEntryOperationallyActive]
   );
+
+  // Contrato período<->sync: o Dashboard só pode ler o período que foi
+  // realmente sincronizado. Clientes sem conta Meta vinculada (not_connected)
+  // não contam nem a favor nem contra — a ausência de sync deles é um
+  // problema de vínculo, não de período. Se não sobrar nenhum cliente com
+  // conta vinculada e alguma tentativa real para este período, o período
+  // inteiro é tratado como "ainda não sincronizado" — resumo executivo,
+  // board de prioridade e cards viram um único painel vazio operacional em
+  // vez de uma parede de clientes "parcial"/"problema" enganosa.
+  const clientsWithMetaAccount = useMemo(
+    () => operationalClients.filter((client) => client.clientStatus !== 'not_connected'),
+    [operationalClients]
+  );
+  const periodHasAnySync = clientsWithMetaAccount.length === 0
+    || clientsWithMetaAccount.some((client) => client.clientStatus !== 'never_synced' && client.clientStatus !== 'period_not_synced');
 
   const filteredClients = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
@@ -519,13 +544,24 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
               </select>
                 <button
                   type="button"
-                  onClick={() => void handleSyncAll()}
+                  onClick={handleRefreshDashboard}
                   disabled={loading}
+                  title="Relê os dados já salvos — não dispara sincronização"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-line px-4 py-2.5 text-sm font-bold text-brand-soft transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                  Atualizar Dashboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncPeriod()}
+                  disabled={loading}
+                  title={`Sincroniza os clientes ativos vinculados para o período "${periodLabels[period]}"`}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                Atualizar Dashboard
-              </button>
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                  Sincronizar período
+                </button>
             </div>
           </div>
 
@@ -565,24 +601,43 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
           </div>
         ) : (
           <>
-            <ExecutiveSummary
-              clients={operationalClients}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-            />
+            {!periodHasAnySync ? (
+              <div data-testid="period-not-synced-panel" className="rounded-2xl border border-dashed border-brand-line bg-brand-surface p-10 text-center">
+                <RefreshCw className="mx-auto text-brand-muted" size={28} />
+                <p className="mt-4 text-lg font-black text-white">Este período ainda não foi sincronizado.</p>
+                <p className="mt-2 text-sm text-brand-muted">Sincronize para gerar a leitura da operação.</p>
+                <button
+                  type="button"
+                  onClick={() => void handleSyncPeriod()}
+                  disabled={loading}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                  Sincronizar este período
+                </button>
+              </div>
+            ) : (
+              <>
+                <ExecutiveSummary
+                  clients={operationalClients}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                />
 
-            <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
+                <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
 
-            <ClientPerformanceCardGrid
-              entries={priorityEntries}
-              period={period}
-              onViewAnalytics={handleViewClientAnalytics}
-              onEditClient={handleEditClient}
-              onDeactivateClient={setDeactivatingClientId}
-              onReactivateClient={reactivateClient}
-              isClientOperationallyActive={isEntryOperationallyActive}
-              registerCardRef={registerCardRef}
-            />
+                <ClientPerformanceCardGrid
+                  entries={priorityEntries}
+                  period={period}
+                  onViewAnalytics={handleViewClientAnalytics}
+                  onEditClient={handleEditClient}
+                  onDeactivateClient={setDeactivatingClientId}
+                  onReactivateClient={reactivateClient}
+                  isClientOperationallyActive={isEntryOperationallyActive}
+                  registerCardRef={registerCardRef}
+                />
+              </>
+            )}
 
             <CollapsibleSection
               title="Tabela detalhada"
