@@ -3,6 +3,8 @@ import type { BudgetPeriod, ClientAnalysisProfile } from '../analysis/clientAnal
 import { calculateClientBudgetPacing, type BudgetPacingStatus } from './budgetPacingUtils';
 import type { DataQualityContract, GlobalClientStatus, GlobalMetricGroup, MetricContract, RunSummary } from './globalPerformanceDashboard';
 import type { PerformanceTarget, TargetKind } from './types';
+import { exactPeriodRange } from '../meta/periodRange';
+import type { DashboardPeriod } from './analyticsCapabilities';
 
 export type ClientAnalyticsDecisionStatus =
   | 'healthy'
@@ -62,7 +64,14 @@ function toLocalISODate(date: Date): string {
   return normalized.toISOString().slice(0, 10);
 }
 
-/** Calendar-month boundaries for `referenceDate`, used to scope the monthly projection. */
+/**
+ * Calendar-month boundaries for `referenceDate`. This is a fallback only -
+ * use it when there is truly no DashboardPeriod in scope (never as a silent
+ * default). Callers that have the Dashboard's selected period must use
+ * `periodFromDashboardPeriod` instead, or the projection math ends up
+ * dividing a period's spend/results by the wrong number of days (e.g.
+ * treating a `last_7d` read as if it were the full current month).
+ */
 export function deriveMonthPeriod(referenceDate: Date): AnalyticsPeriod {
   const year = referenceDate.getFullYear();
   const month = referenceDate.getMonth();
@@ -70,6 +79,23 @@ export function deriveMonthPeriod(referenceDate: Date): AnalyticsPeriod {
     start: toLocalISODate(new Date(year, month, 1)),
     end: toLocalISODate(new Date(year, month + 1, 0)),
   };
+}
+
+/**
+ * Converts the Dashboard's selected period into the exact date range the
+ * decision engine should project against - same period the account's
+ * metrics/metricGroups were already fetched for, via `exactPeriodRange`
+ * (the same function `get_global_performance_dashboard_v2`'s caller and the
+ * sync contract use), so projection day-counting matches what the numbers
+ * actually represent.
+ */
+export function periodFromDashboardPeriod(
+  period: DashboardPeriod,
+  timezone: string,
+  currentDate: Date
+): AnalyticsPeriod {
+  const { dateStart, dateStop } = exactPeriodRange(period, timezone, currentDate);
+  return { start: dateStart, end: dateStop };
 }
 
 export interface ClientAnalyticsDecisionInput {
@@ -589,4 +615,106 @@ export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput
       budgetPacingStatus: budgetPacingCalc.status,
     }),
   };
+}
+
+export interface ClientPrimaryMetricCell {
+  label: string;
+  value: number | null;
+}
+
+export interface ClientPrimaryMetricView {
+  family: PrimaryMetricFamily;
+  label: string;
+  actual: number | null;
+  target: number | null;
+  gap: number | null;
+  costMetric: ClientPrimaryMetricCell | null;
+  secondaryMetric: ClientPrimaryMetricCell | null;
+  status: 'no_profile' | 'unmapped' | 'ok';
+}
+
+const COST_METRIC_LABELS: Record<string, string> = {
+  cost_per_purchase: 'CPA',
+  cost_per_lead: 'CPL',
+  cost_per_messaging_conversation: 'Custo/Conversa',
+  link_cpc: 'CPC',
+};
+
+/**
+ * Single source of truth for "which metric cells represent this client's
+ * configured primary conversion metric, and what are their current values" -
+ * decides purely from `profile.primaryConversionMetric`, never from which
+ * metrics happen to have data. Used by every card/block that renders a
+ * client's headline metric, so a client configured for messaging always
+ * shows conversas/custo-por-conversa, never purchases just because the
+ * account happens to have some purchases recorded too.
+ *
+ * Cost/result values reuse the same MESSAGING/SALES/LEADS-scoped
+ * accumulation `buildClientAnalyticsDecision` uses (`accumulateObjectiveScoped`)
+ * so cost-per-conversation is spend-from-MESSAGING-groups / conversas-from-
+ * MESSAGING-groups, not total account spend / conversas, whenever
+ * metricGroups carry that scoping. Falls back to the account-level metric
+ * only when no group carries the resolved metric, and returns a null cost
+ * value (never a guess) when neither is available.
+ */
+export function getClientPrimaryMetricView(
+  profile: ClientAnalysisProfile | null | undefined,
+  metrics: Record<string, MetricContract>,
+  metricGroups: GlobalMetricGroup[],
+  resolvedTargets: PerformanceTarget[] = []
+): ClientPrimaryMetricView {
+  if (!profile?.primaryConversionMetric) {
+    return { family: 'unknown', label: 'Meta principal', actual: null, target: null, gap: null, costMetric: null, secondaryMetric: null, status: 'no_profile' };
+  }
+
+  const family = resolvePrimaryMetricFamily(profile.primaryConversionMetric);
+  const familyIds = FAMILY_METRIC_IDS[family];
+
+  if (family === 'unknown' || !familyIds.resultMetricId) {
+    return { family, label: profile.primaryConversionMetric, actual: null, target: null, gap: null, costMetric: null, secondaryMetric: null, status: 'unmapped' };
+  }
+
+  const resultMetricId = familyIds.resultMetricId;
+  const scoped = accumulateObjectiveScoped(metricGroups, resultMetricId);
+  const objectiveScoped = scoped !== null && !scoped.mixedScope;
+  const scopedAccountId = objectiveScoped ? scoped!.clientMetaAssetId : null;
+
+  const actual = objectiveScoped ? scoped!.resultValue : metricValue(metrics, resultMetricId);
+  const spend = objectiveScoped ? scoped!.spendValue : metricValue(metrics, 'spend');
+  const purchaseValue = objectiveScoped ? scoped!.purchaseValue : metricValue(metrics, 'purchase_value');
+
+  const costValue = familyIds.costMetricId !== null && spend !== null && actual !== null && actual > 0
+    ? spend / actual
+    : null;
+  const costMetric: ClientPrimaryMetricCell | null = familyIds.costMetricId
+    ? { label: COST_METRIC_LABELS[familyIds.costMetricId] ?? familyIds.costMetricId, value: costValue }
+    : null;
+
+  const secondaryMetric = buildSecondaryMetric(family, metrics, purchaseValue, spend);
+
+  const target = findTargetValue(resolvedTargets, resultMetricId, ['minimum_results'], scopedAccountId);
+  const gap = target !== null && actual !== null ? actual - target : null;
+
+  return { family, label: familyIds.label, actual, target, gap, costMetric, secondaryMetric, status: 'ok' };
+}
+
+function buildSecondaryMetric(
+  family: PrimaryMetricFamily,
+  metrics: Record<string, MetricContract>,
+  purchaseValue: number | null,
+  spend: number | null
+): ClientPrimaryMetricCell | null {
+  if (family === 'sales') {
+    const roas = purchaseValue !== null && spend !== null && spend > 0
+      ? purchaseValue / spend
+      : metricValue(metrics, 'purchase_roas');
+    return { label: 'ROAS', value: roas };
+  }
+  if (family === 'traffic') {
+    return { label: 'CTR', value: metricValue(metrics, 'link_ctr') };
+  }
+  if (family === 'awareness') {
+    return { label: 'CPM', value: metricValue(metrics, 'cpm') };
+  }
+  return null;
 }

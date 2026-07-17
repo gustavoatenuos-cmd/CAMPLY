@@ -8,6 +8,18 @@ export const ANALYTICS_CONTRACT_VERSION = 5;
 export const dashboardPeriods = ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'] as const;
 export type DashboardPeriod = typeof dashboardPeriods[number];
 
+// Rótulo humano único por período - reutilizado por qualquer tela que
+// precise exibir o período selecionado (Dashboard, Analytics), para não ter
+// duas listas de rótulos que podem divergir.
+export const periodLabels: Record<DashboardPeriod, string> = {
+  this_month: 'Mês atual',
+  this_week: 'Semana atual',
+  today: 'Hoje',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  last_90d: 'Últimos 90 dias',
+};
+
 export const analyticsLevels = ['campaign', 'adset', 'ad'] as const;
 export type AnalyticsLevel = typeof analyticsLevels[number];
 

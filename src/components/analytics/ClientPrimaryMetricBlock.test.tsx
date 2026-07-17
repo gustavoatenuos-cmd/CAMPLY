@@ -56,7 +56,7 @@ describe('ClientPrimaryMetricBlock', () => {
     render(<ClientPrimaryMetricBlock performance={performance} />);
 
     expect(screen.queryByText('Meta principal não configurada')).not.toBeInTheDocument();
-    expect(screen.getByText('Compras / CPA / ROAS')).toBeInTheDocument();
+    expect(screen.getByText('Compras')).toBeInTheDocument();
     expect(screen.getByText('CPA')).toBeInTheDocument();
     expect(screen.getByText('ROAS')).toBeInTheDocument();
   });

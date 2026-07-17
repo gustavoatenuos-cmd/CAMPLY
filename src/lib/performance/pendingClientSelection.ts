@@ -1,4 +1,7 @@
+import { dashboardPeriods, type DashboardPeriod } from './analyticsCapabilities';
+
 const STORAGE_KEY = 'camply:pending-client-selection';
+const PERIOD_STORAGE_KEY = 'camply:pending-analytics-period';
 
 /**
  * Passa um clientId de uma tela para outra quando a navegação é só um
@@ -20,6 +23,30 @@ export function setPendingClientSelection(clientId: string): void {
 export function readPendingClientSelection(): string | null {
   try {
     return window.sessionStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Same handoff pattern as the client selection above, for the Dashboard's
+ * currently-selected period - the Analytics screen owns an independent
+ * `usePerformanceDashboard` period state, so without this a "Ver análise"
+ * click from a `last_7d` Dashboard would silently reopen Analytics on its
+ * own unrelated default period instead of the one the user was looking at.
+ */
+export function setPendingAnalyticsPeriod(period: DashboardPeriod): void {
+  try {
+    window.sessionStorage.setItem(PERIOD_STORAGE_KEY, period);
+  } catch {
+    // sessionStorage indisponível - Analytics abre com o período padrão do hook.
+  }
+}
+
+export function readPendingAnalyticsPeriod(): DashboardPeriod | null {
+  try {
+    const value = window.sessionStorage.getItem(PERIOD_STORAGE_KEY);
+    return value && (dashboardPeriods as readonly string[]).includes(value) ? (value as DashboardPeriod) : null;
   } catch {
     return null;
   }
