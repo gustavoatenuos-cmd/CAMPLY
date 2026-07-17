@@ -5,7 +5,7 @@ import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type Hierar
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import type { MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import { TraceableMetricValue } from './TraceableMetricValue';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { getCampaignMetricCellsByObjective } from '../../lib/performance/campaignMetricCells';
 
 interface CampaignHierarchicalTableProps {
   account: GlobalPerformanceAccount;
@@ -112,17 +112,7 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
     setExpanded(!expanded);
   }
 
-  const spendMetric = node.metrics.spend;
-  const purchasesMetric = node.metrics.purchases;
-  const roasMetric = node.metrics.purchase_roas;
-  const costPerPurchase = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-  const convMetric = node.metrics.messaging_conversations_started_total;
-  const costPerConv = deriveCostMetric('cost_per_messaging_conversation', spendMetric, convMetric);
-  const leadsMetric = node.metrics.leads;
-  const costPerLead = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
-  
-  const isSales = node.classifiedObjective === 'SALES';
-  const isLeads = node.classifiedObjective === 'LEADS' || node.classifiedObjective === 'MESSAGING';
+  const cells = getCampaignMetricCellsByObjective(node.classifiedObjective, node.metrics, account.currency);
 
   // Indentação visual por nível
   const marginLeft = level === 'campaign' ? '0' : level === 'adset' ? 'ml-6' : 'ml-12';
@@ -134,7 +124,7 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
       <div 
         className={`grid gap-3 rounded-xl border border-brand-line/70 p-4 md:items-center ${bgColor} ${nextLevel ? 'cursor-pointer hover:border-brand-line' : ''}`}
         style={{
-          gridTemplateColumns: 'minmax(240px, 1.7fr) repeat(4, minmax(90px, 0.7fr))'
+          gridTemplateColumns: `minmax(240px, 1.7fr) repeat(${cells.length}, minmax(90px, 0.7fr))`
         }}
         onClick={() => nextLevel && handleToggle()}
       >
@@ -160,27 +150,9 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
           </div>
         </div>
 
-        <MetricCell label="Investido" value={formatCurrency(metricValue(spendMetric), account.currency)} metric={spendMetric} />
-
-        {isSales ? (
-          <>
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-            <MetricCell label="CPA" value={formatCurrency(metricValue(costPerPurchase), account.currency)} metric={costPerPurchase} />
-            <MetricCell label="ROAS" value={formatNumber(metricValue(roasMetric))} metric={roasMetric} />
-          </>
-        ) : isLeads ? (
-          <>
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Custo / Conv" value={formatCurrency(metricValue(costPerConv), account.currency)} metric={costPerConv} />
-          </>
-        ) : (
-          <>
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-          </>
-        )}
+        {cells.map((cellData) => (
+          <MetricCell key={cellData.key} label={cellData.label} value={cellData.value} metric={cellData.metric} />
+        ))}
       </div>
 
       {expanded && (
@@ -212,24 +184,6 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function metricValue(metric: MetricContract | undefined): number | null {
-  return metric?.available && typeof metric.value === 'number' ? metric.value : null;
-}
-
-function formatNumber(value: number | null): string {
-  return value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-}
-
-function formatCurrency(value: number | null, currency: string | null): string {
-  if (value === null) return '—';
-  if (!currency) return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-  try {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
-  } catch {
-    return `${currency} ${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`;
-  }
-}
 
 function MetricCell({ label, value, metric }: { label: string; value: string; metric?: MetricContract }) {
   return (

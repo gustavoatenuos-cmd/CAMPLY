@@ -1,12 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { X, ExternalLink, Loader2 } from 'lucide-react';
 import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode } from '../../lib/performance/metaPerformanceHierarchy';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
+import { getCampaignMetricCellsByObjective } from '../../lib/performance/campaignMetricCells';
+import { buildClientAnalyticsDecision, deriveMonthPeriod } from '../../lib/performance/clientAnalyticsDecision';
+import { ClientAnalyticsStatusPanel } from './ClientAnalyticsStatusPanel';
 
 interface ClientCampaignDrawerProps {
   isOpen: boolean;
@@ -36,6 +38,40 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
   const account = selectMetaAccount(performance);
   const linkedAccountCount = performance?.accounts.filter((a) => a.clientMetaAssetId).length ?? 0;
+
+  // Mesmo motor de decisão usado no card resumo (ClientAnalyticsCard) - o
+  // drill-down de campanhas não pode perder a meta/gap/projeção/diagnóstico
+  // que o cliente configurou, só porque o usuário abriu o detalhe.
+  const decision = useMemo(() => {
+    if (!performance) return null;
+    const now = new Date();
+    return buildClientAnalyticsDecision({
+      client: performance.client ?? { id: performance.clientId, name: performance.clientName, company: '' },
+      analysisProfile: performance.analysisProfile,
+      globalPerformance: {
+        clientStatus: performance.clientStatus,
+        dataQuality: performance.dataQuality,
+        lastSuccessfulRun: performance.lastSuccessfulRun,
+      },
+      accountMetrics: performance.metrics ?? {},
+      metricGroups: performance.metricGroups ?? [],
+      resolvedTargets: performance.resolvedTargets ?? [],
+      period: deriveMonthPeriod(now),
+      currentDate: now,
+    });
+  }, [performance]);
+
+  const readiness = useMemo(() => {
+    if (!performance) return null;
+    return evaluateClientOperationalReadiness({
+      clientId: performance.clientId,
+      client: performance.client ?? null,
+      analysisProfile: performance.analysisProfile,
+      globalClientStatus: performance.clientStatus,
+      receivableEntries: undefined,
+      analyticsDecision: decision,
+    });
+  }, [performance, decision]);
 
   useEffect(() => {
     if (!isOpen || !performance) return;
@@ -96,6 +132,11 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
               Exibindo a primeira conta Meta vinculada: {account.accountName}.
             </p>
           )}
+          {decision && (
+            <div className="pt-2">
+              <ClientAnalyticsStatusPanel decision={decision} />
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-6">
@@ -131,7 +172,11 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
-              <CampaignsReadinessWarning performance={performance} />
+              {readiness && (readiness.campaigns.status === 'partial' || readiness.campaigns.status === 'stale') && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                  {readiness.campaigns.warnings.join(' ') || 'Dados da campanha podem estar incompletos.'}
+                </div>
+              )}
               {state.items.map((campaign) => (
                 <CampaignRow key={campaign.id} campaign={campaign} account={account} />
               ))}
@@ -139,27 +184,6 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-// Sinaliza dados parciais/desatentualizados mesmo quando a RPC já retornou
-// 'ready' (a hierarquia hoje não distingue "parcial" de "completo" no state) -
-// mesma regra usada nas outras telas, ver clientOperationalReadiness.ts.
-function CampaignsReadinessWarning({ performance }: { performance: EnrichedGlobalClientPerformance | null }) {
-  if (!performance) return null;
-  const readiness = evaluateClientOperationalReadiness({
-    clientId: performance.clientId,
-    client: null,
-    analysisProfile: null,
-    globalClientStatus: performance.clientStatus,
-    receivableEntries: undefined,
-  });
-  if (readiness.campaigns.status !== 'partial' && readiness.campaigns.status !== 'stale') return null;
-
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-      {readiness.campaigns.warnings.join(' ')}
     </div>
   );
 }
@@ -173,11 +197,8 @@ function EmptyMessage({ children }: { children: ReactNode }) {
 }
 
 function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; account: GlobalPerformanceAccount }) {
-  const spendMetric = campaign.metrics.spend;
-  const purchasesMetric = campaign.metrics.purchases;
-  const roasMetric = campaign.metrics.purchase_roas;
-  const cpaMetric = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
   const status = campaign.effectiveStatus || campaign.status;
+  const cells = getCampaignMetricCellsByObjective(campaign.classifiedObjective, campaign.metrics, account.currency);
 
   return (
     <div className="bg-white border rounded-lg p-4 hover:shadow-sm transition-shadow">
@@ -200,16 +221,15 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
               {status}
             </span>
             <span>•</span>
-            <span>{campaign.objective || 'Sem objetivo'}</span>
+            <span>{campaign.classifiedObjective || campaign.objective || 'Sem objetivo'}</span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
-        <MetricCell label="Gasto" value={formatCurrency(metricValue(spendMetric), account.currency)} metric={spendMetric} />
-        <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-        <MetricCell label="CPA" value={formatCurrency(metricValue(cpaMetric), account.currency)} metric={cpaMetric} />
-        <MetricCell label="ROAS" value={roasMetric?.available && roasMetric.value !== null ? `${roasMetric.value.toFixed(2)}x` : '—'} metric={roasMetric} />
+        {cells.map((c) => (
+          <MetricCell key={c.key} label={c.label} value={c.value} metric={c.metric} />
+        ))}
       </div>
     </div>
   );
@@ -226,20 +246,3 @@ function MetricCell({ label, value, metric }: { label: string; value: string; me
   );
 }
 
-function metricValue(metric: HierarchicalMetricNode['metrics'][string] | undefined): number | null {
-  return metric?.available && typeof metric.value === 'number' ? metric.value : null;
-}
-
-function formatNumber(value: number | null): string {
-  return value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-}
-
-function formatCurrency(value: number | null, currency: string | null): string {
-  if (value === null) return '—';
-  if (!currency) return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-  try {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
-  } catch {
-    return `${currency} ${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`;
-  }
-}
