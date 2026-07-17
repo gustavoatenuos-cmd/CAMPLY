@@ -93,8 +93,11 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   const counts: Record<Exclude<HealthFilter, 'all'>, number> = { healthy: 0, attention: 0, critical: 0, no_data: 0 };
   for (const client of clients) counts[clientSeverity(client)] += 1;
 
+  // Ausência de sync para o período não é falha do cliente — só conta como
+  // "problema" quando houve uma tentativa real (classifyAccountReliability
+  // separa not_synced de problem exatamente por isso).
   const reliableAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'reliable').length;
-  const problemAccounts = accounts.length - reliableAccounts;
+  const problemAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'problem').length;
 
   const partialNote = spend.partial || conversations.partial || purchases.partial || leads.partial || reach.partial
     ? 'Alguma conta tem dados parciais neste período — os totais podem mudar após a próxima sincronização.'
@@ -142,7 +145,7 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
         <SummaryCell icon={UserRound} label="Leads totais" value={formatCount(leads.value)} />
         <SummaryCell icon={Eye} label="Alcance total" value={formatCount(reach.value)} />
         <SummaryCell icon={ShieldCheck} label="Contas com sync confiável" value={formatCount(reliableAccounts)} detail={`de ${accounts.length} conta${accounts.length === 1 ? '' : 's'} no recorte`} />
-        <SummaryCell icon={ShieldAlert} label="Contas com problema" value={formatCount(problemAccounts)} detail="falha, parcial ou sem sucesso registrado" />
+        <SummaryCell icon={ShieldAlert} label="Contas com problema" value={formatCount(problemAccounts)} detail="tentativa de sync com falha ou parcial" />
       </div>
 
       {partialNote && <p className="mt-3 text-xs text-amber-300/90">{partialNote}</p>}

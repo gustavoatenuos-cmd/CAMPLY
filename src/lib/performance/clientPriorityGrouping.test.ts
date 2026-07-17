@@ -72,13 +72,23 @@ describe('classifyAccountReliability', () => {
     expect(classifyAccountReliability(account)).toBe('reliable');
   });
 
-  it('classifies an account without any successful run as a problem', () => {
+  it('classifies an account with a real failed attempt but no successful run as a problem', () => {
     const account: any = {
       dataQuality: { status: 'unavailable', reason: 'account_not_connected' },
       lastSuccessfulRun: null,
-      lastAttempt: null,
+      lastAttempt: { id: '1', status: 'failed', startedAt: '', finishedAt: '2026-01-01', terminationReason: 'meta_api_error' },
     };
     expect(classifyAccountReliability(account)).toBe('problem');
+  });
+
+  it('classifies an account with no attempt at all for the period as not_synced, never as problem', () => {
+    // Ausência de sync não é falha do cliente — regra de contrato período<->sync.
+    const account: any = {
+      dataQuality: { status: 'unavailable', reason: 'no_successful_run' },
+      lastSuccessfulRun: null,
+      lastAttempt: null,
+    };
+    expect(classifyAccountReliability(account)).toBe('not_synced');
   });
 
   it('classifies an account whose latest attempt failed after a previous success as a problem', () => {
@@ -227,13 +237,31 @@ describe('buildClientPriorityEntries', () => {
     expect(entry.reasons).not.toContain('goal_below_target');
   });
 
-  it('treats an in-progress or not-yet-synced-period client the same as a partial sync (attention)', () => {
+  it('keeps an in-progress sync as sync_partial (attention), but never_synced/period_not_synced as the distinct not_synced reason', () => {
+    // Contrato período<->sync: "nunca sincronizado" e "sincronizado noutro
+    // período, não este" não são uma sincronização parcial real — não houve
+    // nenhuma tentativa para o período exibido. Rotular como "Sincronização
+    // parcial" era o bug relatado; o motivo certo é "Período não sincronizado",
+    // e o tier continua attention (não action_now, não é falha real).
     const syncing = baseClient({ clientId: 'syncing', clientStatus: 'syncing', analysisProfile: profile() });
     const periodNotSynced = baseClient({ clientId: 'pns', clientStatus: 'period_not_synced', analysisProfile: profile() });
+    const neverSynced = baseClient({ clientId: 'never', clientStatus: 'never_synced', analysisProfile: profile() });
     const [syncingEntry] = buildClientPriorityEntries([syncing], []);
     const [pnsEntry] = buildClientPriorityEntries([periodNotSynced], []);
+    const [neverEntry] = buildClientPriorityEntries([neverSynced], []);
+
     expect(syncingEntry.reasons).toContain('sync_partial');
-    expect(pnsEntry.reasons).toContain('sync_partial');
+    expect(syncingEntry.reasons).not.toContain('not_synced');
+    expect(syncingEntry.tier).toBe('attention');
+
+    expect(pnsEntry.reasons).toContain('not_synced');
+    expect(pnsEntry.reasons).not.toContain('sync_partial');
+    expect(pnsEntry.reasons).not.toContain('insufficient_data');
+    expect(pnsEntry.tier).toBe('attention');
+
+    expect(neverEntry.reasons).toContain('not_synced');
+    expect(neverEntry.reasons).not.toContain('insufficient_data');
+    expect(neverEntry.tier).toBe('attention');
   });
 
   it('distinguishes a client with no profile at all from a client whose analysis was intentionally disabled', () => {
@@ -313,6 +341,17 @@ describe('reasonLabel / summarizeDiagnosis', () => {
     const text = summarizeDiagnosis(client, ['sync_partial']);
     expect(text).not.toContain('Motivo técnico:');
   });
+
+  it('labels not_synced as "Período não sincronizado", never as a partial sync', () => {
+    expect(reasonLabel('not_synced')).toBe('Período não sincronizado');
+  });
+
+  it('never appends a technical reason for not_synced — there is no real attempt to explain', () => {
+    const client = baseClient({ clientStatus: 'period_not_synced', dataQuality: { status: 'unavailable', reason: 'period_not_synced' } });
+    const text = summarizeDiagnosis(client, ['not_synced']);
+    expect(text).toContain('Período não sincronizado');
+    expect(text).not.toContain('Motivo técnico:');
+  });
 });
 
 describe('operationalHealthTagFor', () => {
@@ -328,5 +367,14 @@ describe('operationalHealthTagFor', () => {
     expect(operationalHealthTagFor({ tier: 'action_now', reasons: ['no_profile'] })).toBe('critical');
     expect(operationalHealthTagFor({ tier: 'attention', reasons: ['cost_above_target'] })).toBe('attention');
     expect(operationalHealthTagFor({ tier: 'healthy', reasons: ['healthy'] })).toBe('ready');
+  });
+
+  it('maps not_synced to its own distinct tag, never sync_partial', () => {
+    expect(operationalHealthTagFor({ tier: 'attention', reasons: ['not_synced'] })).toBe('not_synced');
+  });
+
+  it('prioritizes sync_failed/sync_partial over not_synced when a client somehow carries both', () => {
+    expect(operationalHealthTagFor({ tier: 'action_now', reasons: ['sync_failed', 'not_synced'] })).toBe('sync_failed');
+    expect(operationalHealthTagFor({ tier: 'attention', reasons: ['sync_partial', 'not_synced'] })).toBe('sync_partial');
   });
 });

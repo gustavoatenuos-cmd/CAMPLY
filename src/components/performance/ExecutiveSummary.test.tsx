@@ -56,7 +56,15 @@ describe('ExecutiveSummary', () => {
     const reliableClient = client({ clientId: 'c1', accounts: [account({ clientMetaAssetId: 'a1' })] });
     const problemClient = client({
       clientId: 'c2',
-      accounts: [account({ clientMetaAssetId: 'a2', dataQuality: { status: 'unavailable', reason: 'account_not_connected' }, lastSuccessfulRun: null, lastAttempt: null })],
+      // Precisa de uma tentativa real (lastAttempt não nulo) para contar como
+      // "problema" — sem tentativa alguma é not_synced, não problem (regra de
+      // contrato período<->sync: ausência de sync não é falha do cliente).
+      accounts: [account({
+        clientMetaAssetId: 'a2',
+        dataQuality: { status: 'unavailable', reason: 'account_not_connected' },
+        lastSuccessfulRun: null,
+        lastAttempt: { id: '2', status: 'failed', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'meta_api_error' },
+      })],
     });
 
     render(<ExecutiveSummary clients={[reliableClient, problemClient]} statusFilter="all" onStatusFilterChange={() => {}} />);

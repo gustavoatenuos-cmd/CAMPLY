@@ -107,4 +107,11 @@ describe('ClientPriorityBoard', () => {
     expect(screen.getByText('Donatellus')).toBeInTheDocument();
     expect(screen.queryByText('Joao')).not.toBeInTheDocument();
   });
+
+  it('shows "Período não sincronizado" for a period_not_synced client, never "Sincronização parcial"', () => {
+    const entries = [entry('pns', 'Cliente Sem Sync', 'attention', ['not_synced'])];
+    render(<ClientPriorityBoard entries={entries} onSelectClient={() => {}} />);
+    expect(screen.getByText('Período não sincronizado')).toBeInTheDocument();
+    expect(screen.queryByText('Sincronização parcial')).not.toBeInTheDocument();
+  });
 });

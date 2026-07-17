@@ -17,6 +17,7 @@ export type ClientDiagnosisReason =
   | 'sync_failed'
   | 'sync_partial'
   | 'sync_stale'
+  | 'not_synced'
   | 'no_profile'
   | 'analysis_disabled'
   | 'insufficient_data'
@@ -32,12 +33,20 @@ export interface ClientPriorityEntry {
   reasons: ClientDiagnosisReason[];
 }
 
-export type AccountReliability = 'reliable' | 'problem';
+export type AccountReliability = 'reliable' | 'problem' | 'not_synced';
 
 // clientStatus cujo estado da sincronização já não é sucesso limpo, mas
 // também não é falha nem "sem dados" — mesmo balde de atenção que
 // clientSeverity() usa (CommercialDecisionOverview.tsx).
-const ATTENTION_SYNC_STATUSES: GlobalClientPerformance['clientStatus'][] = ['partial', 'syncing', 'period_not_synced'];
+const ATTENTION_SYNC_STATUSES: GlobalClientPerformance['clientStatus'][] = ['partial', 'syncing'];
+
+// Nenhuma tentativa real de sincronização para o período selecionado — nem
+// "nunca sincronizado" nem "sincronizado noutro período" é o mesmo problema
+// que uma sincronização parcial/falha real: não existe motivo técnico para
+// reportar, só falta rodar o sync deste período. Nunca deve virar "exige
+// ação agora" nem "sincronização parcial" (ver ClientPerformanceCardGrid/
+// ClientPriorityBoard e a regra de contrato período<->sync do dashboard).
+const NOT_SYNCED_STATUSES: GlobalClientPerformance['clientStatus'][] = ['never_synced', 'period_not_synced'];
 
 function isCostMetric(metricId: string): boolean {
   return metricId.startsWith('cost_per') || metricId === 'cpm';
@@ -47,10 +56,16 @@ function metricNumber(metric: MetricContract | undefined): number | null {
   return metric?.available && typeof metric.value === 'number' ? metric.value : null;
 }
 
-/** Uma conta só é "sync confiável" quando já teve sucesso e a leitura mais recente não regrediu. */
+/**
+ * Uma conta só é "sync confiável" quando já teve sucesso e a leitura mais
+ * recente não regrediu. Sem NENHUMA tentativa para o período (`lastAttempt`
+ * nulo) é `not_synced`, não `problem` — ausência de sync não é falha do
+ * cliente (ver regra de contrato período<->sync do dashboard).
+ */
 export function classifyAccountReliability(
   account: Pick<GlobalPerformanceAccount, 'dataQuality' | 'lastSuccessfulRun' | 'lastAttempt'>
 ): AccountReliability {
+  if (!account.lastAttempt) return 'not_synced';
   if (!account.lastSuccessfulRun) return 'problem';
   if (account.dataQuality.status !== 'complete') return 'problem';
   if (
@@ -75,9 +90,15 @@ function collectReasons(client: GlobalClientPerformance): ClientDiagnosisReason[
 
   if (client.clientStatus === 'failed') reasons.push('sync_failed');
   else if (client.clientStatus === 'stale') reasons.push('sync_stale');
+  else if (NOT_SYNCED_STATUSES.includes(client.clientStatus)) reasons.push('not_synced');
   else if (ATTENTION_SYNC_STATUSES.includes(client.clientStatus)) reasons.push('sync_partial');
 
-  if (clientSeverity(client) === 'no_data') reasons.push('insufficient_data');
+  // Se o motivo já é "não sincronizado", clientSeverity() também classificaria
+  // como no_data (never_synced está nesse balde) — mas insufficient_data
+  // implica tier action_now, que é exatamente o que a regra de contrato
+  // período<->sync proíbe para "ainda não sincronizou". not_synced é mutuamente
+  // exclusivo com insufficient_data por design.
+  if (clientSeverity(client) === 'no_data' && !reasons.includes('not_synced')) reasons.push('insufficient_data');
 
   // Qualquer meta (de custo ou não) fora da tolerância vira motivo - nunca
   // deixamos uma avaliação attention/critical sem um reason correspondente,
@@ -117,6 +138,7 @@ function tierFor(client: GlobalClientPerformance, reasons: ClientDiagnosisReason
   if (
     reasons.includes('sync_partial')
     || reasons.includes('sync_stale')
+    || reasons.includes('not_synced')
     || reasons.includes('cost_above_target')
     || reasons.includes('goal_below_target')
     || reasons.includes('no_conversion')
@@ -162,6 +184,7 @@ const REASON_LABELS: Record<ClientDiagnosisReason, string> = {
   sync_failed: 'Falha de sincronização Meta',
   sync_partial: 'Sincronização parcial',
   sync_stale: 'Sincronização desatualizada',
+  not_synced: 'Período não sincronizado',
   no_profile: 'Meta principal não configurada',
   analysis_disabled: 'Análise desativada para este cliente',
   insufficient_data: 'Poucos dados confiáveis',
@@ -203,18 +226,20 @@ export const PRIORITY_TIER_LABELS: Record<PriorityTier, string> = {
   healthy: 'Saudáveis',
 };
 
-/** Os 6 status visuais padronizados do dashboard operacional (OperationalHealthBadge). */
+/** Os 7 status visuais padronizados do dashboard operacional (OperationalHealthBadge). */
 export type OperationalHealthTag =
   | 'ready'
   | 'attention'
   | 'critical'
   | 'insufficient_data'
   | 'sync_failed'
-  | 'sync_partial';
+  | 'sync_partial'
+  | 'not_synced';
 
 const REASON_TAG_PRIORITY: Array<[ClientDiagnosisReason, OperationalHealthTag]> = [
   ['sync_failed', 'sync_failed'],
   ['sync_partial', 'sync_partial'],
+  ['not_synced', 'not_synced'],
   ['insufficient_data', 'insufficient_data'],
 ];
 
