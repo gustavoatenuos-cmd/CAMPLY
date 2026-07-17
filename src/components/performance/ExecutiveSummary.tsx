@@ -3,11 +3,13 @@ import type { GlobalClientPerformance } from '../../lib/performance/globalPerfor
 import { aggregateMetricTotal } from '../../lib/performance/aggregateMetrics';
 import { classifyAccountReliability } from '../../lib/performance/clientPriorityGrouping';
 import { clientSeverity } from './CommercialDecisionOverview';
+import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 
 export type HealthFilter = 'all' | 'healthy' | 'attention' | 'critical' | 'no_data';
 
 interface ExecutiveSummaryProps {
   clients: GlobalClientPerformance[];
+  period: DashboardPeriod;
   statusFilter: HealthFilter;
   onStatusFilterChange: (filter: HealthFilter) => void;
 }
@@ -65,7 +67,7 @@ const healthChipStyles: Record<Exclude<HealthFilter, 'all'>, { active: string; i
  * onde existe o contexto da meta configurada. Os chips de saúde também
  * filtram a central abaixo.
  */
-export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }: ExecutiveSummaryProps) {
+export function ExecutiveSummary({ clients, period, statusFilter, onStatusFilterChange }: ExecutiveSummaryProps) {
   const accounts = clients.flatMap((client) => client.accounts);
 
   const spend = aggregateMetricTotal(accounts.map((account) => account.metrics.spend), { monetary: true });
@@ -96,8 +98,8 @@ export function ExecutiveSummary({ clients, statusFilter, onStatusFilterChange }
   // Ausência de sync para o período não é falha do cliente — só conta como
   // "problema" quando houve uma tentativa real (classifyAccountReliability
   // separa not_synced de problem exatamente por isso).
-  const reliableAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'reliable').length;
-  const problemAccounts = accounts.filter((account) => classifyAccountReliability(account) === 'problem').length;
+  const reliableAccounts = accounts.filter((account) => classifyAccountReliability(account, period) === 'reliable').length;
+  const problemAccounts = accounts.filter((account) => classifyAccountReliability(account, period) === 'problem').length;
 
   const partialNote = spend.partial || conversations.partial || purchases.partial || leads.partial || reach.partial
     ? 'Alguma conta tem dados parciais neste período — os totais podem mudar após a próxima sincronização.'

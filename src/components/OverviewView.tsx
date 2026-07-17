@@ -33,6 +33,7 @@ import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
 import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
+import { debugDashboardClientSync } from '../lib/performance/explainClientSyncState';
 import { setPendingClientSelection, setPendingAnalyticsPeriod } from '../lib/performance/pendingClientSelection';
 import { isClientOperationallyActive } from '../data/receivablesForecast';
 import { CollapsibleSection } from './ui/CollapsibleSection';
@@ -393,10 +394,14 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   // usado no bloco de prioridade e nos cards por cliente, para que a ordem da
   // tabela detalhada nunca divirja do que essas duas seções mostram.
   const priorityEntries = useMemo(
-    () => buildClientPriorityEntries(filteredClients, data.clients),
-    [filteredClients, data.clients]
+    () => buildClientPriorityEntries(filteredClients, data.clients, period),
+    [filteredClients, data.clients, period]
   );
   const priorityGroups = useMemo(() => groupByPriorityTier(priorityEntries), [priorityEntries]);
+
+  useEffect(() => {
+    filteredClients.forEach((client) => debugDashboardClientSync(client, period));
+  }, [filteredClients, period]);
   const sortedClients = useMemo(
     () => [...priorityGroups.action_now, ...priorityGroups.attention, ...priorityGroups.healthy].map((entry) => entry.client),
     [priorityGroups]
@@ -613,6 +618,7 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
               <>
                 <ExecutiveSummary
                   clients={operationalClients}
+                  period={period}
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
                 />

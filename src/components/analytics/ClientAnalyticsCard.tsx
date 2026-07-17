@@ -4,7 +4,7 @@ import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilitie
 import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
 import { buildClientAnalyticsDecision, periodFromDashboardPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
-import { explainClientSyncState } from '../../lib/performance/explainClientSyncState';
+import { debugDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
 import { ClientLogo } from '../clients/ClientLogo';
@@ -55,9 +55,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
 
   // Rastreabilidade de "por que este cliente está com este status de sync" -
   // só em dev, nunca em produção (ver explainClientSyncState.ts).
-  if (import.meta.env.DEV) {
-    console.debug('[explainClientSyncState]', explainClientSyncState(performance, period));
-  }
+  debugDashboardClientSync(performance, period);
 
   const readiness = useMemo(() => evaluateClientOperationalReadiness({
     clientId: performance.clientId,

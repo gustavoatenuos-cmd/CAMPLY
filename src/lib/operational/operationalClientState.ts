@@ -9,6 +9,10 @@ import type {
   RunSummary,
 } from '../performance/globalPerformanceDashboard';
 import type { OperationalEntry } from '../../data/receivablesForecast';
+import {
+  explainOperationalSyncState,
+  type OperationalSyncExplanation,
+} from './operationalSyncState';
 
 export type OperationalSection<T> =
   | { status: 'not_evaluated' }
@@ -60,6 +64,7 @@ export interface OperationalSyncValue {
   latestAttempt: RunSummary | null;
   hasNewerPartial: boolean;
   hasNewerFailure: boolean;
+  explanation: OperationalSyncExplanation;
   evidence: OperationalSyncEvidence;
 }
 
@@ -133,6 +138,24 @@ function buildSyncState(
     latestAttemptId: performance.lastAttempt?.id ?? null,
     dataQuality: performance.dataQuality,
   };
+  const firstAccount = performance.accounts[0];
+  const explanation = explainOperationalSyncState({
+    selectedPeriod,
+    clientId: performance.clientId,
+    clientName: performance.clientName,
+    accounts: performance.accounts.map((account) => ({
+      clientMetaAssetId: account.clientMetaAssetId,
+      accountName: account.accountName,
+    })),
+    lastSuccessfulRun: performance.lastSuccessfulRun,
+    lastAttempt: performance.lastAttempt,
+    dataQuality: performance.dataQuality,
+    requestedPeriod: selectedPeriod,
+    exactRange: firstAccount
+      ? { dateStart: firstAccount.dateStart, dateStop: firstAccount.dateStop }
+      : null,
+    metrics: performance.metrics,
+  });
 
   return {
     status: 'available',
@@ -141,6 +164,7 @@ function buildSyncState(
     latestAttempt: performance.lastAttempt,
     hasNewerPartial: performance.hasNewerPartial,
     hasNewerFailure: performance.hasNewerFailure,
+    explanation,
     evidence,
   };
 }
@@ -149,20 +173,21 @@ function syncReadiness(sync: OperationalSyncState): OperationalReadinessArea {
   if (sync.status === 'not_evaluated') return readinessArea('not_evaluated');
   if (sync.status === 'absent') return readinessArea('absent', ['sync_absent'], 'Vincular ou sincronizar a conta Meta');
 
-  switch (sync.clientStatus) {
-    case 'available':
-    case 'no_delivery':
+  switch (sync.explanation.status) {
+    case 'success':
       return readinessArea('ready');
+    case 'no_account':
+      return readinessArea('blocked', ['sync_no_account'], sync.explanation.action);
+    case 'not_synced':
+      return readinessArea('blocked', ['sync_not_synced'], sync.explanation.action);
     case 'partial':
     case 'stale':
-      return readinessArea('limited', [`sync_${sync.clientStatus}`], 'Revisar a sincronização');
-    case 'syncing':
-      return readinessArea('limited', ['sync_in_progress'], 'Aguardar a sincronização');
+      return readinessArea('limited', [`sync_${sync.explanation.status}`], sync.explanation.action);
+    case 'failed':
     default:
-      return readinessArea('blocked', [`sync_${sync.clientStatus}`], 'Corrigir ou executar a sincronização');
+      return readinessArea('blocked', ['sync_failed'], sync.explanation.action);
   }
 }
-
 function profileReadiness(profile: OperationalSection<ClientAnalysisProfile>): OperationalReadinessArea {
   if (profile.status === 'not_evaluated') return readinessArea('not_evaluated');
   if (profile.status === 'absent') return readinessArea('absent', ['profile_absent'], 'Configurar metas do cliente');
