@@ -7,7 +7,7 @@ import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilitie
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
 import { getCampaignMetricCellsByObjective } from '../../lib/performance/campaignMetricCells';
-import { buildClientAnalyticsDecision, deriveMonthPeriod } from '../../lib/performance/clientAnalyticsDecision';
+import { buildClientAnalyticsDecision, periodFromDashboardPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { ClientAnalyticsStatusPanel } from './ClientAnalyticsStatusPanel';
 
 interface ClientCampaignDrawerProps {
@@ -45,6 +45,7 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
   const decision = useMemo(() => {
     if (!performance) return null;
     const now = new Date();
+    const timezone = performance.accounts[0]?.timezone || 'America/Sao_Paulo';
     return buildClientAnalyticsDecision({
       client: performance.client ?? { id: performance.clientId, name: performance.clientName, company: '' },
       analysisProfile: performance.analysisProfile,
@@ -56,10 +57,10 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
-      period: deriveMonthPeriod(now),
+      period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
-  }, [performance]);
+  }, [performance, period]);
 
   const readiness = useMemo(() => {
     if (!performance) return null;

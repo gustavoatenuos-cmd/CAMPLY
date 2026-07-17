@@ -51,6 +51,7 @@ describe('ClientAnalyticsCard', () => {
     render(
       <ClientAnalyticsCard
         performance={mockPerformance}
+        period="last_30d"
         onOpenCampaigns={vi.fn()}
         onOpenDetails={vi.fn()}
       />
@@ -88,6 +89,7 @@ describe('ClientAnalyticsCard', () => {
     render(
       <ClientAnalyticsCard
         performance={mockPerformance}
+        period="last_30d"
         onOpenCampaigns={vi.fn()}
         onOpenDetails={vi.fn()}
       />
@@ -140,6 +142,7 @@ describe('ClientAnalyticsCard', () => {
     render(
       <ClientAnalyticsCard
         performance={mockPerformance}
+        period="last_30d"
         onOpenCampaigns={vi.fn()}
         onOpenDetails={vi.fn()}
       />
@@ -188,6 +191,7 @@ describe('ClientAnalyticsCard', () => {
     render(
       <ClientAnalyticsCard
         performance={mockPerformance}
+        period="last_30d"
         onOpenCampaigns={vi.fn()}
         onOpenDetails={vi.fn()}
       />

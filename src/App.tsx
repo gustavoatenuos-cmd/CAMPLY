@@ -417,7 +417,7 @@ export default function App() {
               {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
               {/* Phase 1 — Analytics views */}
-              {activeView === 'clientAnalytics' && <ClientAnalyticsView data={data} updateData={updateData} />}
+              {activeView === 'clientAnalytics' && <ClientAnalyticsView data={data} updateData={updateData} setActiveView={setActiveView} />}
               {activeView === 'alertCenter' && <AlertCenterView data={data} updateData={updateData} />}
 
             </Suspense>

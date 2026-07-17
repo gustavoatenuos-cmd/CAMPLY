@@ -17,9 +17,8 @@ import { ClientLogo } from '../clients/ClientLogo';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
 import { OperationalHealthBadge } from './OperationalHealthBadge';
 import { PacingBar } from './PacingBar';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
-import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
+import { getClientPrimaryMetricView } from '../../lib/performance/clientAnalyticsDecision';
 import { operationalHealthTagFor, summarizeDiagnosis, type ClientPriorityEntry } from '../../lib/performance/clientPriorityGrouping';
 import { effectiveClientProfile } from './CommercialDecisionOverview';
 import { resolveClientPrimaryName } from '../../data/clientDisplay';
@@ -92,15 +91,11 @@ export function ClientPerformanceCardGrid({
         const profile = effectiveClientProfile(client);
 
         const spend = getMetric(client, 'spend');
-        const purchasesMetric = client.metrics?.['purchases'];
-        const purchases = getMetric(client, 'purchases');
-        const costPerPurchase = deriveCostMetric('cost_per_purchase', client.metrics?.['spend'], purchasesMetric);
-        const purchaseRoas = getMetric(client, 'purchase_roas');
-        const conversationsMetric = client.metrics?.['messaging_conversations_started_total'];
-        const conversations = getMetric(client, 'messaging_conversations_started_total');
-        const costPerConversation = deriveCostMetric('cost_per_messaging_conversation', client.metrics?.['spend'], conversationsMetric);
-        const linkClicks = getMetric(client, 'link_clicks');
-        const linkCtr = getMetric(client, 'link_ctr');
+        // Fonte única do que o card destaca como "resultado principal" - vem
+        // de profile.primaryConversionMetric, nunca de qual dado existe (um
+        // cliente configurado para mensagens não pode virar card de compras
+        // só porque a conta também tem alguma compra registrada).
+        const primaryView = getClientPrimaryMetricView(profile, client.metrics ?? {}, client.metricGroups ?? [], client.resolvedTargets ?? []);
 
         const primaryMetricId = profile?.primaryConversionMetric;
         const primaryEvaluation = primaryMetricId
@@ -154,26 +149,29 @@ export function ClientPerformanceCardGrid({
               </div>
 
               <div className="bg-brand-ink p-3 flex flex-col justify-center">
-                {purchases && purchases > 0 ? (
-                  <>
-                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Compras (ROAS)</p>
-                    <p className="text-lg font-black text-white">
-                      {formatNumber(purchases)} <span className="text-xs font-normal text-emerald-400">({purchaseRoas !== null ? purchaseRoas.toFixed(2) + 'x' : '—'})</span>
-                    </p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerPurchase}>{formatCurrency(costPerPurchase?.value ?? null, currency)}</TraceableMetricValue></p>
-                  </>
-                ) : conversations && conversations > 0 ? (
-                  <>
-                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Conversas (mensagens)</p>
-                    <p className="text-lg font-black text-white">{formatNumber(conversations)}</p>
-                    <p className="text-[10px] text-brand-muted mt-0.5">Custo: <TraceableMetricValue metric={costPerConversation}>{formatCurrency(costPerConversation?.value ?? null, currency)}</TraceableMetricValue></p>
-                  </>
+                {primaryView.status === 'no_profile' ? (
+                  <p className="text-xs text-brand-muted italic">Sem meta configurada</p>
+                ) : primaryView.status === 'unmapped' ? (
+                  <p className="text-xs text-brand-muted">{primaryView.label}</p>
                 ) : (
                   <>
-                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">Cliques no link (CTR)</p>
-                    <p className="text-lg font-black text-white">
-                      {formatNumber(linkClicks)} <span className="text-xs font-normal text-brand-muted">({linkCtr !== null ? linkCtr.toFixed(2) + '%' : '—'})</span>
+                    <p className="text-[10px] uppercase font-bold text-brand-muted mb-0.5">
+                      {primaryView.label}
+                      {primaryView.secondaryMetric ? ` (${primaryView.secondaryMetric.label})` : ''}
                     </p>
+                    <p className="text-lg font-black text-white">
+                      {formatNumber(primaryView.actual)}
+                      {primaryView.secondaryMetric && (
+                        <span className="text-xs font-normal text-emerald-400">
+                          {' '}({primaryView.secondaryMetric.value !== null ? primaryView.secondaryMetric.value.toFixed(2) + (primaryView.secondaryMetric.label === 'CTR' ? '%' : 'x') : '—'})
+                        </span>
+                      )}
+                    </p>
+                    {primaryView.costMetric && (
+                      <p className="text-[10px] text-brand-muted mt-0.5">
+                        {primaryView.costMetric.label}: {primaryView.costMetric.value !== null ? formatCurrency(primaryView.costMetric.value, currency) : 'Sem valor confiável'}
+                      </p>
+                    )}
                   </>
                 )}
               </div>

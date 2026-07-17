@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
+import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
-import { buildClientAnalyticsDecision, deriveMonthPeriod } from '../../lib/performance/clientAnalyticsDecision';
+import { buildClientAnalyticsDecision, periodFromDashboardPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
+import { explainClientSyncState } from '../../lib/performance/explainClientSyncState';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
 import { ClientLogo } from '../clients/ClientLogo';
@@ -10,11 +12,12 @@ import { Clock, HelpCircle } from 'lucide-react';
 
 interface ClientAnalyticsCardProps {
   performance: EnrichedGlobalClientPerformance;
+  period: DashboardPeriod;
   onOpenCampaigns: (performance: EnrichedGlobalClientPerformance) => void;
   onOpenDetails: (performance: EnrichedGlobalClientPerformance) => void;
 }
 
-export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
+export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
   const { client, metrics, analysisProfile } = performance;
   // client é o registro local do workspace (sem perfil analítico); o perfil
   // comercial de fato vem do nível superior, populado a partir de
@@ -33,6 +36,7 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
 
   const decision = useMemo(() => {
     const now = new Date();
+    const timezone = performance.accounts[0]?.timezone || 'America/Sao_Paulo';
     return buildClientAnalyticsDecision({
       client: client ?? { id: performance.clientId, name: performance.clientName, company: '' },
       analysisProfile: profile,
@@ -44,10 +48,16 @@ export function ClientAnalyticsCard({ performance, onOpenCampaigns, onOpenDetail
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
-      period: deriveMonthPeriod(now),
+      period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
-  }, [client, performance, profile]);
+  }, [client, performance, profile, period]);
+
+  // Rastreabilidade de "por que este cliente está com este status de sync" -
+  // só em dev, nunca em produção (ver explainClientSyncState.ts).
+  if (import.meta.env.DEV) {
+    console.debug('[explainClientSyncState]', explainClientSyncState(performance, period));
+  }
 
   const readiness = useMemo(() => evaluateClientOperationalReadiness({
     clientId: performance.clientId,

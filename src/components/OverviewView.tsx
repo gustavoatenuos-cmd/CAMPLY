@@ -20,6 +20,7 @@ import { motion } from 'framer-motion';
 import {
   compatibilityReasonMessage,
   loadAnalyticsCapabilities,
+  periodLabels,
   type AnalyticsCapabilityState,
   type DashboardPeriod,
 } from '../lib/performance/analyticsCapabilities';
@@ -32,7 +33,7 @@ import { PerformanceStatusBadge } from './performance/PerformanceStatusBadge';
 import { CommercialDecisionOverview, buildCommercialSummaries, clientSeverity, effectiveClientProfile } from './performance/CommercialDecisionOverview';
 import { ExecutiveSummary } from './performance/ExecutiveSummary';
 import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performance/clientPriorityGrouping';
-import { setPendingClientSelection } from '../lib/performance/pendingClientSelection';
+import { setPendingClientSelection, setPendingAnalyticsPeriod } from '../lib/performance/pendingClientSelection';
 import { isClientOperationallyActive } from '../data/receivablesForecast';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -48,15 +49,6 @@ interface OverviewViewProps {
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView: (view: ViewId) => void;
 }
-
-const periodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
-  today: 'Hoje',
-  last_7d: 'Últimos 7 dias',
-  last_30d: 'Últimos 30 dias',
-  last_90d: 'Últimos 90 dias',
-};
 
 const evaluationSeverity: Record<PerformanceStatus, number> = {
   critical: 6,
@@ -419,8 +411,9 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   }, []);
   const handleViewClientAnalytics = useCallback((clientId: string) => {
     setPendingClientSelection(clientId);
+    setPendingAnalyticsPeriod(period);
     setActiveView('clientAnalytics');
-  }, [setActiveView]);
+  }, [setActiveView, period]);
   const handleEditClient = useCallback((clientId: string) => {
     setPendingClientSelection(clientId);
     setActiveView('clients');

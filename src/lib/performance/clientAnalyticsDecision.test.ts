@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildClientAnalyticsDecision, deriveMonthPeriod, type ClientAnalyticsDecisionInput } from './clientAnalyticsDecision';
+import { buildClientAnalyticsDecision, deriveMonthPeriod, periodFromDashboardPeriod, getClientPrimaryMetricView, type ClientAnalyticsDecisionInput } from './clientAnalyticsDecision';
 import { defaultAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import type { GlobalMetricGroup, MetricContract } from './globalPerformanceDashboard';
 import type { PerformanceTarget, TargetKind } from './types';
@@ -340,5 +340,121 @@ describe('deriveMonthPeriod', () => {
   it('returns the first and last day of the reference date month', () => {
     expect(deriveMonthPeriod(new Date(2026, 6, 15))).toEqual({ start: '2026-07-01', end: '2026-07-31' });
     expect(deriveMonthPeriod(new Date(2026, 1, 10))).toEqual({ start: '2026-02-01', end: '2026-02-28' });
+  });
+});
+
+describe('periodFromDashboardPeriod', () => {
+  it('converts last_7d into a real 7-day range, not the current calendar month', () => {
+    const now = new Date('2026-07-17T12:00:00.000Z');
+    const result = periodFromDashboardPeriod('last_7d', 'America/Sao_Paulo', now);
+    expect(result).toEqual({ start: '2026-07-11', end: '2026-07-17' });
+    // Dividing a last_7d read by a full month's worth of days (what
+    // deriveMonthPeriod would produce) is exactly the bug this replaces.
+    expect(result).not.toEqual(deriveMonthPeriod(now));
+  });
+
+  it('converts this_month the same way deriveMonthPeriod would, for that one period', () => {
+    const now = new Date('2026-07-17T12:00:00.000Z');
+    const result = periodFromDashboardPeriod('this_month', 'America/Sao_Paulo', now);
+    expect(result.start).toBe('2026-07-01');
+  });
+});
+
+describe('getClientPrimaryMetricView', () => {
+  it('returns no_profile status when the client has no analysis profile', () => {
+    const view = getClientPrimaryMetricView(null, {}, []);
+    expect(view.status).toBe('no_profile');
+    expect(view.actual).toBeNull();
+    expect(view.costMetric).toBeNull();
+  });
+
+  it('returns unmapped status for a primaryConversionMetric the family map does not recognize', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'algo_customizado_sem_mapeamento' });
+    const view = getClientPrimaryMetricView(profile, {}, []);
+    expect(view.status).toBe('unmapped');
+    expect(view.label).toBe('algo_customizado_sem_mapeamento');
+  });
+
+  it('purchases: shows Compras as actual, CPA as cost, ROAS as secondary - never conversas/leads', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'purchases' });
+    const metrics = {
+      spend: metric(500),
+      purchases: metric(10),
+      purchase_value: metric(2000),
+      purchase_roas: metric(4),
+    };
+    const view = getClientPrimaryMetricView(profile, metrics, []);
+    expect(view.status).toBe('ok');
+    expect(view.label).toBe('Compras');
+    expect(view.actual).toBe(10);
+    expect(view.costMetric).toEqual({ label: 'CPA', value: 50 });
+    expect(view.secondaryMetric?.label).toBe('ROAS');
+  });
+
+  it('leads: shows Leads as actual and CPL as cost, no secondary metric', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'leads' });
+    const metrics = { spend: metric(300), leads: metric(15) };
+    const view = getClientPrimaryMetricView(profile, metrics, []);
+    expect(view.label).toBe('Leads');
+    expect(view.actual).toBe(15);
+    expect(view.costMetric).toEqual({ label: 'CPL', value: 20 });
+    expect(view.secondaryMetric).toBeNull();
+  });
+
+  it('messaging: shows Conversas as actual and Custo/Conversa as cost - not purchases', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'messaging_conversations_started_total' });
+    const metrics = {
+      spend: metric(400),
+      messaging_conversations_started_total: metric(20),
+      purchases: metric(3),
+    };
+    const view = getClientPrimaryMetricView(profile, metrics, []);
+    expect(view.label).toBe('Conversas');
+    expect(view.actual).toBe(20);
+    expect(view.costMetric?.label).toBe('Custo/Conversa');
+    expect(view.costMetric?.value).toBe(20);
+  });
+
+  it('cost per conversation uses MESSAGING-scoped metricGroups spend, not the account total spend (the reported bug)', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'messaging_conversations_started_total' });
+    // Conta tem gasto total de 1000 (misturando outros objetivos), mas só
+    // 200 desse gasto pertence ao grupo MESSAGING que carrega as conversas.
+    const accountMetrics = {
+      spend: metric(1000),
+      messaging_conversations_started_total: metric(20),
+    };
+    const metricGroups = [
+      group({
+        spend: metric(200),
+        messaging_conversations_started_total: metric(20),
+      }, { classifiedObjective: 'WHATSAPP' }),
+    ];
+    const view = getClientPrimaryMetricView(profile, accountMetrics, metricGroups);
+    // 200 / 20 = 10, nunca 1000 / 20 = 50.
+    expect(view.costMetric?.value).toBe(10);
+    expect(view.costMetric?.value).not.toBe(50);
+  });
+
+  it('falls back to account-level spend/result when no metricGroups carry the resolved metric', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'messaging_conversations_started_total' });
+    const accountMetrics = { spend: metric(400), messaging_conversations_started_total: metric(20) };
+    const view = getClientPrimaryMetricView(profile, accountMetrics, []);
+    expect(view.costMetric?.value).toBe(20);
+  });
+
+  it('returns a null cost value (never a guess) when neither scoped nor account-level data is available', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'messaging_conversations_started_total' });
+    const view = getClientPrimaryMetricView(profile, {}, []);
+    expect(view.actual).toBeNull();
+    expect(view.costMetric?.value).toBeNull();
+  });
+
+  it('computes gap against the minimum_results target when one is configured', () => {
+    const profile = defaultAnalysisProfile('c1', { primaryConversionMetric: 'leads' });
+    const metrics = { spend: metric(100), leads: metric(15) };
+    const targets = [target('leads', 'minimum_results', 20)];
+    const view = getClientPrimaryMetricView(profile, metrics, [], targets);
+    expect(view.target).toBe(20);
+    expect(view.gap).toBe(-5);
   });
 });

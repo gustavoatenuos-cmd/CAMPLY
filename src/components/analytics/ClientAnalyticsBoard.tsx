@@ -1,24 +1,29 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { readPendingClientSelection } from '../../lib/performance/pendingClientSelection';
+import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { ClientAnalyticsCard } from './ClientAnalyticsCard';
 import { ClientCampaignDrawer } from './ClientCampaignDrawer';
+import { ClientAnalyticsDetailDrawer } from './ClientAnalyticsDetailDrawer';
 import { Search, Filter } from 'lucide-react';
 
 interface ClientAnalyticsBoardProps {
   clients: EnrichedGlobalClientPerformance[];
-  period: any;
+  period: DashboardPeriod;
   loading: boolean;
+  onEditClient?: (clientId: string) => void;
 }
 
 type FilterStatus = 'ALL' | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NO_DATA' | 'NO_ACCOUNT';
 
-export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyticsBoardProps) {
+export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }: ClientAnalyticsBoardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
 
   const [selectedPerformance, setSelectedPerformance] = useState<EnrichedGlobalClientPerformance | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isCampaignDrawerOpen, setIsCampaignDrawerOpen] = useState(false);
+  const [selectedDetailPerformance, setSelectedDetailPerformance] = useState<EnrichedGlobalClientPerformance | null>(null);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
 
   // Aplica o cliente vindo do card "Ver análise" (OverviewView) assim que os
   // clientes carregarem — só uma vez, para não sobrescrever uma busca que o
@@ -63,12 +68,12 @@ export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyti
 
   const handleOpenCampaigns = (performance: EnrichedGlobalClientPerformance) => {
     setSelectedPerformance(performance);
-    setIsDrawerOpen(true);
+    setIsCampaignDrawerOpen(true);
   };
 
   const handleOpenDetails = (performance: EnrichedGlobalClientPerformance) => {
-    // For now we just open campaigns drawer. Future expansion for real detail view.
-    handleOpenCampaigns(performance);
+    setSelectedDetailPerformance(performance);
+    setIsDetailDrawerOpen(true);
   };
 
   return (
@@ -125,9 +130,10 @@ export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyti
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
             {filteredClients.map(c => (
-              <ClientAnalyticsCard 
-                key={c.clientId} 
-                performance={c} 
+              <ClientAnalyticsCard
+                key={c.clientId}
+                performance={c}
+                period={period}
                 onOpenCampaigns={handleOpenCampaigns}
                 onOpenDetails={handleOpenDetails}
               />
@@ -136,11 +142,19 @@ export function ClientAnalyticsBoard({ clients, period, loading }: ClientAnalyti
         )}
       </div>
 
-      <ClientCampaignDrawer 
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+      <ClientCampaignDrawer
+        isOpen={isCampaignDrawerOpen}
+        onClose={() => setIsCampaignDrawerOpen(false)}
         performance={selectedPerformance}
         period={period}
+      />
+      <ClientAnalyticsDetailDrawer
+        isOpen={isDetailDrawerOpen}
+        onClose={() => setIsDetailDrawerOpen(false)}
+        performance={selectedDetailPerformance}
+        period={period}
+        onOpenCampaigns={handleOpenCampaigns}
+        onEditClient={onEditClient}
       />
     </div>
   );
