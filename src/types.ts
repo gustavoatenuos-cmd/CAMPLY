@@ -27,31 +27,57 @@ export type ViewId =
 
 // ===================== CLIENT CATEGORY =====================
 
+// "Categoria da operação" - quem é o cliente (o quê ele vende / como opera).
+// Deliberadamente separada de "modelo de conversão" (como ele vende: WhatsApp,
+// formulário, loja física, checkout...), que é um campo à parte - misturar as
+// duas coisas num único enum impede representar, ex., um e-commerce que
+// converte por WhatsApp.
 export type ClientCategory =
-  | 'ecommerce'        // E-commerce: foco em ROAS, compras, CPP
-  | 'lead_generation'  // Captação: foco em CPL, formulários
-  | 'local_business'   // Negócio local: alcance, mensagens, CPM
-  | 'saas'             // Software: cadastros, trials
-  | 'content'          // Criadores: engajamento, alcance
-  | 'other';           // Personalizado
+  | 'ecommerce'          // E-commerce: foco em ROAS, compras, checkout
+  | 'local_business'     // Negócio local: alcance, mensagens, CPM
+  | 'service_provider'   // Prestador de serviços: leads, agendamentos
+  | 'delivery'           // Delivery: pedidos via app/WhatsApp
+  | 'infoproduct'        // Infoproduto: vendas/checkout de curso ou mentoria
+  | 'saas'               // Software: cadastros, trials
+  | 'real_estate'        // Imobiliário: leads qualificados, visitas
+  | 'marketplace'        // Marketplace: vendas multi-vendedor
+  | 'b2b'                // B2B: leads, reuniões agendadas
+  | 'wholesale'          // Atacado / Distribuição: leads, pedidos por volume
+  | 'franchise'          // Franquia: leads de interessados em franquear
+  | 'events'             // Eventos: inscrições, ingressos
+  | 'other';             // Personalizado
 
 export const CLIENT_CATEGORY_LABELS: Record<ClientCategory, string> = {
   ecommerce: 'E-commerce',
-  lead_generation: 'Geração de Leads',
-  local_business: 'Negócio Local',
-  saas: 'SaaS / App',
-  content: 'Conteúdo',
+  local_business: 'Negócio local',
+  service_provider: 'Prestador de serviços',
+  delivery: 'Delivery',
+  infoproduct: 'Infoproduto',
+  saas: 'SaaS / Aplicativo',
+  real_estate: 'Imobiliário',
+  marketplace: 'Marketplace',
+  b2b: 'B2B',
+  wholesale: 'Atacado / Distribuição',
+  franchise: 'Franquia',
+  events: 'Eventos',
   other: 'Outro',
 };
 
 // Primary metrics displayed per category
 export const CATEGORY_PRIMARY_METRICS: Record<ClientCategory, string[]> = {
-  ecommerce:       ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
-  lead_generation: ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
-  local_business:  ['spent', 'reach', 'cpm', 'cpm_msg', 'frequency', 'ctr'],
-  saas:            ['spent', 'cpl', 'signups', 'ctr', 'cpc', 'cpm'],
-  content:         ['spent', 'reach', 'impressions', 'ctr', 'cpm', 'frequency'],
-  other:           ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
+  ecommerce:        ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  local_business:   ['spent', 'reach', 'cpm', 'cpm_msg', 'frequency', 'ctr'],
+  service_provider: ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  delivery:         ['spent', 'cpa', 'results', 'ctr', 'cpc', 'cpm'],
+  infoproduct:      ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  saas:             ['spent', 'cpl', 'signups', 'ctr', 'cpc', 'cpm'],
+  real_estate:      ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  marketplace:      ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  b2b:              ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  wholesale:        ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  franchise:        ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  events:           ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
+  other:            ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
 };
 
 export interface ClientBenchmarks {

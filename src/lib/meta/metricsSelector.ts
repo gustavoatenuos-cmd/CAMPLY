@@ -111,12 +111,19 @@ const OBJECTIVE_METRICS: Record<string, string[]> = {
 
 // Métricas primárias por categoria de cliente (fallback quando sem objetivo)
 const CATEGORY_METRICS: Record<ClientCategory, string[]> = {
-  ecommerce:       ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
-  lead_generation: ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
-  local_business:  ['spent', 'reach', 'cpm', 'frequency', 'ctr', 'results'],
-  saas:            ['spent', 'cpl', 'results', 'ctr', 'cpc', 'cpm'],
-  content:         ['spent', 'reach', 'impressions', 'ctr', 'cpm', 'frequency'],
-  other:           ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
+  ecommerce:        ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  local_business:   ['spent', 'reach', 'cpm', 'frequency', 'ctr', 'results'],
+  service_provider: ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  delivery:         ['spent', 'cpa', 'results', 'ctr', 'cpc', 'cpm'],
+  infoproduct:      ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  saas:             ['spent', 'cpl', 'results', 'ctr', 'cpc', 'cpm'],
+  real_estate:      ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  marketplace:      ['spent', 'roas', 'cpa', 'purchases', 'ctr', 'cpm'],
+  b2b:              ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  wholesale:        ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  franchise:        ['spent', 'cpl', 'leads', 'ctr', 'cpc', 'cpm'],
+  events:           ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
+  other:            ['spent', 'results', 'cpr', 'ctr', 'cpc', 'cpm'],
 };
 
 /**
