@@ -423,12 +423,12 @@ export function ClientFormModal({
         <section className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4">
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-400">Analytics &amp; Alertas de Custo</p>
-            <p className="mt-1 text-sm text-brand-muted">Define a categoria do cliente para exibir as métricas certas e configurar alertas automáticos.</p>
+            <p className="mt-1 text-sm text-brand-muted">Define a categoria da operação do cliente para exibir as métricas certas e configurar alertas automáticos.</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {/* Categoria */}
             <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-brand-soft">Categoria do cliente</span>
+              <span className="mb-2 block text-sm font-semibold text-brand-soft">Categoria da operação</span>
               <select
                 value={category}
                 onChange={e => setCategory(e.target.value as ClientCategory | '')}
