@@ -14,7 +14,7 @@ function baseGlobalClient(overrides: Partial<GlobalClientPerformance> = {}): Glo
     clientId: 'c1',
     clientName: 'Test Global Client',
     clientStatus: 'available',
-    accounts: [],
+    accounts: [{ clientMetaAssetId: 'asset-1', accountName: 'Conta 1', dateStart: '2026-06-18', dateStop: '2026-07-17' } as any],
     metrics: {},
     metricGroups: [],
     resolvedTargets: [],
@@ -22,8 +22,8 @@ function baseGlobalClient(overrides: Partial<GlobalClientPerformance> = {}): Glo
     budgetPacing: null,
     score: { value: 80, status: 'healthy' } as any,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: null,
-    lastAttempt: null,
+    lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+    lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
@@ -60,7 +60,7 @@ describe('ClientPerformanceCardGrid', () => {
   });
 
   it('renders a card per client using the same priority-entry data as the priority board', () => {
-    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient], 'last_30d');
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
     // resolveClientPrimaryName trusts the backend-resolved client.clientName
     // over anything derived from the local workspace record — no duplicate/
@@ -75,7 +75,8 @@ describe('ClientPerformanceCardGrid', () => {
     const contractorNamedWorkspaceClient: Client = { ...workspaceClient, id: 'c2', name: 'Joao', company: 'Donatellus' };
     const entries = buildClientPriorityEntries(
       [baseGlobalClient({ clientId: 'c2', clientName: 'Donatellus' })],
-      [contractorNamedWorkspaceClient]
+      [contractorNamedWorkspaceClient],
+      'last_30d',
     );
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
     expect(screen.getByText('Donatellus')).toBeInTheDocument();
@@ -84,7 +85,7 @@ describe('ClientPerformanceCardGrid', () => {
 
   it('shows the operational health badge and the diagnosis summary for a client missing data and a profile', () => {
     const client = baseGlobalClient({ analysisProfile: null, score: { value: null, status: 'unavailable' } as any });
-    const entries = buildClientPriorityEntries([client], [workspaceClient]);
+    const entries = buildClientPriorityEntries([client], [workspaceClient], 'last_30d');
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
     // Sem perfil e sem métricas confiáveis: "Poucos dados" tem prioridade de exibição sobre o
     // rótulo genérico "Crítico" (ver operationalHealthTagFor), mas o diagnóstico completo lista os dois motivos.
@@ -95,7 +96,7 @@ describe('ClientPerformanceCardGrid', () => {
   it('calls onViewAnalytics and onEditClient with the client id', () => {
     const onViewAnalytics = vi.fn();
     const onEditClient = vi.fn();
-    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient], 'last_30d');
     render(
       <ClientPerformanceCardGrid
         entries={entries}
@@ -127,11 +128,11 @@ describe('ClientPerformanceCardGrid', () => {
         metrics: {},
         budgetPacing: null,
         dataQuality: { status: 'complete', reason: null },
-        lastSuccessfulRun: null,
-        lastAttempt: null,
+        lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+        lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
       }],
     });
-    const entries = buildClientPriorityEntries([client], [workspaceClient]);
+    const entries = buildClientPriorityEntries([client], [workspaceClient], 'last_30d');
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
 
     expect(screen.queryByText('Conta Principal')).not.toBeInTheDocument();
@@ -140,7 +141,7 @@ describe('ClientPerformanceCardGrid', () => {
   });
 
   it('does not render a deactivate/reactivate button when the prop is omitted', () => {
-    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient], 'last_30d');
     render(<ClientPerformanceCardGrid entries={entries} period="last_30d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
     expect(screen.queryByTestId('client-card-deactivate-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('client-card-reactivate-button')).not.toBeInTheDocument();
@@ -148,7 +149,7 @@ describe('ClientPerformanceCardGrid', () => {
 
   it('shows "Desativar" for an operationally active client and calls onDeactivateClient with its id', () => {
     const onDeactivateClient = vi.fn();
-    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient], 'last_30d');
     render(
       <ClientPerformanceCardGrid
         entries={entries}
@@ -166,7 +167,7 @@ describe('ClientPerformanceCardGrid', () => {
 
   it('shows "Reativar" for an operationally inactive client and calls onReactivateClient with its id', () => {
     const onReactivateClient = vi.fn();
-    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient]);
+    const entries = buildClientPriorityEntries([baseGlobalClient()], [workspaceClient], 'last_30d');
     render(
       <ClientPerformanceCardGrid
         entries={entries}

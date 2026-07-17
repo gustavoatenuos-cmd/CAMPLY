@@ -2,6 +2,9 @@ import type { Client } from '../../types';
 import { clientSeverity, effectiveClientProfile } from '../../components/performance/CommercialDecisionOverview';
 import type { GlobalClientPerformance, GlobalPerformanceAccount, MetricContract } from './globalPerformanceDashboard';
 import { describeDataQualityReason } from './dataQualityReason';
+import type { DashboardPeriod } from './analyticsCapabilities';
+import { explainDashboardClientSync } from './explainClientSyncState';
+import { explainOperationalSyncState } from '../operational/operationalSyncState';
 
 /**
  * Camada de leitura para o dashboard operacional (OverviewView): agrupa os
@@ -35,19 +38,6 @@ export interface ClientPriorityEntry {
 
 export type AccountReliability = 'reliable' | 'problem' | 'not_synced';
 
-// clientStatus cujo estado da sincronização já não é sucesso limpo, mas
-// também não é falha nem "sem dados" — mesmo balde de atenção que
-// clientSeverity() usa (CommercialDecisionOverview.tsx).
-const ATTENTION_SYNC_STATUSES: GlobalClientPerformance['clientStatus'][] = ['partial', 'syncing'];
-
-// Nenhuma tentativa real de sincronização para o período selecionado — nem
-// "nunca sincronizado" nem "sincronizado noutro período" é o mesmo problema
-// que uma sincronização parcial/falha real: não existe motivo técnico para
-// reportar, só falta rodar o sync deste período. Nunca deve virar "exige
-// ação agora" nem "sincronização parcial" (ver ClientPerformanceCardGrid/
-// ClientPriorityBoard e a regra de contrato período<->sync do dashboard).
-const NOT_SYNCED_STATUSES: GlobalClientPerformance['clientStatus'][] = ['never_synced', 'period_not_synced'];
-
 function isCostMetric(metricId: string): boolean {
   return metricId.startsWith('cost_per') || metricId === 'cpm';
 }
@@ -63,22 +53,26 @@ function metricNumber(metric: MetricContract | undefined): number | null {
  * cliente (ver regra de contrato período<->sync do dashboard).
  */
 export function classifyAccountReliability(
-  account: Pick<GlobalPerformanceAccount, 'dataQuality' | 'lastSuccessfulRun' | 'lastAttempt'>
+  account: Pick<GlobalPerformanceAccount, 'clientMetaAssetId' | 'accountName' | 'dateStart' | 'dateStop' | 'metrics' | 'dataQuality' | 'lastSuccessfulRun' | 'lastAttempt'>,
+  selectedPeriod: DashboardPeriod,
 ): AccountReliability {
-  if (!account.lastAttempt) return 'not_synced';
-  if (!account.lastSuccessfulRun) return 'problem';
-  if (account.dataQuality.status !== 'complete') return 'problem';
-  if (
-    account.lastAttempt
-    && account.lastAttempt.id !== account.lastSuccessfulRun.id
-    && account.lastAttempt.status !== 'success'
-  ) {
-    return 'problem';
-  }
-  return 'reliable';
+  const explanation = explainOperationalSyncState({
+    selectedPeriod,
+    clientId: account.clientMetaAssetId,
+    clientName: account.accountName,
+    accounts: [{ clientMetaAssetId: account.clientMetaAssetId, accountName: account.accountName }],
+    lastSuccessfulRun: account.lastSuccessfulRun,
+    lastAttempt: account.lastAttempt,
+    dataQuality: account.dataQuality,
+    requestedPeriod: selectedPeriod,
+    exactRange: { dateStart: account.dateStart, dateStop: account.dateStop },
+    metrics: account.metrics,
+  });
+  if (explanation.status === 'not_synced') return 'not_synced';
+  if (explanation.status === 'success' && explanation.canUseData) return 'reliable';
+  return 'problem';
 }
-
-function collectReasons(client: GlobalClientPerformance): ClientDiagnosisReason[] {
+function collectReasons(client: GlobalClientPerformance, selectedPeriod: DashboardPeriod): ClientDiagnosisReason[] {
   const reasons: ClientDiagnosisReason[] = [];
   const profile = effectiveClientProfile(client);
 
@@ -88,10 +82,11 @@ function collectReasons(client: GlobalClientPerformance): ClientDiagnosisReason[
   if (!client.analysisProfile) reasons.push('no_profile');
   else if (!client.analysisProfile.analysisEnabled) reasons.push('analysis_disabled');
 
-  if (client.clientStatus === 'failed') reasons.push('sync_failed');
-  else if (client.clientStatus === 'stale') reasons.push('sync_stale');
-  else if (NOT_SYNCED_STATUSES.includes(client.clientStatus)) reasons.push('not_synced');
-  else if (ATTENTION_SYNC_STATUSES.includes(client.clientStatus)) reasons.push('sync_partial');
+  const sync = explainDashboardClientSync(client, selectedPeriod);
+  if (sync.status === 'failed') reasons.push('sync_failed');
+  else if (sync.status === 'stale') reasons.push('sync_stale');
+  else if (sync.status === 'not_synced' || sync.status === 'no_account') reasons.push('not_synced');
+  else if (sync.status === 'partial') reasons.push('sync_partial');
 
   // Se o motivo já é "não sincronizado", clientSeverity() também classificaria
   // como no_data (never_synced está nesse balde) — mas insufficient_data
@@ -151,10 +146,11 @@ function tierFor(client: GlobalClientPerformance, reasons: ClientDiagnosisReason
 
 export function buildClientPriorityEntries(
   clients: GlobalClientPerformance[],
-  workspaceClients: Client[]
+  workspaceClients: Client[],
+  selectedPeriod: DashboardPeriod,
 ): ClientPriorityEntry[] {
   return clients.map((client) => {
-    const reasons = collectReasons(client);
+    const reasons = collectReasons(client, selectedPeriod);
     return {
       client,
       workspaceClient: workspaceClients.find((candidate) => candidate.id === client.clientId),

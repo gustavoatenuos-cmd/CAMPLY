@@ -19,7 +19,12 @@ const performance = {
   clientId: 'client-1',
   clientName: 'Cliente 1',
   clientStatus: 'available',
-  accounts: [],
+  accounts: [{
+    clientMetaAssetId: 'asset-1',
+    accountName: 'Conta 1',
+    dateStart: '2026-07-11',
+    dateStop: '2026-07-17',
+  } as any],
   metrics: {},
   metricGroups: [],
   resolvedTargets: [],

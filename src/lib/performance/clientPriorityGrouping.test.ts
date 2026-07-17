@@ -19,7 +19,7 @@ function baseClient(overrides: Partial<GlobalClientPerformance> = {}): GlobalCli
     clientId: 'c1',
     clientName: 'Cliente Um',
     clientStatus: 'available',
-    accounts: [],
+    accounts: [{ clientMetaAssetId: 'asset-1', accountName: 'Conta 1', dateStart: '2026-06-18', dateStop: '2026-07-17' } as any],
     metrics: {},
     metricGroups: [],
     resolvedTargets: [],
@@ -27,8 +27,8 @@ function baseClient(overrides: Partial<GlobalClientPerformance> = {}): GlobalCli
     budgetPacing: null,
     score: { value: 80, status: 'healthy', summary: '', confidence: 90, coveragePercent: 100 } as any,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: null,
-    lastAttempt: null,
+    lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+    lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
@@ -66,10 +66,11 @@ describe('classifyAccountReliability', () => {
   it('classifies an account with a complete data quality and a successful run as reliable', () => {
     const account: any = {
       dataQuality: { status: 'complete', reason: null },
+      metrics: { spend: metric(100) },
       lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
       lastAttempt: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
     };
-    expect(classifyAccountReliability(account)).toBe('reliable');
+    expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('reliable');
   });
 
   it('classifies an account with a real failed attempt but no successful run as a problem', () => {
@@ -78,7 +79,7 @@ describe('classifyAccountReliability', () => {
       lastSuccessfulRun: null,
       lastAttempt: { id: '1', status: 'failed', startedAt: '', finishedAt: '2026-01-01', terminationReason: 'meta_api_error' },
     };
-    expect(classifyAccountReliability(account)).toBe('problem');
+    expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('problem');
   });
 
   it('classifies an account with no attempt at all for the period as not_synced, never as problem', () => {
@@ -88,23 +89,24 @@ describe('classifyAccountReliability', () => {
       lastSuccessfulRun: null,
       lastAttempt: null,
     };
-    expect(classifyAccountReliability(account)).toBe('not_synced');
+    expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('not_synced');
   });
 
-  it('classifies an account whose latest attempt failed after a previous success as a problem', () => {
+  it('keeps an account reliable when a trusted success exists before a newer failed attempt', () => {
     const account: any = {
       dataQuality: { status: 'partial', reason: 'partial_sync' },
+      metrics: { spend: metric(100) },
       lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
       lastAttempt: { id: '2', status: 'failed', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'error' },
     };
-    expect(classifyAccountReliability(account)).toBe('problem');
+    expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('reliable');
   });
 });
 
 describe('buildClientPriorityEntries', () => {
   it('flags a client with no analysis profile as no_profile / exige ação agora', () => {
     const client = baseClient({ analysisProfile: null, score: { value: null, status: 'unavailable' } as any });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.tier).toBe('action_now');
     expect(entry.reasons).toContain('no_profile');
   });
@@ -114,8 +116,10 @@ describe('buildClientPriorityEntries', () => {
       clientStatus: 'failed',
       analysisProfile: profile(),
       dataQuality: { status: 'unavailable', reason: 'sync_failed' },
+      lastSuccessfulRun: null,
+      lastAttempt: { id: 'run-failed', status: 'failed', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'sync_failed' },
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('sync_failed');
     expect(entry.tier).toBe('action_now');
   });
@@ -125,11 +129,30 @@ describe('buildClientPriorityEntries', () => {
       clientStatus: 'partial',
       analysisProfile: profile(),
       dataQuality: { status: 'partial', reason: 'partial_sync' },
+      lastSuccessfulRun: null,
+      lastAttempt: { id: 'run-partial', status: 'partial', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'partial_sync' },
       score: { value: 60, status: 'attention' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('sync_partial');
     expect(entry.tier).toBe('attention');
+  });
+
+  it('uses trusted success instead of classifying a newer partial attempt as sync_partial', () => {
+    const client = baseClient({
+      clientStatus: 'partial',
+      analysisProfile: profile(),
+      metrics: { spend: metric(500), leads: metric(20) },
+      dataQuality: { status: 'partial', reason: 'rate_limit_exhausted' },
+      lastAttempt: { id: 'run-partial', status: 'partial', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'rate_limit_exhausted' },
+      hasNewerPartial: true,
+    });
+
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
+
+    expect(entry.reasons).not.toContain('sync_partial');
+    expect(entry.reasons).toEqual(['healthy']);
+    expect(entry.tier).toBe('healthy');
   });
 
   it('flags a client with spend but no conversions as no_conversion / attention', () => {
@@ -138,7 +161,7 @@ describe('buildClientPriorityEntries', () => {
       metrics: { spend: metric(500), leads: metric(0) },
       score: { value: 55, status: 'attention' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('no_conversion');
   });
 
@@ -157,7 +180,7 @@ describe('buildClientPriorityEntries', () => {
       } as any],
       score: { value: 20, status: 'critical' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('cost_above_target');
     expect(entry.tier).toBe('action_now');
   });
@@ -168,7 +191,7 @@ describe('buildClientPriorityEntries', () => {
       metrics: { spend: metric(500), leads: metric(20) },
       score: { value: 90, status: 'healthy' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toEqual(['healthy']);
     expect(entry.tier).toBe('healthy');
   });
@@ -189,7 +212,7 @@ describe('buildClientPriorityEntries', () => {
       } as any],
       score: { value: 55, status: 'attention' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('goal_below_target');
     expect(entry.reasons).not.toContain('cost_above_target');
     expect(entry.reasons).not.toContain('healthy');
@@ -212,7 +235,7 @@ describe('buildClientPriorityEntries', () => {
       } as any],
       score: { value: 30, status: 'critical' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('goal_below_target');
     expect(entry.reasons).not.toContain('cost_above_target');
   });
@@ -232,7 +255,7 @@ describe('buildClientPriorityEntries', () => {
       } as any],
       score: { value: 20, status: 'critical' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('cost_above_target');
     expect(entry.reasons).not.toContain('goal_below_target');
   });
@@ -243,12 +266,12 @@ describe('buildClientPriorityEntries', () => {
     // nenhuma tentativa para o período exibido. Rotular como "Sincronização
     // parcial" era o bug relatado; o motivo certo é "Período não sincronizado",
     // e o tier continua attention (não action_now, não é falha real).
-    const syncing = baseClient({ clientId: 'syncing', clientStatus: 'syncing', analysisProfile: profile() });
-    const periodNotSynced = baseClient({ clientId: 'pns', clientStatus: 'period_not_synced', analysisProfile: profile() });
-    const neverSynced = baseClient({ clientId: 'never', clientStatus: 'never_synced', analysisProfile: profile() });
-    const [syncingEntry] = buildClientPriorityEntries([syncing], []);
-    const [pnsEntry] = buildClientPriorityEntries([periodNotSynced], []);
-    const [neverEntry] = buildClientPriorityEntries([neverSynced], []);
+    const syncing = baseClient({ clientId: 'syncing', clientStatus: 'syncing', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: { id: 'run-running', status: 'running', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: null, terminationReason: null } });
+    const periodNotSynced = baseClient({ clientId: 'pns', clientStatus: 'period_not_synced', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: null });
+    const neverSynced = baseClient({ clientId: 'never', clientStatus: 'never_synced', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: null });
+    const [syncingEntry] = buildClientPriorityEntries([syncing], [], 'last_30d');
+    const [pnsEntry] = buildClientPriorityEntries([periodNotSynced], [], 'last_30d');
+    const [neverEntry] = buildClientPriorityEntries([neverSynced], [], 'last_30d');
 
     expect(syncingEntry.reasons).toContain('sync_partial');
     expect(syncingEntry.reasons).not.toContain('not_synced');
@@ -268,8 +291,8 @@ describe('buildClientPriorityEntries', () => {
     const missingProfile = baseClient({ clientId: 'missing', analysisProfile: null });
     const disabledProfile = baseClient({ clientId: 'disabled', analysisProfile: profile({ analysisEnabled: false }) });
 
-    const [missingEntry] = buildClientPriorityEntries([missingProfile], []);
-    const [disabledEntry] = buildClientPriorityEntries([disabledProfile], []);
+    const [missingEntry] = buildClientPriorityEntries([missingProfile], [], 'last_30d');
+    const [disabledEntry] = buildClientPriorityEntries([disabledProfile], [], 'last_30d');
 
     expect(missingEntry.reasons).toContain('no_profile');
     expect(missingEntry.tier).toBe('action_now');
@@ -295,7 +318,7 @@ describe('buildClientPriorityEntries', () => {
       } as any],
       score: { value: 10, status: 'critical' } as any,
     });
-    const [entry] = buildClientPriorityEntries([client], []);
+    const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.tier).toBe('action_now');
     expect(entry.reasons).not.toEqual(['healthy']);
   });
@@ -305,7 +328,7 @@ describe('groupByPriorityTier', () => {
   it('buckets entries into the three tiers, ordering action_now first', () => {
     const healthy = baseClient({ clientId: 'h', analysisProfile: profile(), metrics: { spend: metric(100), leads: metric(5) }, score: { value: 90, status: 'healthy' } as any });
     const critical = baseClient({ clientId: 'x', analysisProfile: null, score: { value: null, status: 'unavailable' } as any });
-    const entries = buildClientPriorityEntries([healthy, critical], []);
+    const entries = buildClientPriorityEntries([healthy, critical], [], 'last_30d');
     const grouped = groupByPriorityTier(entries);
     expect(grouped.action_now.map((e) => e.client.clientId)).toEqual(['x']);
     expect(grouped.healthy.map((e) => e.client.clientId)).toEqual(['h']);

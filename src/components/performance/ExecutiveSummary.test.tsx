@@ -18,7 +18,7 @@ function account(overrides: Partial<GlobalPerformanceAccount> = {}): GlobalPerfo
     timezone: 'America/Sao_Paulo',
     dateStart: null,
     dateStop: null,
-    metrics: {},
+    metrics: { spend: { value: 100, available: true } as any },
     budgetPacing: null,
     dataQuality: { status: 'complete', reason: null },
     lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
@@ -33,7 +33,7 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
     clientName: 'Cliente 1',
     clientStatus: 'available',
     accounts: [account()],
-    metrics: {},
+    metrics: { spend: { value: 100, available: true } as any },
     metricGroups: [],
     resolvedTargets: [],
     evaluations: [],
@@ -67,7 +67,7 @@ describe('ExecutiveSummary', () => {
       })],
     });
 
-    render(<ExecutiveSummary clients={[reliableClient, problemClient]} statusFilter="all" onStatusFilterChange={() => {}} />);
+    render(<ExecutiveSummary period="last_30d" clients={[reliableClient, problemClient]} statusFilter="all" onStatusFilterChange={() => {}} />);
 
     expect(screen.getByText('Contas com sync confiável')).toBeInTheDocument();
     expect(screen.getByText('Contas com problema')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('ExecutiveSummary', () => {
   });
 
   it('renders the health filter chips with counts', () => {
-    render(<ExecutiveSummary clients={[client()]} statusFilter="all" onStatusFilterChange={() => {}} />);
+    render(<ExecutiveSummary period="last_30d" clients={[client()]} statusFilter="all" onStatusFilterChange={() => {}} />);
     expect(screen.getByText(/Saudáveis/)).toBeInTheDocument();
     expect(screen.getByText(/Atenção/)).toBeInTheDocument();
     expect(screen.getByText(/Críticos/)).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('ExecutiveSummary', () => {
       metrics: { purchases: { value: 10, available: true, currency: null, completenessStatus: 'complete' } as any },
     });
 
-    render(<ExecutiveSummary clients={[withSpend]} statusFilter="all" onStatusFilterChange={() => {}} />);
+    render(<ExecutiveSummary period="last_30d" clients={[withSpend]} statusFilter="all" onStatusFilterChange={() => {}} />);
 
     expect(screen.getByText('Investimento total')).toBeInTheDocument();
     expect(screen.getByText('Conversas totais')).toBeInTheDocument();
