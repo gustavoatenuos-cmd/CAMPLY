@@ -147,6 +147,8 @@ BEGIN
       a.client_id,
       r.id,
       r.status,
+      r.requested_period,
+      r.run_scope,
       r.started_at,
       r.finished_at,
       r.termination_reason,
@@ -172,6 +174,8 @@ BEGIN
       a.ad_account_id,
       r.id,
       r.status,
+      r.requested_period,
+      r.run_scope,
       r.started_at,
       r.finished_at,
       r.termination_reason,
@@ -600,14 +604,46 @@ BEGIN
                 'status', ls.status,
                 'startedAt', ls.started_at,
                 'finishedAt', ls.finished_at,
-                'terminationReason', ls.termination_reason
+                'terminationReason', ls.termination_reason,
+                'requestedPeriod', ls.requested_period,
+                'runScope', ls.run_scope,
+                'dateStart', ls.date_start,
+                'dateStop', ls.date_stop,
+                'metricsCount', (
+                  SELECT count(DISTINCT m.metric_id)::int
+                  FROM public.meta_normalized_metrics m
+                  WHERE m.user_id = v_user_id
+                    AND m.sync_run_id = ls.id
+                    AND m.integration_id = ls.integration_id
+                    AND m.ad_account_id = ls.ad_account_id
+                ),
+                'metricGroupsCount', (
+                  SELECT count(*)::int
+                  FROM campaign_groups cg
+                  WHERE cg.client_meta_asset_id = ls.client_meta_asset_id
+                )
               ) END,
               'lastAttempt', CASE WHEN la.id IS NULL THEN NULL ELSE jsonb_build_object(
                 'id', la.id,
                 'status', la.status,
                 'startedAt', la.started_at,
                 'finishedAt', la.finished_at,
-                'terminationReason', la.termination_reason
+                'terminationReason', la.termination_reason,
+                'requestedPeriod', la.requested_period,
+                'runScope', la.run_scope,
+                'dateStart', la.date_start,
+                'dateStop', la.date_stop,
+                'metricsCount', (
+                  SELECT count(DISTINCT m.metric_id)::int
+                  FROM public.meta_normalized_metrics m
+                  WHERE m.user_id = v_user_id
+                    AND m.sync_run_id = la.id
+                ),
+                'metricGroupsCount', (
+                  SELECT count(*)::int
+                  FROM campaign_groups cg
+                  WHERE cg.client_meta_asset_id = la.client_meta_asset_id
+                )
               ) END
             )
             ORDER BY a.account_name, a.meta_asset_id
@@ -698,7 +734,22 @@ BEGIN
             'status', ls.status,
             'startedAt', ls.started_at,
             'finishedAt', ls.finished_at,
-            'terminationReason', ls.termination_reason
+            'terminationReason', ls.termination_reason,
+            'requestedPeriod', ls.requested_period,
+            'runScope', ls.run_scope,
+            'dateStart', ls.date_start,
+            'dateStop', ls.date_stop,
+            'metricsCount', (
+              SELECT count(DISTINCT m.metric_id)::int
+              FROM public.meta_normalized_metrics m
+              WHERE m.user_id = v_user_id
+                AND m.sync_run_id = ls.id
+            ),
+            'metricGroupsCount', (
+              SELECT count(*)::int
+              FROM campaign_groups cg
+              WHERE cg.client_id = ls.client_id
+            )
           )
           FROM latest_success ls
           WHERE ls.client_id = ac.client_id
@@ -711,7 +762,22 @@ BEGIN
             'status', la.status,
             'startedAt', la.started_at,
             'finishedAt', la.finished_at,
-            'terminationReason', la.termination_reason
+            'terminationReason', la.termination_reason,
+            'requestedPeriod', la.requested_period,
+            'runScope', la.run_scope,
+            'dateStart', la.date_start,
+            'dateStop', la.date_stop,
+            'metricsCount', (
+              SELECT count(DISTINCT m.metric_id)::int
+              FROM public.meta_normalized_metrics m
+              WHERE m.user_id = v_user_id
+                AND m.sync_run_id = la.id
+            ),
+            'metricGroupsCount', (
+              SELECT count(*)::int
+              FROM campaign_groups cg
+              WHERE cg.client_id = la.client_id
+            )
           )
           FROM latest_attempt la
           WHERE la.client_id = ac.client_id

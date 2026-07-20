@@ -27,6 +27,11 @@ const analysisProfilesMigration = readFileSync(
   'utf8'
 );
 
+const runPeriodEvidenceMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260717000000_dashboard_status_survives_newer_incomplete_attempt.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -111,5 +116,16 @@ describe('operational dashboard reliability migration safety', () => {
     expect(analysisProfilesMigration).not.toMatch(/pg_get_functiondef/i);
     expect(analysisProfilesMigration).not.toMatch(/regexp_replace/i);
     expect(analysisProfilesMigration).not.toMatch(/v_definition\s*:=\s*replace/i);
+  });
+});
+
+describe('dashboard run period evidence migration safety', () => {
+  it('returns requested period and run evidence in dashboard RunSummary JSON', () => {
+    expect(runPeriodEvidenceMigration).toContain("'requestedPeriod', ls.requested_period");
+    expect(runPeriodEvidenceMigration).toContain("'requestedPeriod', la.requested_period");
+    expect(runPeriodEvidenceMigration).toContain("'runScope', ls.run_scope");
+    expect(runPeriodEvidenceMigration).toContain("'dateStart', ls.date_start");
+    expect(runPeriodEvidenceMigration).toContain("'metricsCount'");
+    expect(runPeriodEvidenceMigration).toContain("'metricGroupsCount'");
   });
 });

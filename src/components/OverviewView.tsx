@@ -42,6 +42,10 @@ import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
 import { syncMetaAsset } from '../lib/meta/metaSyncService';
+import { getCamplyBuildInfo } from '../lib/diagnostics/buildInfo';
+import { getSupabaseSessionDiagnostics } from '../lib/supabase';
+import { publishOperationalSyncLedger } from '../lib/operational/operationalSyncLedger';
+import { resolveDashboardPeriod, writeDashboardPeriodToUrl } from '../lib/performance/dashboardPeriodUrl';
 
 
 interface OverviewViewProps {
@@ -223,7 +227,7 @@ function DashboardUnavailable({
 
 export function OverviewView({ data, updateData, setActiveView }: OverviewViewProps) {
   const storedFilters = useMemo(loadStoredFilters, []);
-  const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'last_90d');
+  const [period, setPeriod] = useState<DashboardPeriod>(() => resolveDashboardPeriod(window.location.search, storedFilters.period, 'last_90d'));
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
@@ -246,6 +250,21 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
       subsegment: subsegmentFilter,
     } satisfies StoredDashboardFilters));
   }, [period, search, segmentFilter, statusFilter, subsegmentFilter]);
+
+  useEffect(() => {
+    writeDashboardPeriodToUrl(period);
+  }, [period]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const diagnostics = {
+      build: getCamplyBuildInfo(),
+      session: getSupabaseSessionDiagnostics(),
+      selectedPeriod: period,
+    };
+    window.CAMPLY_DIAGNOSTICS = diagnostics;
+    console.debug('[CAMPLY_DIAGNOSTICS]', diagnostics);
+  }, [period]);
 
   const loadCapabilities = useCallback(async () => {
     setCapabilitiesLoading(true);
@@ -401,6 +420,10 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
 
   useEffect(() => {
     filteredClients.forEach((client) => debugDashboardClientSync(client, period));
+  }, [filteredClients, period]);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    publishOperationalSyncLedger(filteredClients, period);
   }, [filteredClients, period]);
   const sortedClients = useMemo(
     () => [...priorityGroups.action_now, ...priorityGroups.attention, ...priorityGroups.healthy].map((entry) => entry.client),
