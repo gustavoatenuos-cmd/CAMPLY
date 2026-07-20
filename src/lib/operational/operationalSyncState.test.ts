@@ -5,6 +5,8 @@ const successRun: OperationalSyncRun = {
   id: 'success-1',
   status: 'success',
   requestedPeriod: 'last_30d',
+  dateStart: '2026-06-21',
+  dateStop: '2026-07-20',
   startedAt: '2026-07-17T10:00:00.000Z',
   finishedAt: '2026-07-17T10:05:00.000Z',
   terminationReason: null,
@@ -14,6 +16,8 @@ const partialRun: OperationalSyncRun = {
   id: 'partial-1',
   status: 'partial',
   requestedPeriod: 'last_30d',
+  dateStart: '2026-06-21',
+  dateStop: '2026-07-20',
   startedAt: '2026-07-17T11:00:00.000Z',
   finishedAt: '2026-07-17T11:05:00.000Z',
   terminationReason: 'rate_limit_exhausted',
@@ -29,24 +33,24 @@ function explain(overrides: Partial<Parameters<typeof explainOperationalSyncStat
     lastAttempt: successRun,
     dataQuality: { status: 'complete', reason: null },
     requestedPeriod: 'last_30d',
-    exactRange: { dateStart: '2026-06-18', dateStop: '2026-07-17' },
+    exactRange: { dateStart: '2026-06-21', dateStop: '2026-07-20' },
     metrics: { spend: { value: 100, available: true } as any },
     ...overrides,
   });
 }
 
 describe('explainOperationalSyncState', () => {
-  it('does not let a this_month sync validate last_30d', () => {
+  it('does not let a this_month sync validate last_30d when it starts after the selected range', () => {
     const state = explain({
       requestedPeriod: 'this_month',
-      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month' },
-      lastAttempt: { ...successRun, requestedPeriod: 'this_month' },
+      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01' },
+      lastAttempt: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01' },
     });
 
-    expect(state.status).toBe('not_synced');
+    expect(state.status).toBe('partial');
     expect(state.canUseData).toBe(false);
     expect(state.syncedPeriod).toBe('this_month');
-    expect(state.reason).toContain('sincronizado');
+    expect(state.reason).toContain('intervalo');
   });
 
   it('does not accept a legacy run without explicit period as a selected-period sync', () => {
@@ -72,18 +76,18 @@ describe('explainOperationalSyncState', () => {
     expect(state.action).toContain('Sincronizar');
   });
 
-  it('explains when the last known successful sync belongs to another period', () => {
+  it('accepts another requestedPeriod when its date range covers the selected range', () => {
     const state = explain({
       selectedPeriod: 'last_7d',
       requestedPeriod: 'this_month',
-      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month' },
-      lastAttempt: { ...successRun, requestedPeriod: 'this_month' },
+      exactRange: { dateStart: '2026-07-14', dateStop: '2026-07-20' },
+      lastSuccessfulRun: { ...successRun, requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20' },
+      lastAttempt: { ...successRun, requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20' },
     });
 
-    expect(state.status).toBe('not_synced');
-    expect(state.syncedPeriod).toBe('this_month');
-    expect(state.reason).toContain('sincronizado');
-    expect(state.action).toContain('Sincronizar');
+    expect(state.status).toBe('success');
+    expect(state.syncedPeriod).toBe('last_90d');
+    expect(state.coverage?.coveringRequestedPeriod).toBe('last_90d');
   });
 
   it('accepts a successful last_30d sync for a last_30d dashboard', () => {
@@ -122,7 +126,8 @@ describe('explainOperationalSyncState', () => {
       selectedPeriod: 'last_7d',
       requestedPeriod: 'this_month',
       lastSuccessfulRun: null,
-      lastAttempt: { ...partialRun, requestedPeriod: 'this_month' },
+      exactRange: { dateStart: '2026-07-14', dateStop: '2026-07-20' },
+      lastAttempt: { ...partialRun, requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-10' },
       dataQuality: { status: 'partial', reason: 'rate_limit_exhausted' },
     });
 

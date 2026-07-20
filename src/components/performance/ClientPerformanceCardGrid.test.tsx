@@ -22,8 +22,8 @@ function baseGlobalClient(overrides: Partial<GlobalClientPerformance> = {}): Glo
     budgetPacing: null,
     score: { value: 80, status: 'healthy' } as any,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
-    lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+    lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+    lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
@@ -145,8 +145,8 @@ describe('ClientPerformanceCardGrid', () => {
         metrics: {},
         budgetPacing: null,
         dataQuality: { status: 'complete', reason: null },
-        lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
-        lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+        lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+        lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
       }],
     });
     const entries = buildClientPriorityEntries([client], [workspaceClient], 'last_30d');
