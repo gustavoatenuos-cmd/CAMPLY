@@ -134,6 +134,9 @@ const server = http.createServer((req, res) => {
   } else if (parsedUrl.query.date_preset === 'last_30d') {
     date_start = getSaoPauloDate(-29);
     date_stop = todaySP;
+  } else if (parsedUrl.query.date_preset === 'last_90d') {
+    date_start = getSaoPauloDate(-89);
+    date_stop = todaySP;
   } else if (parsedUrl.query.date_preset === 'today') {
     date_start = todaySP;
     date_stop = todaySP;
