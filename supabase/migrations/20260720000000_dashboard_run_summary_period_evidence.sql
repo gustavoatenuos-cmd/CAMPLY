@@ -1,37 +1,7 @@
--- Fix get_global_performance_dashboard_v2: clientStatus regressed to
--- 'partial'/'failed' whenever the *latest* sync attempt for the requested
--- period was partial/failed, even when an earlier, still-usable successful
--- run for that exact same period already existed (latest_success).
---
--- Root cause: the CASE building 'clientStatus' had two branches ("newer
--- attempt failed"/"newer attempt partial" after JOINing latest_attempt to
--- latest_success on client_meta_asset_id) that unconditionally overrode the
--- status to 'failed'/'partial' the moment ANY newer attempt for that period
--- came back incomplete - discarding the fact that a reliable success (and
--- its metrics) was still sitting right there. In practice: user clicks
--- "Sincronizar período", the new run happens to complete 'partial' (e.g. a
--- transient rate limit), and the Dashboard now reports the client as having
--- "no successful sync" even though the previous run's data is fully valid
--- and already being served in 'metrics'/'metricGroups'.
---
--- This exact nuance ("reliable success exists, but the latest attempt for
--- this period was incomplete") was already correctly modeled by
--- 'dataQuality.status'/'reason' ('partial' / 'newer_incomplete_attempt') and
--- by 'hasNewerPartial'/'hasNewerFailure' - only the top-level 'clientStatus'
--- field, which most of the frontend actually branches on
--- (clientPriorityGrouping.ts, clientOperationalReadiness.ts,
--- clientAnalyticsDecision.ts), ignored them and regressed anyway.
---
--- Fix: drop the two demotion branches from 'clientStatus' entirely. When a
--- latest_success exists, clientStatus falls through to the no_delivery/
--- stale/available checks based on that success, same as if no newer attempt
--- had run at all. The newer-incomplete-attempt nuance keeps surfacing via
--- dataQuality/hasNewerPartial/hasNewerFailure, which callers that want the
--- finer-grained signal ("último dado confiável em uso; tentativa mais
--- recente parcial") already read.
---
--- No other part of this function changes - copied verbatim from
--- 20260710000000_stabilize_upsert_client_analysis_profile_and_hierarchy.sql.
+-- Add real run-period evidence to get_global_performance_dashboard_v2 RunSummary JSON.
+-- This migration intentionally redefines the function with CREATE OR REPLACE
+-- because older 20260717000000 may already be applied in production and will
+-- not run again after file edits.
 
 CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2(
   p_period TEXT DEFAULT 'this_month',
@@ -147,6 +117,8 @@ BEGIN
       a.client_id,
       r.id,
       r.status,
+      r.requested_period,
+      r.run_scope,
       r.started_at,
       r.finished_at,
       r.termination_reason,
@@ -172,6 +144,8 @@ BEGIN
       a.ad_account_id,
       r.id,
       r.status,
+      r.requested_period,
+      r.run_scope,
       r.started_at,
       r.finished_at,
       r.termination_reason,
@@ -600,14 +574,46 @@ BEGIN
                 'status', ls.status,
                 'startedAt', ls.started_at,
                 'finishedAt', ls.finished_at,
-                'terminationReason', ls.termination_reason
+                'terminationReason', ls.termination_reason,
+                'requestedPeriod', ls.requested_period,
+                'runScope', ls.run_scope,
+                'dateStart', ls.date_start,
+                'dateStop', ls.date_stop,
+                'metricsCount', (
+                  SELECT count(DISTINCT m.metric_id)::int
+                  FROM public.meta_normalized_metrics m
+                  WHERE m.user_id = v_user_id
+                    AND m.sync_run_id = ls.id
+                    AND m.integration_id = ls.integration_id
+                    AND m.ad_account_id = ls.ad_account_id
+                ),
+                'metricGroupsCount', (
+                  SELECT count(*)::int
+                  FROM campaign_groups cg
+                  WHERE cg.client_meta_asset_id = ls.client_meta_asset_id
+                )
               ) END,
               'lastAttempt', CASE WHEN la.id IS NULL THEN NULL ELSE jsonb_build_object(
                 'id', la.id,
                 'status', la.status,
                 'startedAt', la.started_at,
                 'finishedAt', la.finished_at,
-                'terminationReason', la.termination_reason
+                'terminationReason', la.termination_reason,
+                'requestedPeriod', la.requested_period,
+                'runScope', la.run_scope,
+                'dateStart', la.date_start,
+                'dateStop', la.date_stop,
+                'metricsCount', (
+                  SELECT count(DISTINCT m.metric_id)::int
+                  FROM public.meta_normalized_metrics m
+                  WHERE m.user_id = v_user_id
+                    AND m.sync_run_id = la.id
+                ),
+                'metricGroupsCount', (
+                  SELECT count(*)::int
+                  FROM campaign_groups cg
+                  WHERE cg.client_meta_asset_id = la.client_meta_asset_id
+                )
               ) END
             )
             ORDER BY a.account_name, a.meta_asset_id
@@ -698,7 +704,22 @@ BEGIN
             'status', ls.status,
             'startedAt', ls.started_at,
             'finishedAt', ls.finished_at,
-            'terminationReason', ls.termination_reason
+            'terminationReason', ls.termination_reason,
+            'requestedPeriod', ls.requested_period,
+            'runScope', ls.run_scope,
+            'dateStart', ls.date_start,
+            'dateStop', ls.date_stop,
+            'metricsCount', (
+              SELECT count(DISTINCT m.metric_id)::int
+              FROM public.meta_normalized_metrics m
+              WHERE m.user_id = v_user_id
+                AND m.sync_run_id = ls.id
+            ),
+            'metricGroupsCount', (
+              SELECT count(*)::int
+              FROM campaign_groups cg
+              WHERE cg.client_id = ls.client_id
+            )
           )
           FROM latest_success ls
           WHERE ls.client_id = ac.client_id
@@ -711,7 +732,22 @@ BEGIN
             'status', la.status,
             'startedAt', la.started_at,
             'finishedAt', la.finished_at,
-            'terminationReason', la.termination_reason
+            'terminationReason', la.termination_reason,
+            'requestedPeriod', la.requested_period,
+            'runScope', la.run_scope,
+            'dateStart', la.date_start,
+            'dateStop', la.date_stop,
+            'metricsCount', (
+              SELECT count(DISTINCT m.metric_id)::int
+              FROM public.meta_normalized_metrics m
+              WHERE m.user_id = v_user_id
+                AND m.sync_run_id = la.id
+            ),
+            'metricGroupsCount', (
+              SELECT count(*)::int
+              FROM campaign_groups cg
+              WHERE cg.client_id = la.client_id
+            )
           )
           FROM latest_attempt la
           WHERE la.client_id = ac.client_id

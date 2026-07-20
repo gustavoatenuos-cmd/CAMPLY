@@ -28,7 +28,7 @@ const analysisProfilesMigration = readFileSync(
 );
 
 const runPeriodEvidenceMigration = readFileSync(
-  new URL('../../../supabase/migrations/20260717000000_dashboard_status_survives_newer_incomplete_attempt.sql', import.meta.url),
+  new URL('../../../supabase/migrations/20260720000000_dashboard_run_summary_period_evidence.sql', import.meta.url),
   'utf8'
 );
 
