@@ -35,8 +35,8 @@ const performance = {
   lastSuccessfulRun: {
     id: 'run-success',
     status: 'success',
-    requestedPeriod: 'last_7d',
-    dateStart: '2026-07-14',
+    requestedPeriod: 'last_90d',
+    dateStart: '2026-04-22',
     dateStop: '2026-07-20',
     startedAt: '2026-07-17T10:00:00.000Z',
     finishedAt: '2026-07-17T10:05:00.000Z',
@@ -45,8 +45,8 @@ const performance = {
   lastAttempt: {
     id: 'run-success',
     status: 'success',
-    requestedPeriod: 'last_7d',
-    dateStart: '2026-07-14',
+    requestedPeriod: 'last_90d',
+    dateStart: '2026-04-22',
     dateStop: '2026-07-20',
     startedAt: '2026-07-17T10:00:00.000Z',
     finishedAt: '2026-07-17T10:05:00.000Z',

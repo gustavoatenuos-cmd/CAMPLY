@@ -146,15 +146,15 @@ async function run() {
     assertEqual(runs, '1', 'Run persisted');
   });
 
-  await runScenario('this_month_exact_account_source', assets.simple, accessToken, (res, json, q) => {
+  await runScenario('last_90d_exact_account_source', assets.simple, accessToken, (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status');
     assertEqual(json.success, true, 'JSON Success');
     const runContract = q(`SELECT requested_period || ':' || requested_level || ':' || run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(runContract, 'this_month:campaign:full_account', 'Official monthly run contract');
-    const exactRange = q(`SELECT date_start = date_trunc('month', now() AT TIME ZONE timezone)::date AND date_stop = (now() AT TIME ZONE timezone)::date FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(exactRange, 't', 'Monthly run persisted the exact account-timezone range');
+    assertEqual(runContract, 'last_90d:campaign:full_account', 'Official last_90d run contract');
+    const exactRange = q(`SELECT date_start = ((now() AT TIME ZONE timezone)::date - 89) AND date_stop = (now() AT TIME ZONE timezone)::date FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(exactRange, 't', 'Last 90d run persisted the exact account-timezone range');
     const accountSource = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account'`);
-    assertEqual(accountSource, 't', 'Monthly run persisted official account-level metrics');
+    assertEqual(accountSource, 't', 'Last 90d run persisted official account-level metrics');
     const pausedCampaign = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);
     assertEqual(pausedCampaign, '1', 'Paused campaign with period delivery remains collected');
     const pausedAdset = q(`SELECT count(*) FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);

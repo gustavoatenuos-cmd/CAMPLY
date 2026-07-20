@@ -134,6 +134,9 @@ const server = http.createServer((req, res) => {
   } else if (parsedUrl.query.date_preset === 'last_30d') {
     date_start = getSaoPauloDate(-29);
     date_stop = todaySP;
+  } else if (parsedUrl.query.date_preset === 'last_90d') {
+    date_start = getSaoPauloDate(-89);
+    date_stop = todaySP;
   } else if (parsedUrl.query.date_preset === 'today') {
     date_start = todaySP;
     date_stop = todaySP;
@@ -398,6 +401,10 @@ const server = http.createServer((req, res) => {
             { campaign_id: 'camp_123', adset_id: 'adset_123', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], date_start, date_stop },
             { campaign_id: 'camp_456', adset_id: 'adset_456', impressions: '500', spend: '25.00', actions: [{action_type: 'link_click', value: '10'}], date_start, date_stop },
             { campaign_id: 'camp_789', adset_id: 'adset_789', impressions: '200', spend: '10.00', actions: [{action_type: 'post_engagement', value: '20'}], date_start, date_stop }
+          ]
+        : insightLevel === 'account'
+        ? [
+            { impressions: '1700', spend: '85.00', actions: [{action_type: 'lead', value: '5'}, {action_type: 'link_click', value: '10'}, {action_type: 'post_engagement', value: '20'}], reach: '1300', date_start, date_stop }
           ]
         : [
             { campaign_id: 'camp_123', impressions: '1000', spend: '50.00', actions: [{action_type: 'lead', value: '5'}], reach: '800', date_start, date_stop },

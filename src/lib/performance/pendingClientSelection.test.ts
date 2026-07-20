@@ -34,8 +34,8 @@ describe('pendingAnalyticsPeriod', () => {
   it('carries the Dashboard-selected period across to Analytics - the "Ver análise" handoff', () => {
     setPendingAnalyticsPeriod('last_7d');
     expect(readPendingAnalyticsPeriod()).toBe('last_7d');
-    setPendingAnalyticsPeriod('this_month');
-    expect(readPendingAnalyticsPeriod()).toBe('this_month');
+    setPendingAnalyticsPeriod('today_and_yesterday');
+    expect(readPendingAnalyticsPeriod()).toBe('today_and_yesterday');
   });
 
   it('ignores a stale/invalid stored value instead of returning garbage', () => {

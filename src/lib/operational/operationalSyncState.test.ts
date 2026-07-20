@@ -4,8 +4,8 @@ import { explainOperationalSyncState, type OperationalSyncRun } from './operatio
 const successRun: OperationalSyncRun = {
   id: 'success-1',
   status: 'success',
-  requestedPeriod: 'last_30d',
-  dateStart: '2026-06-21',
+  requestedPeriod: 'last_90d',
+  dateStart: '2026-04-22',
   dateStop: '2026-07-20',
   startedAt: '2026-07-17T10:00:00.000Z',
   finishedAt: '2026-07-17T10:05:00.000Z',
@@ -15,8 +15,8 @@ const successRun: OperationalSyncRun = {
 const partialRun: OperationalSyncRun = {
   id: 'partial-1',
   status: 'partial',
-  requestedPeriod: 'last_30d',
-  dateStart: '2026-06-21',
+  requestedPeriod: 'last_90d',
+  dateStart: '2026-04-22',
   dateStop: '2026-07-20',
   startedAt: '2026-07-17T11:00:00.000Z',
   finishedAt: '2026-07-17T11:05:00.000Z',
@@ -32,7 +32,7 @@ function explain(overrides: Partial<Parameters<typeof explainOperationalSyncStat
     lastSuccessfulRun: successRun,
     lastAttempt: successRun,
     dataQuality: { status: 'complete', reason: null },
-    requestedPeriod: 'last_30d',
+    requestedPeriod: 'last_90d',
     exactRange: { dateStart: '2026-06-21', dateStop: '2026-07-20' },
     metrics: { spend: { value: 100, available: true } as any },
     ...overrides,
@@ -43,14 +43,13 @@ describe('explainOperationalSyncState', () => {
   it('does not let a this_month sync validate last_30d when it starts after the selected range', () => {
     const state = explain({
       requestedPeriod: 'this_month',
-      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01' },
-      lastAttempt: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01' },
+      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-20' },
+      lastAttempt: { ...successRun, requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-20' },
     });
 
-    expect(state.status).toBe('partial');
+    expect(state.status).toBe('not_synced');
     expect(state.canUseData).toBe(false);
-    expect(state.syncedPeriod).toBe('this_month');
-    expect(state.reason).toContain('intervalo');
+    expect(state.trustedRun).toBeNull();
   });
 
   it('does not accept a legacy run without explicit period as a selected-period sync', () => {
@@ -73,7 +72,7 @@ describe('explainOperationalSyncState', () => {
     expect(state.status).toBe('not_synced');
     expect(state.trustedRun).toBeNull();
     expect(state.latestAttempt).toBeNull();
-    expect(state.action).toContain('Sincronizar');
+    expect(state.action).toContain('Integra');
   });
 
   it('accepts another requestedPeriod when its date range covers the selected range', () => {
@@ -127,7 +126,7 @@ describe('explainOperationalSyncState', () => {
       requestedPeriod: 'this_month',
       lastSuccessfulRun: null,
       exactRange: { dateStart: '2026-07-14', dateStop: '2026-07-20' },
-      lastAttempt: { ...partialRun, requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-10' },
+      lastAttempt: { ...partialRun, requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-10' },
       dataQuality: { status: 'partial', reason: 'rate_limit_exhausted' },
     });
 

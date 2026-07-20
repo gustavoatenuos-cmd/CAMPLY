@@ -76,14 +76,16 @@ function newest(runs: SyncCoverageRun[]): SyncCoverageRun | null {
 
 function formatRunPeriod(period: DashboardPeriod | null): string {
   const labels: Record<DashboardPeriod, string> = {
-    this_month: 'M?s atual',
+    this_month: 'Mês atual',
     this_week: 'Semana atual',
     today: 'Hoje',
-    last_7d: '?ltimos 7 dias',
-    last_30d: '?ltimos 30 dias',
-    last_90d: '?ltimos 90 dias',
+    yesterday: 'Ontem',
+    today_and_yesterday: 'Hoje e ontem',
+    last_7d: 'Últimos 7 dias',
+    last_30d: 'Últimos 30 dias',
+    last_90d: 'Últimos 90 dias',
   };
-  return period ? labels[period] : 'per?odo sincronizado';
+  return period ? labels[period] : 'período sincronizado';
 }
 
 export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): SyncCoverageResolution {
@@ -101,19 +103,20 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
       selectedDateStart,
       selectedDateStop,
       canUseData: false,
-      reason: 'Intervalo selecionado indispon?vel para validar cobertura de sincroniza??o.',
-      action: 'Selecione um per?odo expl?cito e sincronize novamente.',
+      reason: 'Intervalo selecionado indisponível para validar cobertura de sincronização.',
+      action: 'Selecione um período explícito e sincronize novamente.',
     };
   }
 
-  const successfulRuns = runs.filter((run) => run.status === 'success');
+  const officialRuns = runs.filter((run) => requestedPeriod(run) === 'last_90d');
+  const successfulRuns = officialRuns.filter((run) => run.status === 'success');
   const coveringRun = newest(successfulRuns.filter((run) => coversRange(run, selectedDateStart, selectedDateStop)));
-  const latestIncomplete = newest(runs.filter((run) => run.status !== 'success'));
+  const latestIncomplete = newest(officialRuns.filter((run) => run.status !== 'success'));
 
   if (coveringRun) {
     const stale = Boolean(input.stale);
     const incompleteWarning = latestIncomplete && runStartedAt(latestIncomplete) > runStartedAt(coveringRun)
-      ? '?ltimo dado confi?vel em uso; tentativa mais recente incompleta.'
+      ? 'Último dado confiável em uso; tentativa mais recente incompleta.'
       : undefined;
     return {
       status: stale ? 'stale' : 'covered',
@@ -126,7 +129,7 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
       canUseData: true,
       warning: incompleteWarning,
       reason: `${formatRunPeriod(input.selectedPeriod)} coberto pelo sync de ${formatRunPeriod(requestedPeriod(coveringRun))}.`,
-      action: stale ? 'Sincronizar o per?odo novamente.' : 'Usar o ?ltimo dado confi?vel.',
+      action: stale ? 'Sincronizar o período novamente.' : 'Usar o último dado confiável.',
     };
   }
 
@@ -141,12 +144,12 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
       selectedDateStart,
       selectedDateStop,
       canUseData: false,
-      reason: 'Existe sincroniza??o confi?vel cobrindo apenas parte do intervalo selecionado.',
+      reason: 'Existe sincronização confiável cobrindo apenas parte do intervalo selecionado.',
       action: 'Sincronizar o intervalo completo antes de analisar.',
     };
   }
 
-  const failedRun = newest(runs.filter((run) => run.status === 'failed' && overlapsRange(run, selectedDateStart, selectedDateStop)));
+  const failedRun = newest(officialRuns.filter((run) => run.status === 'failed' && overlapsRange(run, selectedDateStart, selectedDateStop)));
   if (failedRun) {
     return {
       status: 'failed',
@@ -157,12 +160,12 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
       selectedDateStart,
       selectedDateStop,
       canUseData: false,
-      reason: 'A tentativa de sincroniza??o que alcan?a este intervalo falhou.',
-      action: 'Corrigir a falha e sincronizar o per?odo novamente.',
+      reason: 'A tentativa de sincronização que alcança este intervalo falhou.',
+      action: 'Corrigir a falha e sincronizar o período novamente.',
     };
   }
 
-  const partialAttempt = newest(runs.filter((run) => (run.status === 'partial' || run.status === 'running') && overlapsRange(run, selectedDateStart, selectedDateStop)));
+  const partialAttempt = newest(officialRuns.filter((run) => (run.status === 'partial' || run.status === 'running') && overlapsRange(run, selectedDateStart, selectedDateStop)));
   if (partialAttempt) {
     return {
       status: 'partial_coverage',
@@ -173,7 +176,7 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
       selectedDateStart,
       selectedDateStop,
       canUseData: false,
-      reason: 'A tentativa dispon?vel cobre apenas parte do intervalo ou terminou parcialmente.',
+      reason: 'A tentativa disponível cobre apenas parte do intervalo ou terminou parcialmente.',
       action: 'Sincronizar o intervalo completo antes de analisar.',
     };
   }
@@ -187,7 +190,7 @@ export function resolveSyncCoverageForPeriod(input: ResolveSyncCoverageInput): S
     selectedDateStart,
     selectedDateStop,
     canUseData: false,
-    reason: 'Este intervalo ainda n?o foi sincronizado.',
-    action: 'Sincronizar per?odo',
+    reason: 'Base Meta Ads não sincronizada.',
+    action: 'Ir para Integração Meta Ads',
   };
 }

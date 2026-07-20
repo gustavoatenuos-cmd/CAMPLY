@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Image as ImageIcon,
-  Layers3,
   LoaderCircle,
   RefreshCw,
   Scale,
@@ -22,7 +21,6 @@ import {
   type MetaHierarchyLevel,
   type MetaHierarchyPage,
 } from '../../lib/meta/performanceHierarchyService';
-import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { ClientMetaAccount } from '../../lib/meta/clientMetaAssetService';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
@@ -238,42 +236,6 @@ export function MetaHierarchyExplorer({
     }
   };
 
-  const syncEntity = async (item: MetaHierarchyItem, level: MetaHierarchyLevel) => {
-    const key = `${level}:${item.id}`;
-    setLoadingKey(key);
-    setError(null);
-    try {
-      await syncMetaAsset({
-        clientMetaAssetId: account.clientMetaAssetId,
-        period,
-        requestedLevel: level === 'campaign' ? 'adset' : 'creative',
-        campaignIds: level === 'campaign' ? [item.id] : [],
-        adsetIds: level === 'adset' ? [item.id] : [],
-        adIds: level === 'ad' ? [item.id] : [],
-      });
-      setChildren((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      const childLevel = nextLevel[level];
-      if (childLevel) {
-        const page = await loadMetaHierarchy({
-          clientMetaAssetId: account.clientMetaAssetId,
-          period,
-          level: childLevel,
-          parentId: item.id,
-        });
-        setChildren((current) => ({ ...current, [key]: page }));
-        setExpanded((current) => ({ ...current, [key]: true }));
-      }
-      onChanged?.();
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : 'A sincronização seletiva falhou.');
-    } finally {
-      setLoadingKey(null);
-    }
-  };
 
   if (loading) return <div className="flex min-h-48 items-center justify-center gap-2 rounded-xl border border-brand-line text-brand-muted"><LoaderCircle className="animate-spin" size={18} /> Carregando campanhas...</div>;
   if (error && !root) return <StateMessage title="Não foi possível carregar a hierarquia" impact={error} action="Tentar novamente" onAction={() => void refreshRoot()} />;
@@ -301,7 +263,6 @@ export function MetaHierarchyExplorer({
           loadingKey={loadingKey}
           onExpand={loadChildren}
           onLoadMore={loadMoreChildren}
-          onSync={syncEntity}
           onTarget={setTargetItem}
           onReconcile={setReconciliationItem}
         />
@@ -335,7 +296,6 @@ function EntityNode({
   loadingKey,
   onExpand,
   onLoadMore,
-  onSync,
   onTarget,
   onReconcile,
 }: {
@@ -347,7 +307,6 @@ function EntityNode({
   loadingKey: string | null;
   onExpand: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
   onLoadMore: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
-  onSync: (item: MetaHierarchyItem, level: MetaHierarchyLevel) => Promise<void>;
   onTarget: (item: MetaHierarchyItem) => void;
   onReconcile: (item: MetaHierarchyItem) => void;
 }) {
@@ -380,7 +339,6 @@ function EntityNode({
         <div className="flex flex-wrap gap-2">
           {level === 'campaign' && <button data-testid={`meta-target-${item.id}`} type="button" onClick={() => onTarget(item)} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-bold text-brand-soft"><Target size={13} /> Metas</button>}
           <button data-testid={`meta-reconcile-${level}-${item.id}`} type="button" onClick={() => onReconcile(item)} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-bold text-brand-soft"><Scale size={13} /> Conciliar</button>
-          {childLevel && <button type="button" disabled={busy} onClick={() => void onSync(item, level)} className="inline-flex items-center gap-1 rounded-lg bg-brand-green/10 px-2.5 py-1.5 text-xs font-bold text-brand-green disabled:opacity-60"><Layers3 size={13} /> Sincronizar {levelLabels[childLevel]}</button>}
         </div>
       </div>
 
@@ -394,10 +352,10 @@ function EntityNode({
 
       {expanded[key] && childLevel && (
         <div className="mt-4 space-y-3 border-l border-brand-line pl-3 sm:pl-5">
-          {page?.state === 'period_not_synced' && <StateMessage title={`${levelLabels[childLevel]} ainda não sincronizado`} impact="Execute a sincronização seletiva deste nível para carregar dados oficiais." action={`Sincronizar ${levelLabels[childLevel]}`} onAction={() => void onSync(item, level)} />}
-          {page?.state === 'empty' && <StateMessage title={`Nenhum ${levelLabels[childLevel].toLowerCase()} encontrado`} impact="A coleta foi concluída, mas não retornou entidades neste escopo." action="Sincronizar novamente" onAction={() => void onSync(item, level)} />}
+          {page?.state === 'period_not_synced' && <StateMessage title={`${levelLabels[childLevel]} ainda não sincronizado`} impact="Atualize a base dos últimos 90 dias na Integração Meta Ads para carregar este nível." />}
+          {page?.state === 'empty' && <StateMessage title={`Nenhum ${levelLabels[childLevel].toLowerCase()} encontrado`} impact="A coleta foi concluída, mas não retornou entidades neste escopo." />}
           {page?.items.map((child) => (
-            <EntityNode key={child.id} item={child} level={childLevel} account={account} children={children} expanded={expanded} loadingKey={loadingKey} onExpand={onExpand} onLoadMore={onLoadMore} onSync={onSync} onTarget={onTarget} onReconcile={onReconcile} />
+            <EntityNode key={child.id} item={child} level={childLevel} account={account} children={children} expanded={expanded} loadingKey={loadingKey} onExpand={onExpand} onLoadMore={onLoadMore} onTarget={onTarget} onReconcile={onReconcile} />
           ))}
           {page && page.items.length < page.total && <button type="button" onClick={() => void onLoadMore(item, level)} disabled={loadingKey === `${key}:more`} className="w-full rounded-lg border border-brand-line px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60">{loadingKey === `${key}:more` ? 'Carregando...' : `Carregar mais ${levelLabels[childLevel].toLowerCase()}s`}</button>}
         </div>

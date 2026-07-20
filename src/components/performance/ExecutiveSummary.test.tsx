@@ -21,8 +21,8 @@ function account(overrides: Partial<GlobalPerformanceAccount> = {}): GlobalPerfo
     metrics: { spend: { value: 100, available: true } as any },
     budgetPacing: null,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
-    lastAttempt: { id: '1', status: 'success', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
+    lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
+    lastAttempt: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
     ...overrides,
   };
 }
@@ -58,12 +58,12 @@ describe('ExecutiveSummary', () => {
       clientId: 'c2',
       // Precisa de uma tentativa real (lastAttempt não nulo) para contar como
       // "problema" — sem tentativa alguma é not_synced, não problem (regra de
-      // contrato período<->sync: ausência de sync não é falha do cliente).
+      // contrato Período<->sync: ausência de sync não é falha do cliente).
       accounts: [account({
         clientMetaAssetId: 'a2',
         dataQuality: { status: 'unavailable', reason: 'account_not_connected' },
         lastSuccessfulRun: null,
-        lastAttempt: { id: '2', status: 'failed', requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'meta_api_error' } as any,
+        lastAttempt: { id: '2', status: 'failed', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'meta_api_error' } as any,
       })],
     });
 

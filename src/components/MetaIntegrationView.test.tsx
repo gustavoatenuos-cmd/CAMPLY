@@ -25,6 +25,7 @@ vi.mock('../lib/meta/clientMetaAssetService', () => ({
 }));
 
 vi.mock('../lib/meta/metaSyncService', () => ({
+  OFFICIAL_META_SYNC_PERIOD: 'last_90d',
   syncMetaAsset: syncMetaAssetMock,
 }));
 
@@ -330,7 +331,7 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
 
-    // Antes de qualquer sincronização, a linha mostra só o vínculo (ícone de
+    // Antes de qualquer Sincronização, a linha mostra só o vínculo (ícone de
     // link), sem nenhum badge de status de sync (sucesso/falha/parcial/etc).
     expect(screen.getByTitle('Conta vinculada ao cliente')).toBeInTheDocument();
     expect(screen.queryByText('Sucesso')).not.toBeInTheDocument();
@@ -349,7 +350,7 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
 
     // A retentativa fica pendurada (nunca resolve neste teste) para provar que,
-    // enquanto ela está em voo, o botão de sincronização em massa é desabilitado -
+    // enquanto ela está em voo, o botão de Sincronização em massa é desabilitado -
     // evitando a corrida entre um retry e um novo lote sobre os mesmos contadores.
     let releaseRetry: (() => void) | undefined;
     syncMetaAssetMock.mockImplementationOnce(() => new Promise((resolve) => {

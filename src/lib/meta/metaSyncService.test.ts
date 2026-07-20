@@ -57,7 +57,7 @@ describe('syncMetaAsset operational contract', () => {
     expect(result).toMatchObject({ success: true, status: 'success', runId: 'run-1' });
     expect(invokeFunctionMock).toHaveBeenCalledWith('meta-sync-performance', expect.objectContaining({
       clientMetaAssetId: 'link-abc',
-      periods: ['this_month'],
+      periods: ['last_90d'],
       requestedLevel: 'campaign',
     }), expect.any(Number));
     const [, payload] = invokeFunctionMock.mock.calls[0];

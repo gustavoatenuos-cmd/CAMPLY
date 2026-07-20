@@ -1,6 +1,6 @@
 import type { DashboardPeriod } from './analyticsCapabilities';
 
-const VALID_PERIODS: DashboardPeriod[] = ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'];
+const VALID_PERIODS: DashboardPeriod[] = ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'];
 
 export function isDashboardPeriod(value: unknown): value is DashboardPeriod {
   return typeof value === 'string' && (VALID_PERIODS as string[]).includes(value);

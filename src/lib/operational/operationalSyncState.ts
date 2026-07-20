@@ -57,12 +57,14 @@ type RunWithPeriod = RunSummary & {
 };
 
 const PERIOD_LABELS: Record<DashboardPeriod, string> = {
-  this_month: 'M?s atual',
+  this_month: 'Mês atual',
   this_week: 'Semana atual',
   today: 'Hoje',
-  last_7d: '?ltimos 7 dias',
-  last_30d: '?ltimos 30 dias',
-  last_90d: '?ltimos 90 dias',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  last_90d: 'Últimos 90 dias',
 };
 
 function runPeriod(
@@ -104,7 +106,7 @@ export function explainOperationalSyncState(
       trustedRun: null,
       latestAttempt: null,
       canUseData: false,
-      reason: 'Nenhuma conta Meta est? vinculada a este cliente.',
+      reason: 'Nenhuma conta Meta está vinculada a este cliente.',
       action: 'Vincular uma conta Meta.',
     };
   }
@@ -133,7 +135,7 @@ export function explainOperationalSyncState(
       warning: coverage.warning,
       reason: metricsAvailable.length > 0
         ? coverage.reason
-        : 'A sincroniza??o cobre o intervalo, mas n?o h? m?tricas dispon?veis para uso.',
+        : 'A sincronização cobre o intervalo, mas não há métricas disponíveis para uso.',
       action: coverage.action,
     };
   }
@@ -177,7 +179,7 @@ export function explainOperationalSyncState(
     latestAttempt: null,
     canUseData: false,
     reason: knownSyncedPeriod && knownSyncedPeriod !== input.selectedPeriod
-      ? `${coverage.reason} ?ltimo per?odo sincronizado: ${PERIOD_LABELS[knownSyncedPeriod]}.`
+      ? `${coverage.reason} Último período sincronizado: ${PERIOD_LABELS[knownSyncedPeriod]}.`
       : coverage.reason,
     action: coverage.action,
   };
