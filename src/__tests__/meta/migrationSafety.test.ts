@@ -185,6 +185,8 @@ describe('dashboard sync coverage range migration safety', () => {
 describe('single last_90d Meta sync read contract safety', () => {
   it('locks dashboard reads to the official last_90d base and v6 periods', () => {
     expect(singleLast90dContractMigration).toContain("r.requested_period = 'last_90d'");
+    expect(singleLast90dContractMigration).toContain('CREATE OR REPLACE FUNCTION public.get_client_meta_asset_catalog(');
+    expect(singleLast90dContractMigration).toContain("'availablePeriods'");
     expect(singleLast90dContractMigration).toContain("'analyticsContractVersion', 6");
     expect(singleLast90dContractMigration).toContain(
       "'supportedPeriods', jsonb_build_array('today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d')"

@@ -832,4 +832,145 @@ AS $$
     'traceableMetrics', true
   );
 $$;
+
+-- Refresh asset catalog for the single official last_90d sync contract.
+CREATE OR REPLACE FUNCTION public.get_client_meta_asset_catalog(
+  p_client_id TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_result JSONB;
+BEGIN
+  IF v_user_id IS NULL OR COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) THEN
+    RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'clients', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'clientId', ci.client_id,
+        'clientName', ci.display_name,
+        'accounts', COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'clientMetaAssetId', cma.id,
+            'metaAssetId', ma.id,
+            'integrationId', ma.integration_id,
+            'adAccountId', ma.asset_id,
+            'accountName', ma.asset_name,
+            'currency', ma.currency,
+            'timezone', ma.timezone_name,
+            'assetStatus', ma.asset_status,
+            'linkedAt', cma.linked_at,
+            'availablePeriods', COALESCE((
+              SELECT jsonb_agg(period_value ORDER BY period_value)
+              FROM (
+                SELECT DISTINCT r.requested_period AS period_value
+                FROM public.meta_sync_runs r
+                WHERE r.user_id = v_user_id
+                  AND r.integration_id = ma.integration_id
+                  AND r.ad_account_id = ma.asset_id
+                  AND r.run_scope = 'full_account'
+                  AND r.status = 'success'
+                  AND r.requested_period = 'last_90d'
+              ) periods
+            ), '[]'::jsonb),
+            'lastAttempt', (
+              SELECT jsonb_build_object(
+                'id', r.id,
+                'status', r.status,
+                'period', r.requested_period,
+                'level', r.requested_level,
+                'scope', r.run_scope,
+                'startedAt', r.started_at,
+                'finishedAt', r.finished_at,
+                'terminationReason', r.termination_reason,
+                'pagesFetched', r.pages_fetched,
+                'recordsFetched', r.records_fetched
+              )
+              FROM public.meta_sync_runs r
+              WHERE r.user_id = v_user_id
+                AND r.integration_id = ma.integration_id
+                AND r.ad_account_id = ma.asset_id
+              ORDER BY r.started_at DESC
+              LIMIT 1
+            ),
+            'lastSuccess', (
+              SELECT jsonb_build_object(
+                'id', r.id,
+                'period', r.requested_period,
+                'level', r.requested_level,
+                'scope', r.run_scope,
+                'startedAt', r.started_at,
+                'finishedAt', r.finished_at,
+                'pagesFetched', r.pages_fetched,
+                'recordsFetched', r.records_fetched
+              )
+              FROM public.meta_sync_runs r
+              WHERE r.user_id = v_user_id
+                AND r.integration_id = ma.integration_id
+                AND r.ad_account_id = ma.asset_id
+                AND r.status = 'success'
+              ORDER BY r.finished_at DESC NULLS LAST, r.started_at DESC
+              LIMIT 1
+            )
+          ) ORDER BY ma.asset_name)
+          FROM public.client_meta_assets cma
+          JOIN public.meta_assets ma ON ma.id = cma.meta_asset_id
+          JOIN public.meta_integrations mi ON mi.id = ma.integration_id
+          WHERE cma.user_id = v_user_id
+            AND cma.client_id = ci.client_id
+            AND cma.unlinked_at IS NULL
+            AND mi.user_id::text = v_user_id::text
+        ), '[]'::jsonb)
+      ) ORDER BY ci.display_name)
+      FROM public.client_identity ci
+      WHERE ci.user_id = v_user_id
+        AND ci.archived_at IS NULL
+        AND (p_client_id IS NULL OR ci.client_id = p_client_id)
+    ), '[]'::jsonb),
+    'availableAssets', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'metaAssetId', ma.id,
+        'integrationId', ma.integration_id,
+        'adAccountId', ma.asset_id,
+        'accountName', ma.asset_name,
+        'currency', ma.currency,
+        'timezone', ma.timezone_name,
+        'assetStatus', ma.asset_status,
+        'linkedClientId', cma.client_id,
+        'clientMetaAssetId', cma.id
+      ) ORDER BY ma.asset_name)
+      FROM public.meta_assets ma
+      JOIN public.meta_integrations mi ON mi.id = ma.integration_id
+      LEFT JOIN public.client_meta_assets cma
+        ON cma.meta_asset_id = ma.id
+       AND cma.user_id = v_user_id
+       AND cma.unlinked_at IS NULL
+      WHERE mi.user_id::text = v_user_id::text
+        AND mi.status = 'active'
+        AND ma.asset_type = 'adaccount'
+    ), '[]'::jsonb)
+  ) INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[]) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_global_performance_dashboard_v2(TEXT, TEXT[], UUID[]) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.get_client_meta_asset_catalog(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_client_meta_asset_catalog(TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_client_meta_asset_catalog(TEXT) TO authenticated;
 COMMIT;
