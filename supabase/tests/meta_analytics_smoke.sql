@@ -166,23 +166,23 @@ BEGIN
   );
 
   v_capabilities := public.get_analytics_capabilities();
-  IF (v_capabilities->>'contractVersion')::integer <> 5
+  IF (v_capabilities->>'contractVersion')::integer <> 6
      OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
      OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
-     OR NOT (v_capabilities->'supportedPeriods' @> '["this_month", "this_week", "today", "last_7d", "last_30d"]'::jsonb)
+     OR NOT (v_capabilities->'supportedPeriods' @> '["today", "yesterday", "today_and_yesterday", "last_7d", "last_30d", "last_90d"]'::jsonb)
      OR NOT (v_capabilities->'supportedLevels' @> '["campaign", "adset", "ad"]'::jsonb)
      OR COALESCE((v_capabilities->>'traceableMetrics')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'Unexpected analytics capability contract: %', v_capabilities;
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('last_30d', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
     RAISE EXCEPTION 'Traceable dashboard v2 must return an array';
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_week', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('today_and_yesterday', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
-    RAISE EXCEPTION 'Traceable dashboard v2 must accept this_week';
+    RAISE EXCEPTION 'Traceable dashboard v2 must accept today_and_yesterday';
   END IF;
 
   v_missing_metric := public.decorate_analytics_metric(
@@ -668,9 +668,9 @@ BEGIN
     date_start, date_stop
   ) VALUES (
     v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
-    'this_month', 'campaign', 'full_account', 'operational-hierarchy-smoke',
+    'last_90d', 'campaign', 'full_account', 'operational-hierarchy-smoke',
     'success', now() - interval '1 minute', now(), 'completed', 'BRL', 'America/Sao_Paulo',
-    date_trunc('month', current_date)::date, current_date
+    current_date - 89, current_date
   );
 
   INSERT INTO public.meta_campaign_snapshots (
@@ -725,12 +725,12 @@ BEGIN
   ) VALUES
   (
     v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused',
-    'spend', 350, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    'spend', 350, current_date - 89, current_date, 'America/Sao_Paulo',
     '7d_click_1d_view', 'campaign', 'complete'
   ),
   (
     v_user_a, v_run_id, v_integration_a, 'act_phase1_a', 'campaign_active',
-    'spend', 125, date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo',
+    'spend', 125, current_date - 89, current_date, 'America/Sao_Paulo',
     '7d_click_1d_view', 'campaign', 'complete'
   );
 
@@ -741,7 +741,7 @@ BEGIN
   )
   SELECT
     v_user_a, v_run_id, v_integration_a, 'act_phase1_a', NULL,
-    metric_id, metric_value, date_trunc('month', current_date)::date, current_date,
+    metric_id, metric_value, current_date - 89, current_date,
     'America/Sao_Paulo', NULL, 'account', 'complete'
   FROM (VALUES
     ('spend', 350::numeric),
@@ -764,15 +764,15 @@ BEGIN
   ) VALUES
   (
     v_selective_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
-    'this_month', 'campaign', 'selected_campaigns', '{"campaign_ids":["campaign_paused"]}'::jsonb,
+    'last_90d', 'campaign', 'selected_campaigns', '{"campaign_ids":["campaign_paused"]}'::jsonb,
     'selective-run-must-not-total', 'success', now() - interval '20 seconds', now() - interval '10 seconds',
-    'completed', 'BRL', 'America/Sao_Paulo', date_trunc('month', current_date)::date, current_date
+    'completed', 'BRL', 'America/Sao_Paulo', current_date - 89, current_date
   ),
   (
     v_partial_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
-    'this_month', 'campaign', 'full_account', '{}'::jsonb,
+    'last_90d', 'campaign', 'full_account', '{}'::jsonb,
     'newer-partial-run', 'partial', now() - interval '5 seconds', now(),
-    'partial_collection', 'BRL', 'America/Sao_Paulo', date_trunc('month', current_date)::date, current_date
+    'partial_collection', 'BRL', 'America/Sao_Paulo', current_date - 89, current_date
   );
 
   INSERT INTO public.meta_normalized_metrics (
@@ -780,17 +780,17 @@ BEGIN
     date_start, date_stop, timezone, source_level, completeness_status
   ) VALUES (
     v_user_a, v_selective_run_id, v_integration_a, 'act_phase1_a', 'spend', 9999,
-    date_trunc('month', current_date)::date, current_date, 'America/Sao_Paulo', 'account', 'complete'
+    current_date - 89, current_date, 'America/Sao_Paulo', 'account', 'complete'
   );
 
   v_catalog := public.get_client_meta_asset_catalog('client_alpha');
   IF jsonb_array_length(v_catalog->'clients') <> 1
      OR jsonb_array_length(v_catalog->'clients'->0->'accounts') <> 1
-     OR NOT (v_catalog->'clients'->0->'accounts'->0->'availablePeriods' @> '["this_month"]'::jsonb) THEN
+     OR NOT (v_catalog->'clients'->0->'accounts'->0->'availablePeriods' @> '["last_90d"]'::jsonb) THEN
     RAISE EXCEPTION 'Operational asset catalog is incomplete: %', v_catalog;
   END IF;
 
-  v_hierarchy := public.get_meta_performance_hierarchy(v_link_id, 'this_month', 'campaign', NULL, 1, 25);
+  v_hierarchy := public.get_meta_performance_hierarchy(v_link_id, 'last_90d', 'campaign', NULL, 1, 25);
   IF v_hierarchy->>'state' <> 'ready'
      OR (v_hierarchy->>'total')::integer <> 1
      OR v_hierarchy->'items'->0->>'id' <> 'campaign_active'
@@ -806,14 +806,14 @@ BEGIN
     RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('last_90d', NULL, NULL);
   IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 350
      OR (v_dashboard->0->'accounts'->0->'metrics'->'reach'->>'value')::numeric <> 5000
      OR v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'sourceLevel' <> 'account'
-     OR v_dashboard->0->'accounts'->0->>'dateStart' <> date_trunc('month', current_date)::date::text
+     OR v_dashboard->0->'accounts'->0->>'dateStart' <> (current_date - 89)::text
      OR v_dashboard->0->'accounts'->0->>'dateStop' <> current_date::text
      OR v_dashboard->0->'accounts'->0->'lastSuccessfulRun'->>'id' <> v_run_id::text THEN
-    RAISE EXCEPTION 'Monthly dashboard did not use the exact successful account run: %', v_dashboard;
+    RAISE EXCEPTION 'Last 90d dashboard did not use the exact successful account run: %', v_dashboard;
   END IF;
 
   PERFORM public.set_client_performance_target(

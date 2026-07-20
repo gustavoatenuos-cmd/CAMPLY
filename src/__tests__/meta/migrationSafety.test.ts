@@ -47,6 +47,11 @@ const metaSyncPerformanceFunction = readFileSync(
   'utf8'
 );
 
+const metaAnalyticsSmokeTest = readFileSync(
+  new URL('../../../supabase/tests/meta_analytics_smoke.sql', import.meta.url),
+  'utf8'
+);
+
 const overviewView = readFileSync(
   new URL('../../components/OverviewView.tsx', import.meta.url),
   'utf8'
@@ -206,5 +211,13 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
     expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
     expect(metaIntegrationView).toContain('syncMetaAsset');
+  });
+
+  it('keeps the local Supabase smoke test aligned with v6 periods', () => {
+    expect(metaAnalyticsSmokeTest).toContain("(v_capabilities->>'contractVersion')::integer <> 6");
+    expect(metaAnalyticsSmokeTest).toContain("'[\"today\", \"yesterday\", \"today_and_yesterday\", \"last_7d\", \"last_30d\", \"last_90d\"]'::jsonb");
+    expect(metaAnalyticsSmokeTest).toContain("public.get_global_performance_dashboard_v2('last_90d', NULL, NULL)");
+    expect(metaAnalyticsSmokeTest).not.toContain("public.get_global_performance_dashboard_v2('this_month'");
+    expect(metaAnalyticsSmokeTest).not.toContain("public.get_global_performance_dashboard_v2('this_week'");
   });
 });
