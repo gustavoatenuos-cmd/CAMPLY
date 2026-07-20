@@ -64,7 +64,7 @@ export function classifyAccountReliability(
     lastSuccessfulRun: account.lastSuccessfulRun,
     lastAttempt: account.lastAttempt,
     dataQuality: account.dataQuality,
-    requestedPeriod: selectedPeriod,
+    requestedPeriod: null,
     exactRange: { dateStart: account.dateStart, dateStop: account.dateStop },
     metrics: account.metrics,
   });

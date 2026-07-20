@@ -46,7 +46,44 @@ describe('explainOperationalSyncState', () => {
     expect(state.status).toBe('not_synced');
     expect(state.canUseData).toBe(false);
     expect(state.syncedPeriod).toBe('this_month');
-    expect(state.reason).toBe('O período selecionado ainda não foi sincronizado.');
+    expect(state.reason).toContain('sincronizado');
+  });
+
+  it('does not accept a legacy run without explicit period as a selected-period sync', () => {
+    const legacyRun = {
+      id: 'legacy-success',
+      status: 'success',
+      startedAt: '2026-07-17T10:00:00.000Z',
+      finishedAt: '2026-07-17T10:05:00.000Z',
+      terminationReason: null,
+    };
+
+    const state = explain({
+      selectedPeriod: 'last_7d',
+      requestedPeriod: null,
+      lastSuccessfulRun: legacyRun,
+      lastAttempt: legacyRun,
+      dataQuality: { status: 'complete', reason: null },
+    });
+
+    expect(state.status).toBe('not_synced');
+    expect(state.trustedRun).toBeNull();
+    expect(state.latestAttempt).toBeNull();
+    expect(state.action).toContain('Sincronizar');
+  });
+
+  it('explains when the last known successful sync belongs to another period', () => {
+    const state = explain({
+      selectedPeriod: 'last_7d',
+      requestedPeriod: 'this_month',
+      lastSuccessfulRun: { ...successRun, requestedPeriod: 'this_month' },
+      lastAttempt: { ...successRun, requestedPeriod: 'this_month' },
+    });
+
+    expect(state.status).toBe('not_synced');
+    expect(state.syncedPeriod).toBe('this_month');
+    expect(state.reason).toContain('sincronizado');
+    expect(state.action).toContain('Sincronizar');
   });
 
   it('accepts a successful last_30d sync for a last_30d dashboard', () => {
@@ -66,7 +103,7 @@ describe('explainOperationalSyncState', () => {
     expect(state.status).toBe('success');
     expect(state.canUseData).toBe(true);
     expect(state.latestAttempt?.id).toBe('partial-1');
-    expect(state.warning).toBe('Último dado confiável em uso; tentativa mais recente incompleta.');
+    expect(state.warning).toContain('tentativa mais recente incompleta');
   });
 
   it('returns partial when there is only a partial attempt', () => {
@@ -78,6 +115,19 @@ describe('explainOperationalSyncState', () => {
 
     expect(state.status).toBe('partial');
     expect(state.canUseData).toBe(false);
+  });
+
+  it('returns partial only when the partial attempt belongs to the selected period', () => {
+    const state = explain({
+      selectedPeriod: 'last_7d',
+      requestedPeriod: 'this_month',
+      lastSuccessfulRun: null,
+      lastAttempt: { ...partialRun, requestedPeriod: 'this_month' },
+      dataQuality: { status: 'partial', reason: 'rate_limit_exhausted' },
+    });
+
+    expect(state.status).toBe('not_synced');
+    expect(state.reason).toContain('sincronizado');
   });
 
   it('returns failed when there is only a failed attempt', () => {

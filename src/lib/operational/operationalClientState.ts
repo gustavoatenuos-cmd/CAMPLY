@@ -150,7 +150,7 @@ function buildSyncState(
     lastSuccessfulRun: performance.lastSuccessfulRun,
     lastAttempt: performance.lastAttempt,
     dataQuality: performance.dataQuality,
-    requestedPeriod: selectedPeriod,
+    requestedPeriod: null,
     exactRange: firstAccount
       ? { dateStart: firstAccount.dateStart, dateStop: firstAccount.dateStop }
       : null,

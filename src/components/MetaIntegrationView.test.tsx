@@ -115,14 +115,16 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     expect(syncMetaAssetMock).not.toHaveBeenCalled();
   });
 
-  it('shows a "Bloqueado" readiness badge for a linked account that was never synced', async () => {
+  it('shows account readiness without treating missing run evidence as sync success', async () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Bloqueado');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: sem tentativa');
+    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sucesso');
   });
 
-  it('shows a "Pronto" readiness badge for a linked account with a fresh successful sync', async () => {
+  it('shows account readiness separately from the last sync evidence', async () => {
     const freshSuccess = {
       id: 'run-fresh',
       status: 'success' as const,
@@ -140,7 +142,11 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Pronto');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: success');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
+    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sync pronto');
   });
 });
 

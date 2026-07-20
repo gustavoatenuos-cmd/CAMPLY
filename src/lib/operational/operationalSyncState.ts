@@ -48,20 +48,42 @@ export interface OperationalSyncExplanation {
   action: string;
 }
 
+type RunWithPeriod = RunSummary & {
+  requestedPeriod?: DashboardPeriod | null;
+  requested_period?: DashboardPeriod | null;
+  period?: DashboardPeriod | null;
+};
+
+const PERIOD_LABELS: Record<DashboardPeriod, string> = {
+  this_month: 'M\u00eas atual',
+  this_week: 'Semana atual',
+  today: 'Hoje',
+  last_7d: '\u00daltimos 7 dias',
+  last_30d: '\u00daltimos 30 dias',
+  last_90d: '\u00daltimos 90 dias',
+};
+
 function runPeriod(
   run: OperationalSyncRun | RunSummary | null,
-  requestedPeriod: DashboardPeriod | null,
+  fallbackPeriod: DashboardPeriod | null,
 ): DashboardPeriod | null {
-  if (run && 'requestedPeriod' in run) return run.requestedPeriod;
-  return requestedPeriod;
+  if (!run) return null;
+  const rawRun = run as RunWithPeriod;
+  return rawRun.requestedPeriod ?? rawRun.requested_period ?? rawRun.period ?? fallbackPeriod;
+}
+
+function lastKnownPeriod(input: ExplainOperationalSyncStateInput): DashboardPeriod | null {
+  return runPeriod(input.lastAttempt, null)
+    ?? runPeriod(input.lastSuccessfulRun, null)
+    ?? input.requestedPeriod;
 }
 
 function belongsToPeriod(
   run: OperationalSyncRun | RunSummary | null,
   selectedPeriod: DashboardPeriod,
-  requestedPeriod: DashboardPeriod | null,
+  fallbackPeriod: DashboardPeriod | null,
 ): boolean {
-  return Boolean(run && runPeriod(run, requestedPeriod) === selectedPeriod);
+  return Boolean(run && runPeriod(run, fallbackPeriod) === selectedPeriod);
 }
 
 function isNewerAttempt(attempt: RunSummary, trustedRun: RunSummary): boolean {
@@ -76,9 +98,10 @@ export function explainOperationalSyncState(
   const metricsAvailable = Object.entries(input.metrics)
     .filter(([, metric]) => metric.available && typeof metric.value === 'number')
     .map(([metricId]) => metricId);
+  const knownSyncedPeriod = lastKnownPeriod(input);
   const base = {
     selectedPeriod: input.selectedPeriod,
-    syncedPeriod: input.requestedPeriod,
+    syncedPeriod: knownSyncedPeriod,
     exactRange: input.exactRange,
     metricsAvailable,
   };
@@ -90,7 +113,7 @@ export function explainOperationalSyncState(
       trustedRun: null,
       latestAttempt: null,
       canUseData: false,
-      reason: 'Nenhuma conta Meta está vinculada a este cliente.',
+      reason: 'Nenhuma conta Meta est\u00e1 vinculada a este cliente.',
       action: 'Vincular uma conta Meta.',
     };
   }
@@ -109,10 +132,10 @@ export function explainOperationalSyncState(
       trustedRun: null,
       latestAttempt: null,
       canUseData: false,
-      reason: input.requestedPeriod && input.requestedPeriod !== input.selectedPeriod
-        ? 'O período selecionado ainda não foi sincronizado.'
-        : 'Este período ainda não foi sincronizado.',
-      action: `Sincronizar o período ${input.selectedPeriod}.`,
+      reason: knownSyncedPeriod && knownSyncedPeriod !== input.selectedPeriod
+        ? `Este per\u00edodo ainda n\u00e3o foi sincronizado. \u00daltimo per\u00edodo sincronizado: ${PERIOD_LABELS[knownSyncedPeriod]}.`
+        : 'Este per\u00edodo ainda n\u00e3o foi sincronizado.',
+      action: 'Sincronizar per\u00edodo',
     };
   }
 
@@ -131,14 +154,14 @@ export function explainOperationalSyncState(
       latestAttempt: latestAttempt ?? trustedRun,
       canUseData: metricsAvailable.length > 0,
       warning: hasNewerIncompleteAttempt
-        ? 'Último dado confiável em uso; tentativa mais recente incompleta.'
+        ? '\u00daltimo dado confi\u00e1vel em uso; tentativa mais recente incompleta.'
         : undefined,
       reason: stale
-        ? 'O último dado confiável está desatualizado.'
+        ? 'O \u00faltimo dado confi\u00e1vel est\u00e1 desatualizado.'
         : metricsAvailable.length > 0
-          ? 'Existe uma sincronização confiável para o período selecionado.'
-          : 'A sincronização concluiu, mas não há métricas disponíveis para uso.',
-      action: stale ? 'Sincronizar o período novamente.' : 'Usar o último dado confiável.',
+          ? 'Existe uma sincroniza\u00e7\u00e3o confi\u00e1vel para o per\u00edodo selecionado.'
+          : 'A sincroniza\u00e7\u00e3o concluiu, mas n\u00e3o h\u00e1 m\u00e9tricas dispon\u00edveis para uso.',
+      action: stale ? 'Sincronizar o per\u00edodo novamente.' : 'Usar o \u00faltimo dado confi\u00e1vel.',
     };
   }
 
@@ -149,8 +172,8 @@ export function explainOperationalSyncState(
       trustedRun: null,
       latestAttempt,
       canUseData: false,
-      reason: 'A única tentativa deste período terminou parcialmente.',
-      action: 'Sincronizar o período novamente antes de analisar.',
+      reason: 'A \u00fanica tentativa deste per\u00edodo terminou parcialmente.',
+      action: 'Sincronizar o per\u00edodo novamente antes de analisar.',
     };
   }
 
@@ -160,7 +183,7 @@ export function explainOperationalSyncState(
     trustedRun: null,
     latestAttempt,
     canUseData: false,
-    reason: 'A sincronização deste período falhou.',
-    action: 'Corrigir a falha e sincronizar o período novamente.',
+    reason: 'A sincroniza\u00e7\u00e3o deste per\u00edodo falhou.',
+    action: 'Corrigir a falha e sincronizar o per\u00edodo novamente.',
   };
 }

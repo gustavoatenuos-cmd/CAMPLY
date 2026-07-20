@@ -22,8 +22,8 @@ function baseGlobalClient(overrides: Partial<GlobalClientPerformance> = {}): Glo
     budgetPacing: null,
     score: { value: 80, status: 'healthy' } as any,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
-    lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+    lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+    lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
@@ -93,6 +93,23 @@ describe('ClientPerformanceCardGrid', () => {
     expect(screen.getByText(/Meta principal não configurada/)).toBeInTheDocument();
   });
 
+  it('shows not_synced instead of partial when a legacy partial attempt has no selected-period evidence', () => {
+    const client = baseGlobalClient({
+      clientStatus: 'partial',
+      analysisProfile: {} as any,
+      dataQuality: { status: 'partial', reason: 'no_successful_run' },
+      lastSuccessfulRun: null,
+      lastAttempt: { id: 'legacy-partial', status: 'partial', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: 'no_successful_run' },
+    });
+    const entries = buildClientPriorityEntries([client], [workspaceClient], 'last_7d');
+
+    render(<ClientPerformanceCardGrid entries={entries} period="last_7d" onViewAnalytics={() => {}} onEditClient={() => {}} />);
+
+    expect(screen.getAllByText(/sincronizado/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('Parcial')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nenhuma sincroniza/i)).not.toBeInTheDocument();
+  });
+
   it('calls onViewAnalytics and onEditClient with the client id', () => {
     const onViewAnalytics = vi.fn();
     const onEditClient = vi.fn();
@@ -128,8 +145,8 @@ describe('ClientPerformanceCardGrid', () => {
         metrics: {},
         budgetPacing: null,
         dataQuality: { status: 'complete', reason: null },
-        lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
-        lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+        lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+        lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_30d', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
       }],
     });
     const entries = buildClientPriorityEntries([client], [workspaceClient], 'last_30d');

@@ -24,7 +24,6 @@ import type { CamplyData } from '../types';
 import { evaluateClientOperationalReadiness, summarizeMetaReadinessAcrossClients } from '../lib/operational/clientOperationalReadiness';
 import { BulkSyncResultsPanel } from './meta/BulkSyncResultsPanel';
 import { SyncStatusBadge } from './meta/SyncStatusBadge';
-import { MetaReadinessBadge } from './operational/MetaReadinessBadge';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
@@ -36,6 +35,25 @@ const bulkPeriodLabels: Record<DashboardPeriod, string> = {
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
 };
+
+function latestAccountSyncRun(account: ClientMetaAccount) {
+  const attempt = account.lastAttempt;
+  const success = account.lastSuccess;
+  if (attempt && success) return new Date(attempt.startedAt) >= new Date(success.startedAt) ? attempt : success;
+  return attempt ?? success ?? null;
+}
+
+function accountLinkStatusLabel(account: ClientMetaAccount): string {
+  return account.assetStatus === 'ACTIVE' || !account.assetStatus ? 'Conta pronta' : 'Conta vinculada';
+}
+
+function accountSyncEvidence(account: ClientMetaAccount): string {
+  const run = latestAccountSyncRun(account);
+  if (!run) return '\u00daltima sync: sem tentativa';
+  const status = run.status ?? 'success';
+  const period = bulkPeriodLabels[run.period as DashboardPeriod] ?? run.period;
+  return `\u00daltima sync: ${status} - Per\u00edodo: ${period} - Run: ${run.id}`;
+}
 
 interface MetaIntegrationViewProps {
   data: CamplyData;
@@ -457,11 +475,12 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                       </div>
                       <div>
                         <p className="font-bold text-white">{clientName}</p>
-                        <p className="text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+                        <p className="text-xs text-brand-muted">{account.accountName} - {account.adAccountId}</p>
+                        <p className="mt-0.5 text-[10px] text-brand-muted">{accountSyncEvidence(account)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {syncResult ? <SyncStatusBadge status={syncResult.status} /> : <MetaReadinessBadge status={readiness.meta.status} />}
+                      {syncResult ? <SyncStatusBadge status={syncResult.status} /> : <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold text-emerald-200"><CheckCircle2 size={13} /> {accountLinkStatusLabel(account)}</span>}
                       <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
                     </div>
                   </div>
