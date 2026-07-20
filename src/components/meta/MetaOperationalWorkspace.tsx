@@ -9,8 +9,6 @@ import {
   type ClientMetaAccount,
   type ClientMetaAssetCatalog,
 } from '../../lib/meta/clientMetaAssetService';
-import { syncMetaAsset } from '../../lib/meta/metaSyncService';
-import { OperationTimedOutError } from '../../lib/withTimeout';
 import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -19,6 +17,8 @@ const periodLabels: Record<DashboardPeriod, string> = {
   this_month: 'Mês atual',
   this_week: 'Semana atual',
   today: 'Hoje',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
@@ -169,41 +169,13 @@ export function MetaOperationalWorkspace({
     }
   };
 
-  const synchronize = async (requestedLevel: 'campaign' | 'creative') => {
-    if (!account) return;
-    setLoading(true);
-    setError(null);
-    setAction(null);
-    try {
-      const result = await syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel });
-      if (!result.success || result.status === 'failed') throw new Error(result.message || 'A coleta Meta falhou.');
-      setAction(result.status === 'partial'
-        ? 'Sincronização parcial registrada. O snapshot confiável anterior permanece disponível.'
-        : `Sincronização ${requestedLevel === 'creative' ? 'completa' : 'de campanhas'} concluída e salva no banco.`);
-      await refresh();
-      setRefreshToken((current) => current + 1);
-      onDataChanged?.();
-    } catch (syncError) {
-      if (syncError instanceof OperationTimedOutError) {
-        setWarning('A sincronização demorou mais que o esperado. O último snapshot confiável continua em uso; recarreguei os dados salvos para manter a tela operacional.');
-        await refresh();
-        setRefreshToken((current) => current + 1);
-        onDataChanged?.();
-        return;
-      }
-      setError(syncError instanceof Error ? syncError.message : 'Não foi possível sincronizar esta conta.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <section data-testid="meta-operational-workspace" className={`rounded-2xl border border-brand-line bg-brand-surface ${compact ? 'p-4' : 'p-5 lg:p-6'}`}>
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-green">Central Meta Ads</p>
           <h2 className="mt-1 text-xl font-black text-white">Performance oficial por cliente</h2>
-          <p className="mt-1 max-w-3xl text-sm text-brand-muted">A tela sempre lê o último snapshot salvo no banco. O Facebook só é consultado quando você clica em sincronizar; recarregar a página não inicia uma nova coleta.</p>
+          <p className="mt-1 max-w-3xl text-sm text-brand-muted">A tela lê o último snapshot salvo no banco. A sincronização oficial acontece somente na tela Integração Meta Ads.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <label className="text-xs font-bold text-brand-soft">
@@ -265,8 +237,6 @@ export function MetaOperationalWorkspace({
                 {newerAttemptLabel(account) && <p className="mt-1 text-xs text-amber-200">{newerAttemptLabel(account)}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button data-testid="meta-sync-period" type="button" onClick={() => void synchronize('campaign')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-green/40 px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sincronizar período</button>
-                <button data-testid="meta-sync-account" type="button" onClick={() => void synchronize('creative')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-3 py-2 text-xs font-black text-brand-ink disabled:opacity-60">Sincronizar conta completa</button>
                 <button type="button" onClick={() => setTargetsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-black text-brand-soft"><Target size={14} /> Metas da conta</button>
                 <button type="button" onClick={() => setConfirmUnlinkOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-xs font-black text-rose-200 disabled:opacity-60"><Unlink size={14} /> Desvincular</button>
               </div>

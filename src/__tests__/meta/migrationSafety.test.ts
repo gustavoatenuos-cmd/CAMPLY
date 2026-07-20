@@ -37,6 +37,36 @@ const coverageRangeMigration = readFileSync(
   'utf8'
 );
 
+const singleLast90dContractMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260720020000_single_last_90d_sync_read_contract.sql', import.meta.url),
+  'utf8'
+);
+
+const metaSyncPerformanceFunction = readFileSync(
+  new URL('../../../supabase/functions/meta-sync-performance/index.ts', import.meta.url),
+  'utf8'
+);
+
+const overviewView = readFileSync(
+  new URL('../../components/OverviewView.tsx', import.meta.url),
+  'utf8'
+);
+
+const clientAnalyticsDetailDrawer = readFileSync(
+  new URL('../../components/analytics/ClientAnalyticsDetailDrawer.tsx', import.meta.url),
+  'utf8'
+);
+
+const metaIntegrationView = readFileSync(
+  new URL('../../components/MetaIntegrationView.tsx', import.meta.url),
+  'utf8'
+);
+
+const todayView = readFileSync(
+  new URL('../../components/TodayView.tsx', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -144,5 +174,37 @@ describe('dashboard sync coverage range migration safety', () => {
     expect(coverageRangeMigration).toContain('m.date_start >= sr.date_start');
     expect(coverageRangeMigration).toContain('m.date_stop <= sr.date_stop');
     expect(coverageRangeMigration).not.toMatch(/AND r\.requested_period = p_period\s+AND r\.status = 'success'/);
+  });
+});
+
+describe('single last_90d Meta sync read contract safety', () => {
+  it('locks dashboard reads to the official last_90d base and v6 periods', () => {
+    expect(singleLast90dContractMigration).toContain("r.requested_period = 'last_90d'");
+    expect(singleLast90dContractMigration).toContain("'analyticsContractVersion', 6");
+    expect(singleLast90dContractMigration).toContain(
+      "'supportedPeriods', jsonb_build_array('today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d')"
+    );
+    expect(singleLast90dContractMigration).not.toContain("r.requested_period = p_period");
+    expect(singleLast90dContractMigration).not.toContain("jsonb_build_array('this_month', 'this_week'");
+  });
+
+  it('forces Meta sync to collect and persist daily last_90d rows', () => {
+    expect(metaSyncPerformanceFunction).toContain("const OFFICIAL_SYNC_PERIOD = 'last_90d'");
+    expect(metaSyncPerformanceFunction).toContain('const periods = [OFFICIAL_SYNC_PERIOD]');
+    expect(metaSyncPerformanceFunction).toContain("time_increment: '1'");
+    expect(metaSyncPerformanceFunction).toContain('for (const accountInsight of accountInsights)');
+    expect(metaSyncPerformanceFunction).toContain('for (const dailyCampaignInsight of campaignInsights)');
+  });
+
+  it('keeps Dashboard and Analytics as read-only surfaces', () => {
+    expect(overviewView).not.toContain('syncMetaAsset');
+    expect(overviewView).not.toContain('handleSyncPeriod');
+    expect(overviewView).not.toContain('Sincronizar período');
+    expect(clientAnalyticsDetailDrawer).not.toContain('syncMetaAsset');
+    expect(todayView).not.toContain('syncClientMeta');
+    expect(todayView).not.toContain('meta-sync-performance');
+    expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
+    expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
+    expect(metaIntegrationView).toContain('syncMetaAsset');
   });
 });

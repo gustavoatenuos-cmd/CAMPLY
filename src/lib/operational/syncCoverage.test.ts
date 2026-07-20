@@ -57,9 +57,9 @@ describe('resolveSyncCoverageForPeriod', () => {
       selectedPeriod: 'last_90d',
       selectedDateStart: '2026-04-22',
       selectedDateStop: '2026-07-20',
-      availableRuns: [run({ requestedPeriod: 'last_30d', dateStart: '2026-06-21' })],
+      availableRuns: [run({ requestedPeriod: 'last_30d', dateStart: '2026-06-21', dateStop: '2026-07-20' })],
     });
-    expect(coverage.status).toBe('partial_coverage');
+    expect(coverage.status).toBe('not_covered');
     expect(coverage.canUseData).toBe(false);
   });
 
@@ -68,9 +68,9 @@ describe('resolveSyncCoverageForPeriod', () => {
       selectedPeriod: 'last_30d',
       selectedDateStart: '2026-06-21',
       selectedDateStop: '2026-07-20',
-      availableRuns: [run({ requestedPeriod: 'this_month', dateStart: '2026-07-01' })],
+      availableRuns: [run({ requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-20' })],
     });
-    expect(coverage.status).toBe('partial_coverage');
+    expect(coverage.status).toBe('not_covered');
   });
 
   it('partial sync covering only part of the range becomes partial_coverage', () => {
@@ -96,7 +96,7 @@ describe('resolveSyncCoverageForPeriod', () => {
 
   it('returns not_covered when no run overlaps the selected range', () => {
     const coverage = resolve('2026-07-14', '2026-07-20', [
-      run({ requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-10' }),
+      run({ requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-10' }),
     ]);
     expect(coverage.status).toBe('not_covered');
   });

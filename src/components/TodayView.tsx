@@ -1,12 +1,10 @@
-import { Activity, RefreshCw, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target, BarChart3 } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCircle2, ChevronRight, CircleDollarSign, Clock, Megaphone, Plus, ShieldAlert, Target, BarChart3 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
 import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
-import { syncClientMeta } from '../lib/meta/metaSyncService';
-import { applyMetaSyncToWorkspace } from '../lib/meta/applyMetaSyncToWorkspace';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
 import { buildClientMetaAnalytics, buildSnapshot } from '../lib/meta/clientAnalytics';
 
@@ -24,31 +22,11 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
   const [selectedClientId, setSelectedClientId] = useState('');
   const [hasFinance, setHasFinance] = useState(false);
   const [dashboardPeriod, setDashboardPeriod] = useState<string>('last_7d');
-  const [syncingClientId, setSyncingClientId] = useState<string | null>(null);
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status));
   const pendingPayments = data.receivables.filter((receivable) => receivable.status !== 'paid');
   const openTasks = data.tasks.filter((task) => !task.done).sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
   const priorityCampaigns = data.campaigns.filter((campaign) => campaign.priority === 'high' || campaign.status === 'optimize');
   const amountToReceive = pendingPayments.reduce((sum, item) => sum + item.amount, 0);
-
-  const handleSyncClient = async (client: any) => {
-    if (!client.metaAdAccountId) return;
-    setSyncingClientId(client.id);
-    try {
-      const payload = await syncClientMeta(client, data.campaigns);
-      const { status, message } = payload;
-      updateData(curr => applyMetaSyncToWorkspace(client, payload, curr));
-      
-      if (status === 'partial') {
-        alert(`Sincronização parcial concluída. Algumas falhas ocorreram: ${message || 'Erro desconhecido'}`);
-      }
-    } catch(err: any) { 
-      alert("Erro ao sincronizar: " + err.message);
-      console.error(err);
-    }
-    setSyncingClientId(null);
-  };
-
 
   const toggleTask = (task: Task) => {
     updateData((current) => ({
@@ -622,11 +600,6 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                   <div className="mb-3 flex items-center justify-between border-b border-brand-line pb-3">
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
-                      {client.metaAdAccountId && (
-                        <button onClick={() => handleSyncClient(client)} disabled={syncingClientId === client.id} className="text-brand-muted hover:text-brand-green transition" title="Sincronizar com Facebook Ads">
-                          <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
-                        </button>
-                      )}
                     </div>
                     <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
                       {activeCampaigns.length} campanhas
@@ -655,11 +628,6 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-white">{clientDisplayName(client)}</h3>
-                      {client.metaAdAccountId && (
-                        <button onClick={() => handleSyncClient(client)} disabled={syncingClientId === client.id} className="text-brand-muted hover:text-brand-green transition" title="Sincronizar com Facebook Ads">
-                          <RefreshCw size={14} className={syncingClientId === client.id ? 'animate-spin text-brand-green' : ''} />
-                        </button>
-                      )}
                     </div>
                     <span className="rounded-full bg-[#0064e0]/10 px-2 py-0.5 text-xs font-semibold text-[#0064e0]">
                       {activeCampaigns.length} campanhas
