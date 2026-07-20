@@ -29,6 +29,17 @@ export function exactPeriodRange(
     return { dateStart: localNoon.toISOString().slice(0, 10), dateStop };
   }
   if (period === 'today') return { dateStart: dateStop, dateStop };
+  if (period === 'yesterday') {
+    const yesterday = new Date(`${dateStop}T12:00:00.000Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const value = yesterday.toISOString().slice(0, 10);
+    return { dateStart: value, dateStop: value };
+  }
+  if (period === 'today_and_yesterday') {
+    const yesterday = new Date(`${dateStop}T12:00:00.000Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    return { dateStart: yesterday.toISOString().slice(0, 10), dateStop };
+  }
 
   const days = period === 'last_7d' ? 7 : period === 'last_90d' ? 90 : 30;
   const utcStop = new Date(`${dateStop}T12:00:00.000Z`);

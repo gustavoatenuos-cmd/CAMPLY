@@ -1,13 +1,13 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { useMemo, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { periodLabels } from '../../lib/performance/analyticsCapabilities';
 import type { GlobalClientStatus } from '../../lib/performance/globalPerformanceDashboard';
 import { buildClientAnalyticsDecision, periodFromDashboardPeriod, type ClientAnalyticsDecision } from '../../lib/performance/clientAnalyticsDecision';
+import { explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { resolveClientPrimaryName } from '../../data/clientDisplay';
-import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 
 interface ClientAnalyticsDetailDrawerProps {
   isOpen: boolean;
@@ -52,9 +52,6 @@ function metricValue(metrics: Record<string, { available: boolean; value: number
 }
 
 export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, period, onOpenCampaigns, onEditClient }: ClientAnalyticsDetailDrawerProps) {
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
   const decision = useMemo<ClientAnalyticsDecision | null>(() => {
     if (!performance) return null;
     const now = new Date();
@@ -63,7 +60,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
       client: performance.client ?? { id: performance.clientId, name: performance.clientName, company: '' },
       analysisProfile: performance.analysisProfile,
       globalPerformance: {
-        clientStatus: performance.clientStatus,
+        clientStatus: explainDashboardClientSync(performance, period).status === 'success' ? 'available' : performance.clientStatus,
         dataQuality: performance.dataQuality,
         lastSuccessfulRun: performance.lastSuccessfulRun,
       },
@@ -77,27 +74,18 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
 
   if (!isOpen || !performance) return null;
 
-  const syncDiagnosis = syncDiagnosisFor(performance.clientStatus);
+  const syncExplanation = explainDashboardClientSync(performance, period);
+  const syncDiagnosis: SyncDiagnosisState = syncExplanation.status === 'success'
+    ? 'ok'
+    : syncExplanation.status === 'failed'
+      ? 'failed'
+      : syncExplanation.status === 'partial' || syncExplanation.status === 'stale'
+        ? 'partial'
+        : syncDiagnosisFor(performance.clientStatus);
   const profile = performance.analysisProfile;
   const account = performance.accounts[0];
   const currency = account?.currency || 'BRL';
   const clientName = resolveClientPrimaryName(performance.client, profile, performance);
-
-  const handleSyncClient = async () => {
-    const linkedAccounts = performance.accounts.filter((a) => a.clientMetaAssetId);
-    if (linkedAccounts.length === 0) return;
-    setSyncing(true);
-    setSyncError(null);
-    try {
-      await Promise.all(
-        linkedAccounts.map((a) => syncMetaAsset({ clientMetaAssetId: a.clientMetaAssetId, period, requestedLevel: 'campaign' }))
-      );
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Falha ao sincronizar este cliente.');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   // Diagnóstico determinístico, por regra - nunca IA generativa. O estado de
   // sincronização (não sincronizado/falhou/parcial) tem prioridade sobre o
@@ -224,7 +212,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
         </div>
 
         {/* Ações */}
-        <div className="grid grid-cols-3 gap-px bg-gray-100 border-t">
+        <div className="grid grid-cols-2 gap-px bg-gray-100 border-t">
           <button
             onClick={() => onOpenCampaigns(performance)}
             data-testid="detail-drawer-open-campaigns"
@@ -239,16 +227,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
           >
             Editar metas
           </button>
-          <button
-            onClick={() => void handleSyncClient()}
-            disabled={syncing}
-            className="flex items-center justify-center gap-1.5 bg-white py-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-60"
-          >
-            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            Sincronizar período deste cliente
-          </button>
         </div>
-        {syncError && <p className="px-4 py-2 text-xs text-red-600 bg-red-50 border-t border-red-100">{syncError}</p>}
       </div>
     </div>
   );

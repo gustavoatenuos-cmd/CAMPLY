@@ -45,6 +45,16 @@ export interface RunSummary {
   startedAt: string;
   finishedAt: string | null;
   terminationReason: string | null;
+  requestedPeriod?: DashboardPeriod | null;
+  requested_period?: DashboardPeriod | null;
+  runScope?: string | null;
+  run_scope?: string | null;
+  dateStart?: string | null;
+  dateStop?: string | null;
+  date_start?: string | null;
+  date_stop?: string | null;
+  metricsCount?: number | null;
+  metricGroupsCount?: number | null;
 }
 
 export interface DataQualityContract {
@@ -179,6 +189,11 @@ function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Dat
     end.setTime(start.getTime());
     end.setUTCDate(end.getUTCDate() + 6);
   }
+  if (period === 'yesterday') {
+    start.setUTCDate(start.getUTCDate() - 1);
+    end.setUTCDate(end.getUTCDate() - 1);
+  }
+  if (period === 'today_and_yesterday') start.setUTCDate(start.getUTCDate() - 1);
   if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
   if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
   if (period === 'last_90d') start.setUTCDate(start.getUTCDate() - 89);

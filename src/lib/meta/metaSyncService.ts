@@ -6,6 +6,7 @@ import type { MetaSyncResponse } from './metaSyncTypes';
 
 export type MetaSyncPeriod = DashboardPeriod;
 export type MetaSyncLevel = 'campaign' | 'adset' | 'ad' | 'creative';
+export const OFFICIAL_META_SYNC_PERIOD: DashboardPeriod = 'last_90d';
 
 export interface MetaSyncOptions {
   metaAssetId?: string;
@@ -23,16 +24,16 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   if (typeof legacyAdAccountId === 'string') {
     return {
       adAccountId: legacyAdAccountId || undefined,
-      periods: ['this_month'],
-      requestedLevel: 'ad',
+      periods: [OFFICIAL_META_SYNC_PERIOD],
+      requestedLevel: 'campaign',
     };
   }
 
   const options = clientOrOptions as MetaSyncOptions;
   return {
     ...options,
-    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['this_month'],
-    requestedLevel: options.requestedLevel ?? 'ad',
+    periods: [OFFICIAL_META_SYNC_PERIOD],
+    requestedLevel: options.requestedLevel ?? 'campaign',
   };
 }
 
@@ -61,19 +62,20 @@ async function syncOperationalMetaAsset(
   }
 
   if (isMetaE2EMode) {
+    metaE2EState.syncedPeriods.add(OFFICIAL_META_SYNC_PERIOD);
     metaE2EState.syncedPeriods.add(input.period);
     persistMetaE2EState();
     return {
       success: true,
       status: 'success',
-      runId: `run-e2e-${input.period}-${input.requestedLevel || 'campaign'}`,
+      runId: `run-e2e-${OFFICIAL_META_SYNC_PERIOD}-${input.requestedLevel || 'campaign'}`,
     };
   }
 
   try {
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
       clientMetaAssetId: input.clientMetaAssetId,
-      periods: [input.period],
+      periods: [OFFICIAL_META_SYNC_PERIOD],
       requestedLevel: input.requestedLevel || 'campaign',
       selectedEntityIds: {
         campaign_ids: input.campaignIds || [],

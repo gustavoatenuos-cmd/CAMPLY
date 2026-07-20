@@ -3,10 +3,12 @@ import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 import { withTimeout } from '../withTimeout';
 import { invokeFunction } from '../invokeFunction';
 
-export const ANALYTICS_CONTRACT_VERSION = 5;
+export const ANALYTICS_CONTRACT_VERSION = 6;
 
-export const dashboardPeriods = ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'] as const;
-export type DashboardPeriod = typeof dashboardPeriods[number];
+export const dashboardPeriods = ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'] as const;
+const legacyDashboardPeriods = ['this_month', 'this_week'] as const;
+const allDashboardPeriods = [...dashboardPeriods, ...legacyDashboardPeriods] as const;
+export type DashboardPeriod = typeof allDashboardPeriods[number];
 
 // Rótulo humano único por período - reutilizado por qualquer tela que
 // precise exibir o período selecionado (Dashboard, Analytics), para não ter
@@ -15,6 +17,8 @@ export const periodLabels: Record<DashboardPeriod, string> = {
   this_month: 'Mês atual',
   this_week: 'Semana atual',
   today: 'Hoje',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
@@ -69,7 +73,7 @@ export function parseAnalyticsCapabilities(value: unknown): AnalyticsCapabilityS
   }
 
   const contractVersion = Number(value.contractVersion);
-  const supportedPeriods = supportedValues(value.supportedPeriods, dashboardPeriods);
+  const supportedPeriods = supportedValues(value.supportedPeriods, allDashboardPeriods);
   const supportedLevels = supportedValues(value.supportedLevels, analyticsLevels);
 
   if (

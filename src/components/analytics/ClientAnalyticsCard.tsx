@@ -4,7 +4,7 @@ import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilitie
 import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
 import { buildClientAnalyticsDecision, periodFromDashboardPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
-import { debugDashboardClientSync } from '../../lib/performance/explainClientSyncState';
+import { debugDashboardClientSync, explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
 import { ClientLogo } from '../clients/ClientLogo';
@@ -27,6 +27,19 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
   // Actual spend from Meta
   const actualSpend = metrics?.spend?.value ?? 0;
 
+  const syncExplanation = useMemo(() => explainDashboardClientSync(performance, period), [performance, period]);
+  const coverageClientStatus = syncExplanation.status === 'success'
+    ? 'available'
+    : syncExplanation.status === 'not_synced'
+      ? 'period_not_synced'
+      : syncExplanation.status === 'partial'
+        ? 'partial'
+        : syncExplanation.status === 'failed'
+          ? 'failed'
+          : syncExplanation.status === 'stale'
+            ? 'stale'
+            : performance.clientStatus;
+
   // Budget calculations
   const budgetPacing = calculateClientBudgetPacing(
     profile?.plannedBudget,
@@ -41,7 +54,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
       client: client ?? { id: performance.clientId, name: performance.clientName, company: '' },
       analysisProfile: profile,
       globalPerformance: {
-        clientStatus: performance.clientStatus,
+        clientStatus: coverageClientStatus,
         dataQuality: performance.dataQuality,
         lastSuccessfulRun: performance.lastSuccessfulRun,
       },
@@ -51,7 +64,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
-  }, [client, performance, profile, period]);
+  }, [client, performance, profile, period, coverageClientStatus]);
 
   // Rastreabilidade de "por que este cliente está com este status de sync" -
   // só em dev, nunca em produção (ver explainClientSyncState.ts).
@@ -61,10 +74,10 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
     clientId: performance.clientId,
     client: client ?? null,
     analysisProfile: profile,
-    globalClientStatus: performance.clientStatus,
+    globalClientStatus: coverageClientStatus,
     receivableEntries: undefined,
     analyticsDecision: decision,
-  }), [client, performance.clientId, performance.clientStatus, profile, decision]);
+  }), [client, performance.clientId, coverageClientStatus, profile, decision]);
 
   const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '-';

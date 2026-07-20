@@ -1,6 +1,7 @@
 import type { EnrichedGlobalClientPerformance } from './usePerformanceDashboard';
 import type { DashboardPeriod } from './analyticsCapabilities';
 import { explainOperationalSyncState, type OperationalSyncExplanation } from '../operational/operationalSyncState';
+import { exactPeriodRange } from '../meta/periodRange';
 
 export interface DashboardClientSyncDebug extends OperationalSyncExplanation {
   clientName: string;
@@ -16,6 +17,7 @@ export function explainDashboardClientSync(
   selectedPeriod: DashboardPeriod,
 ): DashboardClientSyncDebug {
   const firstAccount = performance.accounts[0];
+  const selectedRange = exactPeriodRange(selectedPeriod, firstAccount?.timezone || 'America/Sao_Paulo');
   const explanation = explainOperationalSyncState({
     selectedPeriod,
     clientId: performance.clientId,
@@ -27,10 +29,8 @@ export function explainDashboardClientSync(
     lastSuccessfulRun: performance.lastSuccessfulRun,
     lastAttempt: performance.lastAttempt,
     dataQuality: performance.dataQuality,
-    requestedPeriod: selectedPeriod,
-    exactRange: firstAccount
-      ? { dateStart: firstAccount.dateStart, dateStop: firstAccount.dateStop }
-      : null,
+    requestedPeriod: null,
+    exactRange: selectedRange,
     metrics: performance.metrics,
   });
 

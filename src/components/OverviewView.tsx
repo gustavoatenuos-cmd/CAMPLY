@@ -36,12 +36,15 @@ import { buildClientPriorityEntries, groupByPriorityTier } from '../lib/performa
 import { debugDashboardClientSync } from '../lib/performance/explainClientSyncState';
 import { setPendingClientSelection, setPendingAnalyticsPeriod } from '../lib/performance/pendingClientSelection';
 import { isClientOperationallyActive } from '../data/receivablesForecast';
+import { exactPeriodRange } from '../lib/meta/periodRange';
 import { CollapsibleSection } from './ui/CollapsibleSection';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
-import { syncMetaAsset } from '../lib/meta/metaSyncService';
+import { getCamplyBuildInfo } from '../lib/diagnostics/buildInfo';
+import { getSupabaseSessionDiagnostics } from '../lib/supabase';
+import { publishOperationalSyncLedger } from '../lib/operational/operationalSyncLedger';
+import { resolveDashboardPeriod, writeDashboardPeriodToUrl } from '../lib/performance/dashboardPeriodUrl';
 
 
 interface OverviewViewProps {
@@ -93,12 +96,13 @@ function formatCurrency(value: number, currency = 'BRL'): string {
   }
 }
 
-function exactRangeLabel(clients: GlobalClientPerformance[]): string {
-  const ranges = new Set(clients.flatMap((client) => client.accounts
-    .filter((account) => account.dateStart && account.dateStop)
-    .map((account) => `${account.dateStart} a ${account.dateStop} (${account.timezone || 'fuso indisponível'})`)));
-  if (ranges.size === 0) return 'Período não sincronizado';
-  return Array.from(ranges).join(' · ');
+function coverageLabel(clients: GlobalClientPerformance[]): string {
+  const runs = clients.flatMap((client) => client.accounts)
+    .map((account) => account.lastSuccessfulRun)
+    .filter((run) => run?.id && run.requestedPeriod === 'last_90d');
+  const run = runs[0];
+  if (!run) return 'Base Meta Ads não sincronizada';
+  return `Coberto pelo sync dos últimos 90 dias · Run ${run.id}`;
 }
 
 function metricLabel(metricId: string): string {
@@ -223,7 +227,7 @@ function DashboardUnavailable({
 
 export function OverviewView({ data, updateData, setActiveView }: OverviewViewProps) {
   const storedFilters = useMemo(loadStoredFilters, []);
-  const [period, setPeriod] = useState<DashboardPeriod>(storedFilters.period || 'last_90d');
+  const [period, setPeriod] = useState<DashboardPeriod>(() => resolveDashboardPeriod(window.location.search, storedFilters.period, 'last_90d'));
   const [clients, setClients] = useState<GlobalClientPerformance[]>([]);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
@@ -246,6 +250,21 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
       subsegment: subsegmentFilter,
     } satisfies StoredDashboardFilters));
   }, [period, search, segmentFilter, statusFilter, subsegmentFilter]);
+
+  useEffect(() => {
+    writeDashboardPeriodToUrl(period);
+  }, [period]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const diagnostics = {
+      build: getCamplyBuildInfo(),
+      session: getSupabaseSessionDiagnostics(),
+      selectedPeriod: period,
+    };
+    window.CAMPLY_DIAGNOSTICS = diagnostics;
+    console.debug('[CAMPLY_DIAGNOSTICS]', diagnostics);
+  }, [period]);
 
   const loadCapabilities = useCallback(async () => {
     setCapabilitiesLoading(true);
@@ -305,43 +324,9 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
     return isClientOperationallyActive(workspaceClient, project);
   }, [data.clients, data.projects]);
 
-  // "Atualizar Dashboard" e "Sincronizar período" NÃO fazem a mesma coisa:
-  // atualizar só relê o que já está salvo (útil se outra sincronização, ex.
-  // MetaIntegrationView, acabou de rodar); sincronizar dispara o sync real
-  // para o período exibido agora. Misturar os dois é o que fazia o botão
-  // único disparar sync toda vez que o usuário só queria reler a tela.
   const handleRefreshDashboard = useCallback(() => {
     void loadDashboard();
   }, [loadDashboard]);
-
-  const handleSyncPeriod = useCallback(async () => {
-    if (!capabilities) return;
-    setLoading(true);
-    setError(null);
-    try {
-      // Sincronização nunca inclui cliente/projeto inativo, mesmo se "Incluir
-      // inativos" estiver marcado para leitura — esse toggle só afeta o que
-      // aparece na tela, não o que entra em sincronização. Roda exatamente
-      // para o período selecionado no Dashboard (`period`), nunca outro.
-      const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected' && isEntryOperationallyActive(c.clientId));
-      const syncPromises = activeClientsWithAssets.flatMap(c =>
-        c.accounts.map(account =>
-          syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' })
-            .catch(err => { console.error('Erro sync', err); return null; })
-        )
-      );
-
-      if (syncPromises.length > 0) {
-        await Promise.all(syncPromises);
-      }
-
-      await loadDashboard();
-    } catch (err) {
-      console.error('Erro na sincronização do período:', err);
-      setError('dashboard_unavailable');
-      setLoading(false);
-    }
-  }, [capabilities, clients, period, loadDashboard, isEntryOperationallyActive]);
 
   useEffect(() => {
     if (capabilities) void loadDashboard();
@@ -389,6 +374,7 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
         || client.accounts.some((account) => account.accountName.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
     });
   }, [operationalClients, data.clients, search, segmentFilter, statusFilter, subsegmentFilter]);
+  const selectedRange = useMemo(() => exactPeriodRange(period, filteredClients[0]?.accounts[0]?.timezone || 'America/Sao_Paulo'), [filteredClients, period]);
 
   // Prioridade operacional do recorte: mesmo diagnóstico (motivo + status Meta)
   // usado no bloco de prioridade e nos cards por cliente, para que a ordem da
@@ -401,6 +387,10 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
 
   useEffect(() => {
     filteredClients.forEach((client) => debugDashboardClientSync(client, period));
+  }, [filteredClients, period]);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    publishOperationalSyncLedger(filteredClients, period);
   }, [filteredClients, period]);
   const sortedClients = useMemo(
     () => [...priorityGroups.action_now, ...priorityGroups.attention, ...priorityGroups.healthy].map((entry) => entry.client),
@@ -550,23 +540,15 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                   Atualizar Dashboard
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSyncPeriod()}
-                  disabled={loading}
-                  title={`Sincroniza os clientes ativos vinculados para o período "${periodLabels[period]}"`}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
-                >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                  Sincronizar período
-                </button>
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-brand-line pt-4 text-xs text-brand-muted">
             <span>Período: <strong className="text-white">{periodLabels[period]}</strong></span>
             <span>•</span>
-            <span>Intervalo exato: <strong className="text-white">{exactRangeLabel(filteredClients)}</strong></span>
+            <span>Intervalo exato: <strong className="text-white">{selectedRange.dateStart} a {selectedRange.dateStop}</strong></span>
+            <span>•</span>
+            <span>Cobertura: <strong className="text-white">{coverageLabel(filteredClients)}</strong></span>
             <span>•</span>
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>
@@ -602,16 +584,14 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
             {!periodHasAnySync ? (
               <div data-testid="period-not-synced-panel" className="rounded-2xl border border-dashed border-brand-line bg-brand-surface p-10 text-center">
                 <RefreshCw className="mx-auto text-brand-muted" size={28} />
-                <p className="mt-4 text-lg font-black text-white">Este período ainda não foi sincronizado.</p>
-                <p className="mt-2 text-sm text-brand-muted">Sincronize para gerar a leitura da operação.</p>
+                <p className="mt-4 text-lg font-black text-white">Base Meta Ads não sincronizada.</p>
+                <p className="mt-2 text-sm text-brand-muted">Vá em Integração Meta Ads e sincronize os últimos 90 dias.</p>
                 <button
                   type="button"
-                  onClick={() => void handleSyncPeriod()}
-                  disabled={loading}
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+                  onClick={() => setActiveView('metaIntegration')}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110"
                 >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                  Sincronizar este período
+                  Ir para Integração Meta Ads
                 </button>
               </div>
             ) : (
@@ -669,19 +649,6 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
               <GlobalSummaryCards clients={filteredClients} />
             </CollapsibleSection>
 
-            <CollapsibleSection
-              title="Workspace Meta"
-              subtitle="Sincronização das contas, metas e reconciliação de métricas."
-              defaultOpen={isMetaE2EMode}
-            >
-              <MetaOperationalWorkspace
-                data={data}
-                compact
-                period={period}
-                onPeriodChange={setPeriod}
-                onDataChanged={() => void loadDashboard()}
-              />
-            </CollapsibleSection>
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <article className="glass-card rounded-2xl p-5">

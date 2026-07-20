@@ -4,6 +4,7 @@ import type {
   MetricContract,
   RunSummary,
 } from '../performance/globalPerformanceDashboard';
+import { resolveSyncCoverageForPeriod, type SyncCoverageResolution } from './syncCoverage';
 
 export type OperationalSyncStatus = 'success' | 'not_synced' | 'partial' | 'failed' | 'stale' | 'no_account';
 
@@ -42,30 +43,43 @@ export interface OperationalSyncExplanation {
   syncedPeriod: DashboardPeriod | null;
   exactRange: OperationalSyncExactRange | null;
   metricsAvailable: string[];
+  coverage: SyncCoverageResolution | null;
   canUseData: boolean;
   warning?: string;
   reason: string;
   action: string;
 }
 
+type RunWithPeriod = RunSummary & {
+  requestedPeriod?: DashboardPeriod | null;
+  requested_period?: DashboardPeriod | null;
+  period?: DashboardPeriod | null;
+};
+
+const PERIOD_LABELS: Record<DashboardPeriod, string> = {
+  this_month: 'Mês atual',
+  this_week: 'Semana atual',
+  today: 'Hoje',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  last_90d: 'Últimos 90 dias',
+};
+
 function runPeriod(
   run: OperationalSyncRun | RunSummary | null,
-  requestedPeriod: DashboardPeriod | null,
+  fallbackPeriod: DashboardPeriod | null,
 ): DashboardPeriod | null {
-  if (run && 'requestedPeriod' in run) return run.requestedPeriod;
-  return requestedPeriod;
+  if (!run) return null;
+  const rawRun = run as RunWithPeriod;
+  return rawRun.requestedPeriod ?? rawRun.requested_period ?? rawRun.period ?? fallbackPeriod;
 }
 
-function belongsToPeriod(
-  run: OperationalSyncRun | RunSummary | null,
-  selectedPeriod: DashboardPeriod,
-  requestedPeriod: DashboardPeriod | null,
-): boolean {
-  return Boolean(run && runPeriod(run, requestedPeriod) === selectedPeriod);
-}
-
-function isNewerAttempt(attempt: RunSummary, trustedRun: RunSummary): boolean {
-  return new Date(attempt.startedAt).getTime() > new Date(trustedRun.startedAt).getTime();
+function lastKnownPeriod(input: ExplainOperationalSyncStateInput): DashboardPeriod | null {
+  return runPeriod(input.lastAttempt, null)
+    ?? runPeriod(input.lastSuccessfulRun, null)
+    ?? input.requestedPeriod;
 }
 
 export function explainOperationalSyncState(
@@ -76,9 +90,10 @@ export function explainOperationalSyncState(
   const metricsAvailable = Object.entries(input.metrics)
     .filter(([, metric]) => metric.available && typeof metric.value === 'number')
     .map(([metricId]) => metricId);
+  const knownSyncedPeriod = lastKnownPeriod(input);
   const base = {
     selectedPeriod: input.selectedPeriod,
-    syncedPeriod: input.requestedPeriod,
+    syncedPeriod: knownSyncedPeriod,
     exactRange: input.exactRange,
     metricsAvailable,
   };
@@ -86,6 +101,7 @@ export function explainOperationalSyncState(
   if (input.accounts.length === 0) {
     return {
       ...base,
+      coverage: null,
       status: 'no_account',
       trustedRun: null,
       latestAttempt: null,
@@ -95,72 +111,76 @@ export function explainOperationalSyncState(
     };
   }
 
-  const trustedRun = belongsToPeriod(input.lastSuccessfulRun, input.selectedPeriod, input.requestedPeriod)
-    ? input.lastSuccessfulRun
-    : null;
-  const latestAttempt = belongsToPeriod(input.lastAttempt, input.selectedPeriod, input.requestedPeriod)
-    ? input.lastAttempt
-    : null;
+  const coverage = resolveSyncCoverageForPeriod({
+    selectedPeriod: input.selectedPeriod,
+    selectedDateStart: input.exactRange?.dateStart ?? null,
+    selectedDateStop: input.exactRange?.dateStop ?? null,
+    availableRuns: [input.lastSuccessfulRun, input.lastAttempt],
+    metricsCoverage: input.exactRange,
+    stale: input.dataQuality.reason === 'stale' || input.dataQuality.reason === 'stale_data',
+  });
 
-  if (!trustedRun && !latestAttempt) {
+  if (coverage.status === 'covered' || coverage.status === 'stale') {
+    const trustedRun = input.lastSuccessfulRun?.id === coverage.coveringRunId
+      ? input.lastSuccessfulRun
+      : null;
+    const latestAttempt = input.lastAttempt ?? trustedRun;
     return {
       ...base,
-      status: 'not_synced',
-      trustedRun: null,
-      latestAttempt: null,
-      canUseData: false,
-      reason: input.requestedPeriod && input.requestedPeriod !== input.selectedPeriod
-        ? 'O período selecionado ainda não foi sincronizado.'
-        : 'Este período ainda não foi sincronizado.',
-      action: `Sincronizar o período ${input.selectedPeriod}.`,
-    };
-  }
-
-  if (trustedRun) {
-    const hasNewerIncompleteAttempt = Boolean(
-      latestAttempt
-      && latestAttempt.id !== trustedRun.id
-      && latestAttempt.status !== 'success'
-      && isNewerAttempt(latestAttempt, trustedRun),
-    );
-    const stale = input.dataQuality.reason === 'stale' || input.dataQuality.reason === 'stale_data';
-    return {
-      ...base,
-      status: stale ? 'stale' : 'success',
+      coverage,
+      status: coverage.status === 'stale' ? 'stale' : 'success',
       trustedRun,
-      latestAttempt: latestAttempt ?? trustedRun,
-      canUseData: metricsAvailable.length > 0,
-      warning: hasNewerIncompleteAttempt
-        ? 'Último dado confiável em uso; tentativa mais recente incompleta.'
-        : undefined,
-      reason: stale
-        ? 'O último dado confiável está desatualizado.'
-        : metricsAvailable.length > 0
-          ? 'Existe uma sincronização confiável para o período selecionado.'
-          : 'A sincronização concluiu, mas não há métricas disponíveis para uso.',
-      action: stale ? 'Sincronizar o período novamente.' : 'Usar o último dado confiável.',
+      latestAttempt,
+      canUseData: coverage.canUseData && metricsAvailable.length > 0,
+      warning: coverage.warning,
+      reason: metricsAvailable.length > 0
+        ? coverage.reason
+        : 'A sincronização cobre o intervalo, mas não há métricas disponíveis para uso.',
+      action: coverage.action,
     };
   }
 
-  if (latestAttempt?.status === 'partial' || latestAttempt?.status === 'running') {
+  if (coverage.status === 'partial_coverage') {
+    const partialRun = input.lastAttempt?.id === coverage.coveringRunId
+      ? input.lastAttempt
+      : input.lastSuccessfulRun?.id === coverage.coveringRunId
+        ? input.lastSuccessfulRun
+        : null;
     return {
       ...base,
+      coverage,
       status: 'partial',
       trustedRun: null,
-      latestAttempt,
+      latestAttempt: partialRun,
       canUseData: false,
-      reason: 'A única tentativa deste período terminou parcialmente.',
-      action: 'Sincronizar o período novamente antes de analisar.',
+      reason: coverage.reason,
+      action: coverage.action,
+    };
+  }
+
+  if (coverage.status === 'failed') {
+    return {
+      ...base,
+      coverage,
+      status: 'failed',
+      trustedRun: null,
+      latestAttempt: input.lastAttempt,
+      canUseData: false,
+      reason: coverage.reason,
+      action: coverage.action,
     };
   }
 
   return {
     ...base,
-    status: 'failed',
+    coverage,
+    status: 'not_synced',
     trustedRun: null,
-    latestAttempt,
+    latestAttempt: null,
     canUseData: false,
-    reason: 'A sincronização deste período falhou.',
-    action: 'Corrigir a falha e sincronizar o período novamente.',
+    reason: knownSyncedPeriod && knownSyncedPeriod !== input.selectedPeriod
+      ? `${coverage.reason} Último período sincronizado: ${PERIOD_LABELS[knownSyncedPeriod]}.`
+      : coverage.reason,
+    action: coverage.action,
   };
 }

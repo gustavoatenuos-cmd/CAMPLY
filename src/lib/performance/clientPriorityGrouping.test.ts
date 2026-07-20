@@ -27,8 +27,8 @@ function baseClient(overrides: Partial<GlobalClientPerformance> = {}): GlobalCli
     budgetPacing: null,
     score: { value: 80, status: 'healthy', summary: '', confidence: 90, coveragePercent: 100 } as any,
     dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
-    lastAttempt: { id: 'run-success', status: 'success', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null },
+    lastSuccessfulRun: { id: 'run-success', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
+    lastAttempt: { id: 'run-success', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-17T10:00:00.000Z', finishedAt: '2026-07-17T10:05:00.000Z', terminationReason: null } as any,
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
@@ -67,8 +67,8 @@ describe('classifyAccountReliability', () => {
     const account: any = {
       dataQuality: { status: 'complete', reason: null },
       metrics: { spend: metric(100) },
-      lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
-      lastAttempt: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
+      lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
+      lastAttempt: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
     };
     expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('reliable');
   });
@@ -77,13 +77,13 @@ describe('classifyAccountReliability', () => {
     const account: any = {
       dataQuality: { status: 'unavailable', reason: 'account_not_connected' },
       lastSuccessfulRun: null,
-      lastAttempt: { id: '1', status: 'failed', startedAt: '', finishedAt: '2026-01-01', terminationReason: 'meta_api_error' },
+      lastAttempt: { id: '1', status: 'failed', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: 'meta_api_error' },
     };
     expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('problem');
   });
 
   it('classifies an account with no attempt at all for the period as not_synced, never as problem', () => {
-    // Ausência de sync não é falha do cliente — regra de contrato período<->sync.
+    // Ausência de sync não é falha do cliente — regra de contrato Período<->sync.
     const account: any = {
       dataQuality: { status: 'unavailable', reason: 'no_successful_run' },
       lastSuccessfulRun: null,
@@ -96,8 +96,8 @@ describe('classifyAccountReliability', () => {
     const account: any = {
       dataQuality: { status: 'partial', reason: 'partial_sync' },
       metrics: { spend: metric(100) },
-      lastSuccessfulRun: { id: '1', status: 'success', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
-      lastAttempt: { id: '2', status: 'failed', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'error' },
+      lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null },
+      lastAttempt: { id: '2', status: 'failed', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-02', terminationReason: 'error' },
     };
     expect(classifyAccountReliability({ clientMetaAssetId: 'asset', accountName: 'Conta', dateStart: null, dateStop: null, metrics: account.metrics ?? {}, ...account }, 'last_30d')).toBe('reliable');
   });
@@ -117,7 +117,7 @@ describe('buildClientPriorityEntries', () => {
       analysisProfile: profile(),
       dataQuality: { status: 'unavailable', reason: 'sync_failed' },
       lastSuccessfulRun: null,
-      lastAttempt: { id: 'run-failed', status: 'failed', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'sync_failed' },
+      lastAttempt: { id: 'run-failed', status: 'failed', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'sync_failed' } as any,
     });
     const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('sync_failed');
@@ -130,12 +130,46 @@ describe('buildClientPriorityEntries', () => {
       analysisProfile: profile(),
       dataQuality: { status: 'partial', reason: 'partial_sync' },
       lastSuccessfulRun: null,
-      lastAttempt: { id: 'run-partial', status: 'partial', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'partial_sync' },
+      lastAttempt: { id: 'run-partial', status: 'partial', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'partial_sync' } as any,
       score: { value: 60, status: 'attention' } as any,
     });
     const [entry] = buildClientPriorityEntries([client], [], 'last_30d');
     expect(entry.reasons).toContain('sync_partial');
     expect(entry.tier).toBe('attention');
+  });
+
+  it('does not turn a legacy partial attempt without selected-period evidence into sync_partial', () => {
+    const client = baseClient({
+      clientStatus: 'partial',
+      analysisProfile: profile(),
+      dataQuality: { status: 'partial', reason: 'no_successful_run' },
+      lastSuccessfulRun: null,
+      lastAttempt: { id: 'legacy-partial', status: 'partial', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: '2026-07-17T11:05:00.000Z', terminationReason: 'no_successful_run' },
+      score: { value: 60, status: 'attention' } as any,
+    });
+
+    const [entry] = buildClientPriorityEntries([client], [], 'last_7d');
+
+    expect(entry.reasons).toContain('not_synced');
+    expect(entry.reasons).not.toContain('sync_partial');
+    expect(entry.reasons).not.toContain('insufficient_data');
+    expect(entry.tier).toBe('attention');
+    expect(summarizeDiagnosis(client, entry.reasons)).not.toContain('Nenhuma sincronização concluída com sucesso ainda');
+  });
+
+  it('lets a this_month sync cover a last_7d dashboard diagnosis when dates cover the range', () => {
+    const client = baseClient({
+      clientStatus: 'available',
+      analysisProfile: profile(),
+      metrics: { spend: metric(500), leads: metric(20) },
+      lastSuccessfulRun: { id: 'run-month', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-01T10:00:00.000Z', finishedAt: '2026-07-01T10:05:00.000Z', terminationReason: null } as any,
+      lastAttempt: { id: 'run-month', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-01T10:00:00.000Z', finishedAt: '2026-07-01T10:05:00.000Z', terminationReason: null } as any,
+    });
+
+    const [entry] = buildClientPriorityEntries([client], [], 'last_7d');
+
+    expect(entry.reasons).toEqual(['healthy']);
+    expect(entry.tier).toBe('healthy');
   });
 
   it('uses trusted success instead of classifying a newer partial attempt as sync_partial', () => {
@@ -261,12 +295,12 @@ describe('buildClientPriorityEntries', () => {
   });
 
   it('keeps an in-progress sync as sync_partial (attention), but never_synced/period_not_synced as the distinct not_synced reason', () => {
-    // Contrato período<->sync: "nunca sincronizado" e "sincronizado noutro
-    // período, não este" não são uma sincronização parcial real — não houve
-    // nenhuma tentativa para o período exibido. Rotular como "Sincronização
+    // Contrato Período<->sync: "nunca sincronizado" e "sincronizado noutro
+    // Período, não este" não são uma Sincronização parcial real — não houve
+    // nenhuma tentativa para o Período exibido. Rotular como "Sincronização
     // parcial" era o bug relatado; o motivo certo é "Período não sincronizado",
     // e o tier continua attention (não action_now, não é falha real).
-    const syncing = baseClient({ clientId: 'syncing', clientStatus: 'syncing', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: { id: 'run-running', status: 'running', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: null, terminationReason: null } });
+    const syncing = baseClient({ clientId: 'syncing', clientStatus: 'syncing', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: { id: 'run-running', status: 'running', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-17T11:00:00.000Z', finishedAt: null, terminationReason: null } as any });
     const periodNotSynced = baseClient({ clientId: 'pns', clientStatus: 'period_not_synced', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: null });
     const neverSynced = baseClient({ clientId: 'never', clientStatus: 'never_synced', analysisProfile: profile(), lastSuccessfulRun: null, lastAttempt: null });
     const [syncingEntry] = buildClientPriorityEntries([syncing], [], 'last_30d');

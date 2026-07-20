@@ -7,14 +7,35 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 
 let activeAccessToken: string | null = null;
 let activeUserId: string | null = null;
+let activeUserEmail: string | null = null;
+let activeSessionExpiresAt: number | null = null;
 
 export function setSupabaseSession(session: Session | null): void {
   activeAccessToken = session?.access_token || null;
   activeUserId = session?.user.id || null;
+  activeUserEmail = session?.user.email || null;
+  activeSessionExpiresAt = session?.expires_at || null;
 }
 
 export function getSupabaseSessionUserId(): string | null {
   return activeUserId;
+}
+
+
+export interface SupabaseSessionDiagnostics {
+  userId: string | null;
+  email: string | null;
+  supabaseSessionExpiresAt: string | null;
+}
+
+export function getSupabaseSessionDiagnostics(): SupabaseSessionDiagnostics {
+  return {
+    userId: activeUserId,
+    email: activeUserEmail,
+    supabaseSessionExpiresAt: activeSessionExpiresAt
+      ? new Date(activeSessionExpiresAt * 1000).toISOString()
+      : null,
+  };
 }
 
 export function getSupabaseAccessToken(): string | null {

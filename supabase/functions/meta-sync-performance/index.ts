@@ -103,7 +103,8 @@ interface OwnedClientMetaAsset {
 }
 
 const METRIC_DEFINITION_VERSION = '2026-07-01.1';
-const COLLECTION_CONTRACT_VERSION = '2026-07-01.1';
+const COLLECTION_CONTRACT_VERSION = '2026-07-20.1';
+const OFFICIAL_SYNC_PERIOD = 'last_90d';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
 type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
@@ -146,15 +147,27 @@ const weekMondayIsoDate = (value: string): string => {
 };
 
 const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
-  if (period !== 'this_week') return { date_preset: period };
+  if (period !== 'this_week') return { date_preset: period, time_increment: '1' };
   if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today' };
   const until = localIsoDate(now, timezone);
   const since = weekMondayIsoDate(until);
-  return { time_range: JSON.stringify({ since, until }) };
+  return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
 };
 
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const insightRangeSummary = (rows: MetaInsightRow[]): MetaInsightRow | undefined => {
+  const ranges = rows
+    .filter((row) => isIsoDate(row.date_start) && isIsoDate(row.date_stop))
+    .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
+  if (ranges.length === 0) return rows[0];
+  return {
+    ...ranges[0],
+    date_start: ranges[0].date_start,
+    date_stop: ranges[ranges.length - 1].date_stop,
+  };
+};
 
 const SAFE_META_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -503,9 +516,7 @@ export async function handleRequest(req: Request) {
       );
     }
 
-    const periods = Array.isArray(body.periods) && body.periods.length > 0
-      ? Array.from(new Set(body.periods.filter((period): period is string => typeof period === 'string' && period.length > 0)))
-      : ['last_7d'];
+    const periods = [OFFICIAL_SYNC_PERIOD];
       
     const validPeriods = ['today', 'yesterday', 'this_week', 'this_month', 'last_month', 'this_quarter', 'maximum', 'last_3d', 'last_7d', 'last_14d', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year'];
     for (const p of periods) {
@@ -609,6 +620,8 @@ export async function handleRequest(req: Request) {
       adAccountId,
       requestedLevel,
       periods,
+      officialSyncPeriod: OFFICIAL_SYNC_PERIOD,
+      timeIncrement: 1,
       runScope,
       selectedEntityIds,
       fields: {
@@ -1065,7 +1078,7 @@ export async function handleRequest(req: Request) {
       accountInsightsByPeriod[period] = accountInsightsResult.data;
       const accountRangeValidation = validateReturnedPeriodRange(
         period,
-        accountInsightsResult.data[0],
+        insightRangeSummary(accountInsightsResult.data),
         timezone
       );
       rangeDiagnosticsByPeriod[period] = accountRangeValidation.metadata;
@@ -1130,8 +1143,8 @@ export async function handleRequest(req: Request) {
         entity_id: period,
         endpoint: `/${adAccountId}/insights?level=account&date_preset=${period}`,
         payload: accountInsightsResult.data,
-        date_start: accountInsightsResult.data[0]?.date_start || null,
-        date_stop: accountInsightsResult.data[0]?.date_stop || null,
+        date_start: insightRangeSummary(accountInsightsResult.data)?.date_start || null,
+        date_stop: insightRangeSummary(accountInsightsResult.data)?.date_stop || null,
         page_number: 1,
       });
 
@@ -1140,8 +1153,8 @@ export async function handleRequest(req: Request) {
         entity_id: period,
         endpoint: `/${adAccountId}/insights?level=campaign&date_preset=${period}`,
         payload: filteredCampaignInsights,
-        date_start: filteredCampaignInsights[0]?.date_start || null,
-        date_stop: filteredCampaignInsights[0]?.date_stop || null,
+        date_start: insightRangeSummary(filteredCampaignInsights)?.date_start || null,
+        date_stop: insightRangeSummary(filteredCampaignInsights)?.date_stop || null,
         page_number: 1,
       });
 
@@ -1151,8 +1164,8 @@ export async function handleRequest(req: Request) {
           entity_id: period,
           endpoint: `/${adAccountId}/insights?level=adset&date_preset=${period}`,
           payload: adsetInsightsByPeriod[period],
-          date_start: adsetInsightsByPeriod[period][0]?.date_start || null,
-          date_stop: adsetInsightsByPeriod[period][0]?.date_stop || null,
+          date_start: insightRangeSummary(adsetInsightsByPeriod[period])?.date_start || null,
+          date_stop: insightRangeSummary(adsetInsightsByPeriod[period])?.date_stop || null,
           page_number: 1,
         });
       }
@@ -1163,8 +1176,8 @@ export async function handleRequest(req: Request) {
           entity_id: period,
           endpoint: `/${adAccountId}/insights?level=ad&date_preset=${period}`,
           payload: adInsightsByPeriod[period],
-          date_start: adInsightsByPeriod[period][0]?.date_start || null,
-          date_stop: adInsightsByPeriod[period][0]?.date_stop || null,
+          date_start: insightRangeSummary(adInsightsByPeriod[period])?.date_start || null,
+          date_stop: insightRangeSummary(adInsightsByPeriod[period])?.date_stop || null,
           page_number: 1,
         });
       }
@@ -1174,36 +1187,38 @@ export async function handleRequest(req: Request) {
     const overallCompletenessByPeriod: Record<string, PeriodCompletenessStatus> = {};
 
     for (const period of periods) {
-      const accountInsight = accountInsightsByPeriod[period][0];
-      if (!accountInsight) continue;
-      const accountNormalized = [
-        'UNCLASSIFIED',
-        'WHATSAPP',
-        'SALES',
-        'LEADS',
-        'TRAFFIC',
-      ].reduce<Record<string, ReturnType<typeof normalizeMetaMetrics>[string]>>((metrics, objective) => ({
-        ...metrics,
-        ...normalizeMetaMetrics([accountInsight], objective as Parameters<typeof normalizeMetaMetrics>[1], 'account'),
-      }), {});
+      const accountInsights = accountInsightsByPeriod[period];
+      if (accountInsights.length === 0) continue;
+      for (const accountInsight of accountInsights) {
+        const accountNormalized = [
+          'UNCLASSIFIED',
+          'WHATSAPP',
+          'SALES',
+          'LEADS',
+          'TRAFFIC',
+        ].reduce<Record<string, ReturnType<typeof normalizeMetaMetrics>[string]>>((metrics, objective) => ({
+          ...metrics,
+          ...normalizeMetaMetrics([accountInsight], objective as Parameters<typeof normalizeMetaMetrics>[1], 'account'),
+        }), {});
 
-      Object.entries(accountNormalized).forEach(([metricId, result]) => {
-        p_normalized_metrics.push({
-          campaign_id: null,
-          adset_id: null,
-          metric_id: metricId,
-          metric_value: result.value,
-          action_type: result.metadata.action_types?.join(',') || null,
-          source_field: result.metadata.source_field || null,
-          date_start: accountInsight.date_start || null,
-          date_stop: accountInsight.date_stop || null,
-          timezone: timezone === 'UNKNOWN' ? null : timezone,
-          attribution_setting: null,
-          source_level: 'account',
-          completeness_status: collectionStatusByPeriod[period].account,
-          calculation_metadata: result.metadata,
+        Object.entries(accountNormalized).forEach(([metricId, result]) => {
+          p_normalized_metrics.push({
+            campaign_id: null,
+            adset_id: null,
+            metric_id: metricId,
+            metric_value: result.value,
+            action_type: result.metadata.action_types?.join(',') || null,
+            source_field: result.metadata.source_field || null,
+            date_start: accountInsight.date_start || null,
+            date_stop: accountInsight.date_stop || null,
+            timezone: timezone === 'UNKNOWN' ? null : timezone,
+            attribution_setting: null,
+            source_level: 'account',
+            completeness_status: collectionStatusByPeriod[period].account,
+            calculation_metadata: result.metadata,
+          });
         });
-      });
+      }
       overallCompletenessByPeriod[period] = collectionStatusByPeriod[period].account;
     }
 
@@ -1218,8 +1233,9 @@ export async function handleRequest(req: Request) {
       let structuralMix = analyzeCampaignMix(campaignAdsets, campaign.objective);
 
       for (const period of periods) {
-        const campaignInsight = campaignInsightsByPeriod[period]
-          .find((row) => row.campaign_id === campaign.id);
+        const campaignInsights = campaignInsightsByPeriod[period]
+          .filter((row) => row.campaign_id === campaign.id);
+        const campaignInsight = campaignInsights[0];
         const adsetInsights = adsetInsightsByPeriod[period]
           .filter((row) => row.campaign_id === campaign.id);
         const adInsights = adInsightsByPeriod[period]
@@ -1252,29 +1268,31 @@ export async function handleRequest(req: Request) {
         const persistAtAdsetLevel = requiresAdsetInsights.has(campaign.id);
         
         // ALWAYS persist global campaign metrics
-        if (campaignInsight) {
-          const globalNormalized = normalizeMetaMetrics(
-            [campaignInsight],
-            classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
-            campaign.id
-          );
-          Object.entries(globalNormalized).forEach(([metricId, result]) => {
-            p_normalized_metrics.push({
-              campaign_id: campaign.id,
-              adset_id: null,
-              metric_id: metricId,
-              metric_value: result.value,
-              action_type: result.metadata.action_types?.join(',') || null,
-              source_field: result.metadata.source_field || null,
-              date_start: campaignInsight.date_start || null,
-              date_stop: campaignInsight.date_stop || null,
-              timezone: timezone === 'UNKNOWN' ? null : timezone,
-              attribution_setting: campaignAdsets[0]?.attribution_setting || null,
-              source_level: 'campaign', // explicitly global
-              completeness_status: analytics.completeness.status,
-              calculation_metadata: result.metadata,
+        if (campaignInsights.length > 0) {
+          for (const dailyCampaignInsight of campaignInsights) {
+            const globalNormalized = normalizeMetaMetrics(
+              [dailyCampaignInsight],
+              classifiedObjectives.get(campaign.id) || 'UNCLASSIFIED',
+              campaign.id
+            );
+            Object.entries(globalNormalized).forEach(([metricId, result]) => {
+              p_normalized_metrics.push({
+                campaign_id: campaign.id,
+                adset_id: null,
+                metric_id: metricId,
+                metric_value: result.value,
+                action_type: result.metadata.action_types?.join(',') || null,
+                source_field: result.metadata.source_field || null,
+                date_start: dailyCampaignInsight.date_start || null,
+                date_stop: dailyCampaignInsight.date_stop || null,
+                timezone: timezone === 'UNKNOWN' ? null : timezone,
+                attribution_setting: campaignAdsets[0]?.attribution_setting || null,
+                source_level: 'campaign', // explicitly global
+                completeness_status: analytics.completeness.status,
+                calculation_metadata: result.metadata,
+              });
             });
-          });
+          }
         }
 
         // ALSO persist adset metrics if it's mixed destination/objective/attribution
@@ -1488,9 +1506,10 @@ export async function handleRequest(req: Request) {
       : wasRateLimited ? 'rate_limit_exhausted' : 'partial_collection';
 
     const collectedRanges = p_normalized_metrics
-      .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop);
+      .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop)
+      .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
     const dateStart = collectedRanges[0]?.date_start || null;
-    const dateStop = collectedRanges[0]?.date_stop || null;
+    const dateStop = collectedRanges[collectedRanges.length - 1]?.date_stop || null;
     const { error: contextError } = await supabaseClient.from('meta_sync_runs').update({
       date_start: dateStart,
       date_stop: dateStop,

@@ -25,6 +25,7 @@ vi.mock('../lib/meta/clientMetaAssetService', () => ({
 }));
 
 vi.mock('../lib/meta/metaSyncService', () => ({
+  OFFICIAL_META_SYNC_PERIOD: 'last_90d',
   syncMetaAsset: syncMetaAssetMock,
 }));
 
@@ -115,14 +116,16 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     expect(syncMetaAssetMock).not.toHaveBeenCalled();
   });
 
-  it('shows a "Bloqueado" readiness badge for a linked account that was never synced', async () => {
+  it('shows account readiness without treating missing run evidence as sync success', async () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Bloqueado');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: sem tentativa');
+    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sucesso');
   });
 
-  it('shows a "Pronto" readiness badge for a linked account with a fresh successful sync', async () => {
+  it('shows account readiness separately from the last sync evidence', async () => {
     const freshSuccess = {
       id: 'run-fresh',
       status: 'success' as const,
@@ -140,7 +143,11 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Pronto');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: success');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
+    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sync pronto');
   });
 });
 
@@ -324,7 +331,7 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
 
-    // Antes de qualquer sincronização, a linha mostra só o vínculo (ícone de
+    // Antes de qualquer Sincronização, a linha mostra só o vínculo (ícone de
     // link), sem nenhum badge de status de sync (sucesso/falha/parcial/etc).
     expect(screen.getByTitle('Conta vinculada ao cliente')).toBeInTheDocument();
     expect(screen.queryByText('Sucesso')).not.toBeInTheDocument();
@@ -343,7 +350,7 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).not.toBeDisabled());
 
     // A retentativa fica pendurada (nunca resolve neste teste) para provar que,
-    // enquanto ela está em voo, o botão de sincronização em massa é desabilitado -
+    // enquanto ela está em voo, o botão de Sincronização em massa é desabilitado -
     // evitando a corrida entre um retry e um novo lote sobre os mesmos contadores.
     let releaseRetry: (() => void) | undefined;
     syncMetaAssetMock.mockImplementationOnce(() => new Promise((resolve) => {

@@ -5,6 +5,7 @@ import { describeDataQualityReason } from './dataQualityReason';
 import type { DashboardPeriod } from './analyticsCapabilities';
 import { explainDashboardClientSync } from './explainClientSyncState';
 import { explainOperationalSyncState } from '../operational/operationalSyncState';
+import { exactPeriodRange } from '../meta/periodRange';
 
 /**
  * Camada de leitura para o dashboard operacional (OverviewView): agrupa os
@@ -56,6 +57,7 @@ export function classifyAccountReliability(
   account: Pick<GlobalPerformanceAccount, 'clientMetaAssetId' | 'accountName' | 'dateStart' | 'dateStop' | 'metrics' | 'dataQuality' | 'lastSuccessfulRun' | 'lastAttempt'>,
   selectedPeriod: DashboardPeriod,
 ): AccountReliability {
+  const selectedRange = exactPeriodRange(selectedPeriod, (account as { timezone?: string | null }).timezone || 'America/Sao_Paulo');
   const explanation = explainOperationalSyncState({
     selectedPeriod,
     clientId: account.clientMetaAssetId,
@@ -64,8 +66,8 @@ export function classifyAccountReliability(
     lastSuccessfulRun: account.lastSuccessfulRun,
     lastAttempt: account.lastAttempt,
     dataQuality: account.dataQuality,
-    requestedPeriod: selectedPeriod,
-    exactRange: { dateStart: account.dateStart, dateStop: account.dateStop },
+    requestedPeriod: null,
+    exactRange: selectedRange,
     metrics: account.metrics,
   });
   if (explanation.status === 'not_synced') return 'not_synced';
