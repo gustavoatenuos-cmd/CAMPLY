@@ -13,6 +13,7 @@ import {
   explainOperationalSyncState,
   type OperationalSyncExplanation,
 } from './operationalSyncState';
+import { exactPeriodRange } from '../meta/periodRange';
 
 export type OperationalSection<T> =
   | { status: 'not_evaluated' }
@@ -139,6 +140,7 @@ function buildSyncState(
     dataQuality: performance.dataQuality,
   };
   const firstAccount = performance.accounts[0];
+  const selectedRange = exactPeriodRange(selectedPeriod, firstAccount?.timezone || 'America/Sao_Paulo');
   const explanation = explainOperationalSyncState({
     selectedPeriod,
     clientId: performance.clientId,
@@ -151,9 +153,7 @@ function buildSyncState(
     lastAttempt: performance.lastAttempt,
     dataQuality: performance.dataQuality,
     requestedPeriod: null,
-    exactRange: firstAccount
-      ? { dateStart: firstAccount.dateStart, dateStop: firstAccount.dateStop }
-      : null,
+    exactRange: selectedRange,
     metrics: performance.metrics,
   });
 

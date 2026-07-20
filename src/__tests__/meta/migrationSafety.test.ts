@@ -32,6 +32,11 @@ const runPeriodEvidenceMigration = readFileSync(
   'utf8'
 );
 
+const coverageRangeMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260720010000_dashboard_sync_coverage_range_contract.sql', import.meta.url),
+  'utf8'
+);
+
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS');
@@ -127,5 +132,17 @@ describe('dashboard run period evidence migration safety', () => {
     expect(runPeriodEvidenceMigration).toContain("'dateStart', ls.date_start");
     expect(runPeriodEvidenceMigration).toContain("'metricsCount'");
     expect(runPeriodEvidenceMigration).toContain("'metricGroupsCount'");
+  });
+});
+
+
+describe('dashboard sync coverage range migration safety', () => {
+  it('uses selected date coverage instead of requested_period equality', () => {
+    expect(coverageRangeMigration).toContain('selected_ranges AS');
+    expect(coverageRangeMigration).toContain('r.date_start <= sr.date_start');
+    expect(coverageRangeMigration).toContain('r.date_stop >= sr.date_stop');
+    expect(coverageRangeMigration).toContain('m.date_start >= sr.date_start');
+    expect(coverageRangeMigration).toContain('m.date_stop <= sr.date_stop');
+    expect(coverageRangeMigration).not.toMatch(/AND r\.requested_period = p_period\s+AND r\.status = 'success'/);
   });
 });

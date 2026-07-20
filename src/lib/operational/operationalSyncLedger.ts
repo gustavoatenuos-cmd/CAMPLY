@@ -21,7 +21,14 @@ export interface OperationalSyncLedgerEntry {
   clientId: string;
   clientMetaAssetId: string | null;
   selectedPeriod: DashboardPeriod;
+  selectedDateStart: string | null;
+  selectedDateStop: string | null;
   exactRangeShown: { dateStart: string | null; dateStop: string | null } | null;
+  coverageStatus: string | null;
+  coveringRunId: string | null;
+  coveringRequestedPeriod: DashboardPeriod | null;
+  coveredDateStart: string | null;
+  coveredDateStop: string | null;
   dashboardStatus: string;
   dataQuality: GlobalClientPerformance['dataQuality'];
   metricsAvailable: string[];
@@ -82,7 +89,14 @@ export function buildOperationalSyncLedger(
       clientId: client.clientId,
       clientMetaAssetId: firstAccount?.clientMetaAssetId ?? null,
       selectedPeriod,
+      selectedDateStart: explanation.coverage?.selectedDateStart ?? firstAccount?.dateStart ?? null,
+      selectedDateStop: explanation.coverage?.selectedDateStop ?? firstAccount?.dateStop ?? null,
       exactRangeShown: firstAccount ? { dateStart: firstAccount.dateStart, dateStop: firstAccount.dateStop } : null,
+      coverageStatus: explanation.coverage?.status ?? null,
+      coveringRunId: explanation.coverage?.coveringRunId ?? null,
+      coveringRequestedPeriod: explanation.coverage?.coveringRequestedPeriod ?? null,
+      coveredDateStart: explanation.coverage?.coveredDateStart ?? null,
+      coveredDateStop: explanation.coverage?.coveredDateStop ?? null,
       dashboardStatus: client.clientStatus,
       dataQuality: client.dataQuality,
       metricsAvailable: availableMetricIds(client.metrics),
@@ -110,6 +124,13 @@ export function publishOperationalSyncLedger(
         clientId: entry.clientId,
         selectedPeriod: entry.selectedPeriod,
         dashboardStatus: entry.dashboardStatus,
+        coverageStatus: entry.coverageStatus,
+        selectedDateStart: entry.selectedDateStart,
+        selectedDateStop: entry.selectedDateStop,
+        coveringRunId: entry.coveringRunId,
+        coveringRequestedPeriod: entry.coveringRequestedPeriod,
+        coveredDateStart: entry.coveredDateStart,
+        coveredDateStop: entry.coveredDateStop,
         decision: entry.decision,
         lastSuccessfulRunId: entry.lastSuccessfulRun?.id ?? null,
         lastSuccessfulRunPeriod: entry.lastSuccessfulRun?.requestedPeriod ?? null,

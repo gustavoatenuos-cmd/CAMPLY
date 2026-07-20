@@ -5,6 +5,7 @@ import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilitie
 import { periodLabels } from '../../lib/performance/analyticsCapabilities';
 import type { GlobalClientStatus } from '../../lib/performance/globalPerformanceDashboard';
 import { buildClientAnalyticsDecision, periodFromDashboardPeriod, type ClientAnalyticsDecision } from '../../lib/performance/clientAnalyticsDecision';
+import { explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { resolveClientPrimaryName } from '../../data/clientDisplay';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
@@ -63,7 +64,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
       client: performance.client ?? { id: performance.clientId, name: performance.clientName, company: '' },
       analysisProfile: performance.analysisProfile,
       globalPerformance: {
-        clientStatus: performance.clientStatus,
+        clientStatus: explainDashboardClientSync(performance, period).status === 'success' ? 'available' : performance.clientStatus,
         dataQuality: performance.dataQuality,
         lastSuccessfulRun: performance.lastSuccessfulRun,
       },
@@ -77,7 +78,14 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
 
   if (!isOpen || !performance) return null;
 
-  const syncDiagnosis = syncDiagnosisFor(performance.clientStatus);
+  const syncExplanation = explainDashboardClientSync(performance, period);
+  const syncDiagnosis: SyncDiagnosisState = syncExplanation.status === 'success'
+    ? 'ok'
+    : syncExplanation.status === 'failed'
+      ? 'failed'
+      : syncExplanation.status === 'partial' || syncExplanation.status === 'stale'
+        ? 'partial'
+        : syncDiagnosisFor(performance.clientStatus);
   const profile = performance.analysisProfile;
   const account = performance.accounts[0];
   const currency = account?.currency || 'BRL';

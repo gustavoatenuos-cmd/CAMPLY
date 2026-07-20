@@ -34,9 +34,9 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
       id: 'run-success',
       status: 'success',
       requestedPeriod: 'last_7d',
+      dateStart: '2026-07-14',
+      dateStop: '2026-07-20',
       runScope: 'full_account',
-      dateStart: '2026-07-13',
-      dateStop: '2026-07-19',
       startedAt: '2026-07-19T10:00:00.000Z',
       finishedAt: '2026-07-19T10:05:00.000Z',
       terminationReason: null,
@@ -47,9 +47,9 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
       id: 'run-success',
       status: 'success',
       requestedPeriod: 'last_7d',
+      dateStart: '2026-07-14',
+      dateStop: '2026-07-20',
       runScope: 'full_account',
-      dateStart: '2026-07-13',
-      dateStop: '2026-07-19',
       startedAt: '2026-07-19T10:00:00.000Z',
       finishedAt: '2026-07-19T10:05:00.000Z',
       terminationReason: null,
@@ -71,17 +71,23 @@ describe('buildOperationalSyncLedger', () => {
     expect(entry.clientMetaAssetId).toBe('asset-1');
     expect(entry.lastSuccessfulRun?.id).toBe('run-success');
     expect(entry.lastSuccessfulRun?.requestedPeriod).toBe('last_7d');
+    expect(entry.coverageStatus).toBe('covered');
+    expect(entry.coveringRunId).toBe('run-success');
+    expect(entry.selectedDateStart).toBe('2026-07-14');
+    expect(entry.selectedDateStop).toBe('2026-07-20');
+    expect(entry.coveredDateStart).toBe('2026-07-14');
+    expect(entry.coveredDateStop).toBe('2026-07-20');
     expect(entry.lastAttempt?.id).toBe('run-success');
     expect(entry.metricsAvailable).toEqual(['spend']);
     expect(entry.metricGroupsCount).toBe(1);
     expect(entry.decision).toBe('success');
   });
 
-  it('keeps a this_month run out of a last_7d ledger decision', () => {
+  it('shows not_synced when no run covers the selected range', () => {
     const [entry] = buildOperationalSyncLedger([
       client({
-        lastSuccessfulRun: { id: 'run-month', status: 'success', requestedPeriod: 'this_month', startedAt: '', finishedAt: '2026-07-19T10:00:00.000Z', terminationReason: null },
-        lastAttempt: { id: 'run-month', status: 'success', requestedPeriod: 'this_month', startedAt: '', finishedAt: '2026-07-19T10:00:00.000Z', terminationReason: null },
+        lastSuccessfulRun: { id: 'run-old', status: 'success', requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-10', startedAt: '', finishedAt: '2026-07-10T10:00:00.000Z', terminationReason: null },
+        lastAttempt: { id: 'run-old', status: 'success', requestedPeriod: 'this_month', dateStart: '2026-07-01', dateStop: '2026-07-10', startedAt: '', finishedAt: '2026-07-10T10:00:00.000Z', terminationReason: null },
       }),
     ], 'last_7d');
 
