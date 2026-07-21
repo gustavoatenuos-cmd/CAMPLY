@@ -194,19 +194,35 @@ function targetAge(evaluation: PerformanceEvaluation): number {
 
 function DashboardUnavailable({
   message,
+  technicalMessage,
   retrying,
   onRetry,
 }: {
   message: string;
+  technicalMessage?: string;
   retrying: boolean;
   onRetry: () => void;
 }) {
+  const isDevOrStaging = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('amplifyapp.com')
+  );
+
   return (
     <div className="grid h-full place-items-center bg-brand-ink p-6">
       <div className="max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-amber-100">
         <h1 className="text-xl font-black text-white">Dashboard indisponível</h1>
         <p className="mt-2 text-sm leading-6">{message}</p>
-        <p className="mt-2 text-sm leading-6">As métricas do workspace e do armazenamento local não serão usadas como substituição.</p>
+        
+        {isDevOrStaging && technicalMessage && (
+          <details className="mt-3 rounded-lg bg-black/30 p-3 text-xs text-amber-200/80 cursor-pointer">
+            <summary className="font-bold outline-none select-none">Detalhes técnicos de depuração (Dev/Staging)</summary>
+            <p className="mt-2 font-mono whitespace-pre-wrap">{technicalMessage}</p>
+          </details>
+        )}
+
+        <p className="mt-3 text-sm leading-6">As métricas do workspace e do armazenamento local não serão usadas como substituição.</p>
         <button
           type="button"
           onClick={onRetry}
@@ -363,6 +379,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     return (
       <DashboardUnavailable
         message={compatibilityReasonMessage(capabilityState.reason)}
+        technicalMessage={capabilityState.technicalMessage}
         retrying={capabilitiesLoading}
         onRetry={() => void loadCapabilities()}
       />

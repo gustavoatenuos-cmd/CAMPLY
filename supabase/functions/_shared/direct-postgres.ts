@@ -41,7 +41,10 @@ export async function withDirectPostgres<T>(
     if (match && match[1]) {
       const hostname = match[1]
       if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^[0-9.]+$/.test(hostname)) {
-        const resolvedIp = await resolveHost(hostname)
+        let resolvedIp = await resolveHost(hostname)
+        if (resolvedIp.includes(':') && !resolvedIp.startsWith('[')) {
+          resolvedIp = `[${resolvedIp}]`
+        }
         dbUrl = dbUrl.replace(`@${hostname}`, `@${resolvedIp}`)
       }
     }

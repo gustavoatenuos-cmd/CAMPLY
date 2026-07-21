@@ -30,7 +30,7 @@ export type AnalyticsCompatibilityReason =
 
 export type AnalyticsCapabilityState =
   | { mode: 'analytics'; capabilities: AnalyticsCapabilities }
-  | { mode: 'compatibility'; reason: AnalyticsCompatibilityReason };
+  | { mode: 'compatibility'; reason: AnalyticsCompatibilityReason; technicalMessage?: string };
 
 type CapabilityRpcResult = Promise<{
   data: unknown;
@@ -53,23 +53,36 @@ function supportedValues<T extends string>(value: unknown, allowed: readonly T[]
 
 export function parseAnalyticsCapabilities(value: unknown): AnalyticsCapabilityState {
   if (!isRecord(value)) {
-    return { mode: 'compatibility', reason: 'capability_contract_incompatible' };
+    return {
+      mode: 'compatibility',
+      reason: 'capability_contract_incompatible',
+      technicalMessage: 'O valor retornado pelo backend não é um objeto JSON válido.',
+    };
   }
 
   const contractVersion = Number(value.contractVersion);
   const supportedPeriods = supportedValues(value.supportedPeriods, dashboardPeriods);
   const supportedLevels = supportedValues(value.supportedLevels, analyticsLevels);
 
-  if (
-    !Number.isInteger(contractVersion)
-    || contractVersion !== ANALYTICS_CONTRACT_VERSION
-    || value.dashboardAvailable !== true
-    || value.dashboardRpc !== 'get_global_performance_dashboard_v2'
-    || value.traceableMetrics !== true
-    || supportedPeriods.length === 0
-    || supportedLevels.length === 0
-  ) {
-    return { mode: 'compatibility', reason: 'capability_contract_incompatible' };
+  const errors: string[] = [];
+  if (!Number.isInteger(contractVersion)) errors.push('contractVersion não é um inteiro');
+  else if (contractVersion !== ANALYTICS_CONTRACT_VERSION) {
+    errors.push(`contractVersion incompatível: esperado ${ANALYTICS_CONTRACT_VERSION}, recebido ${contractVersion}`);
+  }
+  if (value.dashboardAvailable !== true) errors.push('dashboardAvailable não é true');
+  if (value.dashboardRpc !== 'get_global_performance_dashboard_v2') {
+    errors.push(`dashboardRpc incompatível: esperado get_global_performance_dashboard_v2, recebido ${String(value.dashboardRpc)}`);
+  }
+  if (value.traceableMetrics !== true) errors.push('traceableMetrics não é true');
+  if (supportedPeriods.length === 0) errors.push('Nenhum período de dashboard suportado correspondente');
+  if (supportedLevels.length === 0) errors.push('Nenhum nível analítico suportado correspondente');
+
+  if (errors.length > 0) {
+    return {
+      mode: 'compatibility',
+      reason: 'capability_contract_incompatible',
+      technicalMessage: `Incompatibilidades de contrato: ${errors.join(', ')}`,
+    };
   }
 
   return {
@@ -139,18 +152,27 @@ export async function loadAnalyticsCapabilities(
     );
     if (error) {
       if (error.code === 'SUPABASE_NOT_CONFIGURED') {
-        return { mode: 'compatibility', reason: 'supabase_not_configured' };
+        return {
+          mode: 'compatibility',
+          reason: 'supabase_not_configured',
+          technicalMessage: 'Erro: Supabase não está configurado localmente.',
+        };
       }
       return {
         mode: 'compatibility',
         reason: isMissingCapabilityRpc(error)
           ? 'capability_contract_missing'
           : 'capability_contract_unavailable',
+        technicalMessage: `Erro do banco: ${error.code || 'sem código'} · ${error.message || 'sem mensagem'}`,
       };
     }
     return parseAnalyticsCapabilities(data);
-  } catch {
-    return { mode: 'compatibility', reason: 'capability_contract_unavailable' };
+  } catch (err) {
+    return {
+      mode: 'compatibility',
+      reason: 'capability_contract_unavailable',
+      technicalMessage: `Exceção capturada: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
 

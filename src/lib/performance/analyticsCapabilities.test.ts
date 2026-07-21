@@ -36,23 +36,23 @@ describe('analytics capability negotiation', () => {
   });
 
   it('uses compatibility mode for an older or incomplete contract', () => {
-    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 1 })).toEqual({
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 1 })).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });
-    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 2 })).toEqual({
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 2 })).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });
-    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 3 })).toEqual({
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 3 })).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });
-    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 4 })).toEqual({
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, contractVersion: 4 })).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });
-    expect(parseAnalyticsCapabilities({ ...validCapabilities, traceableMetrics: false })).toEqual({
+    expect(parseAnalyticsCapabilities({ ...validCapabilities, traceableMetrics: false })).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_incompatible',
     });
@@ -64,7 +64,7 @@ describe('analytics capability negotiation', () => {
       error: { code: 'PGRST202', message: 'Could not find get_analytics_capabilities in schema cache' },
     }));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_missing',
     });
@@ -75,7 +75,7 @@ describe('analytics capability negotiation', () => {
       throw new Error('sensitive backend detail');
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_unavailable',
     });
@@ -87,7 +87,7 @@ describe('analytics capability negotiation', () => {
       5
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       mode: 'compatibility',
       reason: 'capability_contract_unavailable',
     });
