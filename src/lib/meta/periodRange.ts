@@ -18,17 +18,20 @@ export function exactPeriodRange(
 ): { dateStart: string; dateStop: string } {
   const current = dateParts(now, timezone);
   const dateStop = `${current.year}-${current.month}-${current.day}`;
-  if (period === 'this_month') {
-    return { dateStart: `${current.year}-${current.month}-01`, dateStop };
-  }
-  if (period === 'this_week') {
-    const localNoon = new Date(`${dateStop}T12:00:00.000Z`);
-    const day = localNoon.getUTCDay();
-    const daysFromMonday = (day + 6) % 7;
-    localNoon.setUTCDate(localNoon.getUTCDate() - daysFromMonday);
-    return { dateStart: localNoon.toISOString().slice(0, 10), dateStop };
-  }
   if (period === 'today') return { dateStart: dateStop, dateStop };
+
+  if (period === 'yesterday') {
+    const utcStop = new Date(`${dateStop}T12:00:00.000Z`);
+    utcStop.setUTCDate(utcStop.getUTCDate() - 1);
+    const yesterday = utcStop.toISOString().slice(0, 10);
+    return { dateStart: yesterday, dateStop: yesterday };
+  }
+
+  if (period === 'today_and_yesterday') {
+    const utcStop = new Date(`${dateStop}T12:00:00.000Z`);
+    utcStop.setUTCDate(utcStop.getUTCDate() - 1);
+    return { dateStart: utcStop.toISOString().slice(0, 10), dateStop };
+  }
 
   const days = period === 'last_7d' ? 7 : period === 'last_90d' ? 90 : 30;
   const utcStop = new Date(`${dateStop}T12:00:00.000Z`);

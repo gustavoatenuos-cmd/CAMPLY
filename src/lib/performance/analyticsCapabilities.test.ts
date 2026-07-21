@@ -13,7 +13,7 @@ const validCapabilities = {
   contractVersion: 5,
   dashboardAvailable: true,
   dashboardRpc: 'get_global_performance_dashboard_v2',
-  supportedPeriods: ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'],
+  supportedPeriods: ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'],
   supportedLevels: ['campaign', 'adset', 'ad'],
   targetsAvailable: true,
   reconciliationAvailable: true,
@@ -30,7 +30,7 @@ describe('analytics capability negotiation', () => {
 
     expect(result.mode).toBe('analytics');
     if (result.mode === 'analytics') {
-      expect(result.capabilities.supportedPeriods).toEqual(['this_month', 'this_week', 'today', 'last_7d', 'last_30d']);
+      expect(result.capabilities.supportedPeriods).toEqual(['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d']);
       expect(result.capabilities.supportedLevels).toEqual(['campaign', 'adset', 'ad']);
     }
   });

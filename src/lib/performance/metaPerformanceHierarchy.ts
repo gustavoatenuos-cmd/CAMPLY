@@ -17,10 +17,25 @@ export interface HierarchicalMetricNode {
   metrics: Record<string, MetricContract>;
 }
 
+export interface HierarchyRunSummary {
+  id: string;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
 export interface HierarchyResponse {
   state: 'empty' | 'ready' | 'period_not_synced' | 'unauthorized';
   items: HierarchicalMetricNode[];
   total: number;
+  // Only populated for level === 'campaign': campaigns that are structurally
+  // ACTIVE but had zero delivery/conversion metrics in the selected period.
+  // Kept out of items/total so they don't appear as analyzable campaigns.
+  activeNoDeliveryItems?: HierarchicalMetricNode[];
+  activeNoDeliveryTotal?: number;
+  // The sync run this snapshot was read from. Every status/metric on this page
+  // is only as fresh as run.finishedAt — the RPC never queries Meta live.
+  run?: HierarchyRunSummary;
 }
 
 export async function fetchMetaPerformanceHierarchy(

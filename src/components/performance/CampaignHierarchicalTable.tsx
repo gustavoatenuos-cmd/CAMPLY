@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Layers3 } from 'lucide-react';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
-import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyLevel } from '../../lib/performance/metaPerformanceHierarchy';
+import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyLevel, type HierarchyRunSummary } from '../../lib/performance/metaPerformanceHierarchy';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import type { MetricContract } from '../../lib/performance/globalPerformanceDashboard';
 import { TraceableMetricValue } from './TraceableMetricValue';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { resolveCampaignMetricColumns, type CampaignMetricColumn } from '../../lib/performance/campaignMetricColumns';
+import { formatSnapshotStatusLabel, formatSyncedAtLabel, isSnapshotStale, SNAPSHOT_STALE_WARNING } from '../../lib/meta/snapshotFreshness';
 
 interface CampaignHierarchicalTableProps {
   account: GlobalPerformanceAccount;
@@ -14,6 +15,8 @@ interface CampaignHierarchicalTableProps {
 
 export function CampaignHierarchicalTable({ account, period }: CampaignHierarchicalTableProps) {
   const [campaigns, setCampaigns] = useState<HierarchicalMetricNode[]>([]);
+  const [noDeliveryCampaigns, setNoDeliveryCampaigns] = useState<HierarchicalMetricNode[]>([]);
+  const [run, setRun] = useState<HierarchyRunSummary | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +28,8 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
         const response = await fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100);
         if (active) {
           setCampaigns(response.items || []);
+          setNoDeliveryCampaigns(response.activeNoDeliveryItems || []);
+          setRun(response.run);
           setError(null);
         }
       } catch (err) {
@@ -54,7 +59,7 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
     );
   }
 
-  if (campaigns.length === 0) {
+  if (campaigns.length === 0 && noDeliveryCampaigns.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
         Nenhuma campanha ativa encontrada para este período.
@@ -64,6 +69,12 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
 
   return (
     <div className="space-y-3">
+      <SyncFreshnessBanner run={run} />
+      {campaigns.length === 0 && (
+        <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">
+          Nenhuma campanha ativa com entrega neste período.
+        </div>
+      )}
       {campaigns.map((campaign) => (
         <HierarchicalNodeRow
           key={campaign.id}
@@ -73,6 +84,33 @@ export function CampaignHierarchicalTable({ account, period }: CampaignHierarchi
           period={period}
         />
       ))}
+      {noDeliveryCampaigns.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-brand-muted">
+            Campanhas ativas sem entrega no período ({noDeliveryCampaigns.length})
+          </p>
+          {noDeliveryCampaigns.map((campaign) => (
+            <div
+              key={campaign.id}
+              className="rounded-xl border border-dashed border-brand-line/70 bg-brand-ink/20 p-4 text-sm text-brand-muted"
+            >
+              <span className="font-bold text-white">{campaign.name}</span>
+              <span className="ml-2 text-xs">· sem entrega no período</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SyncFreshnessBanner({ run }: { run: HierarchyRunSummary | undefined }) {
+  const syncedAt = run?.finishedAt || run?.startedAt || null;
+  const stale = isSnapshotStale(syncedAt);
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-xs ${stale ? 'border-amber-400/40 bg-amber-400/10 text-amber-200' : 'border-brand-line bg-brand-ink/30 text-brand-muted'}`}>
+      <p>{formatSyncedAtLabel(syncedAt)}</p>
+      {stale && <p className="mt-0.5 font-bold">{SNAPSHOT_STALE_WARNING}</p>}
     </div>
   );
 }
@@ -113,16 +151,7 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
   }
 
   const spendMetric = node.metrics.spend;
-  const purchasesMetric = node.metrics.purchases;
-  const roasMetric = node.metrics.purchase_roas;
-  const costPerPurchase = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-  const convMetric = node.metrics.messaging_conversations_started_total;
-  const costPerConv = deriveCostMetric('cost_per_messaging_conversation', spendMetric, convMetric);
-  const leadsMetric = node.metrics.leads;
-  const costPerLead = deriveCostMetric('cost_per_lead', spendMetric, leadsMetric);
-  
-  const isSales = node.classifiedObjective === 'SALES';
-  const isLeads = node.classifiedObjective === 'LEADS' || node.classifiedObjective === 'MESSAGING';
+  const columns = resolveCampaignMetricColumns(node.classifiedObjective, node.objective, node.metrics);
 
   // Indentação visual por nível
   const marginLeft = level === 'campaign' ? '0' : level === 'adset' ? 'ml-6' : 'ml-12';
@@ -155,32 +184,21 @@ function HierarchicalNodeRow({ node, level, account, period }: HierarchicalNodeR
               )}
             </div>
             <p className="mt-1 truncate text-xs text-brand-muted">
-              {labelText} {node.effectiveStatus && `· ${node.effectiveStatus}`}
+              {labelText} · {formatSnapshotStatusLabel(node.effectiveStatus, node.status)}
             </p>
           </div>
         </div>
 
         <MetricCell label="Investido" value={formatCurrency(metricValue(spendMetric), account.currency)} metric={spendMetric} />
 
-        {isSales ? (
-          <>
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-            <MetricCell label="CPA" value={formatCurrency(metricValue(costPerPurchase), account.currency)} metric={costPerPurchase} />
-            <MetricCell label="ROAS" value={formatNumber(metricValue(roasMetric))} metric={roasMetric} />
-          </>
-        ) : isLeads ? (
-          <>
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Custo / Conv" value={formatCurrency(metricValue(costPerConv), account.currency)} metric={costPerConv} />
-          </>
-        ) : (
-          <>
-            <MetricCell label="Conversas" value={formatNumber(metricValue(convMetric))} metric={convMetric} />
-            <MetricCell label="Leads" value={formatNumber(metricValue(leadsMetric))} metric={leadsMetric} />
-            <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-          </>
-        )}
+        {columns.map((column) => (
+          <MetricCell
+            key={column.label}
+            label={column.label}
+            value={formatMetricColumn(column, account.currency)}
+            metric={column.metric}
+          />
+        ))}
       </div>
 
       {expanded && (
@@ -219,6 +237,14 @@ function metricValue(metric: MetricContract | undefined): number | null {
 
 function formatNumber(value: number | null): string {
   return value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+function formatMetricColumn(column: CampaignMetricColumn, currency: string | null): string {
+  const value = metricValue(column.metric);
+  if (column.format === 'currency') return formatCurrency(value, currency);
+  if (column.format === 'percent') return value === null ? '—' : `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  if (column.format === 'ratio') return value === null ? '—' : `${value.toFixed(2)}x`;
+  return formatNumber(value);
 }
 
 function formatCurrency(value: number | null, currency: string | null): string {

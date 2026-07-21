@@ -12,14 +12,9 @@ import type { CamplyData } from '../types';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
-const bulkPeriodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
-  today: 'Hoje',
-  last_7d: 'Últimos 7 dias',
-  last_30d: 'Últimos 30 dias',
-  last_90d: 'Últimos 90 dias',
-};
+const SYNC_PERIOD: DashboardPeriod = 'last_90d';
+
+const syncPeriodLabel = 'Últimos 90 dias';
 
 interface BulkSyncProgress {
   total: number;
@@ -82,7 +77,6 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [showAvailableAssets, setShowAvailableAssets] = useState(false);
-  const [bulkPeriod, setBulkPeriod] = useState<DashboardPeriod>('this_month');
   const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
 
   const loadCatalog = useCallback(async () => {
@@ -123,7 +117,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       try {
         const result = await syncMetaAsset({
           clientMetaAssetId: account.clientMetaAssetId,
-          period: bulkPeriod,
+          period: SYNC_PERIOD,
           requestedLevel: 'campaign',
         });
         if (!result.success || result.status === 'failed') failed += 1;
@@ -299,14 +293,9 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                 <p className="mt-1 max-w-xl text-sm text-brand-muted">Conta autorizada no Facebook não é conta operacional do CAMPLY. Só contas vinculadas a um cliente ativo entram em sincronização e análise.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  data-testid="meta-bulk-period-select"
-                  value={bulkPeriod}
-                  onChange={(event) => setBulkPeriod(event.target.value as DashboardPeriod)}
-                  className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white"
-                >
-                  {Object.entries(bulkPeriodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
+                <span className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white font-bold">
+                  {syncPeriodLabel}
+                </span>
                 <button
                   data-testid="meta-sync-linked-clients"
                   type="button"
@@ -314,10 +303,13 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                   disabled={linkedAccounts.length === 0 || Boolean(bulkSync?.running)}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
                 >
-                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar clientes vinculados
+                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar últimos 90 dias
                 </button>
               </div>
             </div>
+            <p className="mt-3 max-w-3xl text-xs text-brand-soft leading-5">
+              Esta sincronização atualiza a base dos últimos 90 dias. O Dashboard e o Analytics usam essa base para montar os recortes de hoje, ontem, últimos 7 dias, últimos 30 dias e últimos 90 dias.
+            </p>
 
             {bulkSync && (
               <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs font-bold text-brand-soft">

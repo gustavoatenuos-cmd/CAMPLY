@@ -684,6 +684,10 @@ BEGIN
   (
     v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active',
     'Campanha ativa', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
+  ),
+  (
+    v_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active_no_delivery',
+    'Campanha ativa sem entrega', 'OUTCOME_LEADS', 'LEADS', 'ACTIVE', 'ACTIVE'
   );
 
   INSERT INTO public.meta_adset_snapshots (
@@ -802,8 +806,19 @@ BEGIN
        FROM jsonb_array_elements(v_hierarchy->'items') item
        WHERE item->>'id' = 'campaign_paused'
           OR item->>'effectiveStatus' = 'PAUSED'
+          OR item->>'id' = 'campaign_active_no_delivery'
      ) THEN
     RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
+  END IF;
+
+  -- An ACTIVE campaign with zero delivery this period (no meta_normalized_metrics
+  -- rows > 0) must not be counted or listed as analyzable — it belongs only in the
+  -- separate activeNoDelivery bucket the UI renders as "sem entrega no período".
+  IF (v_hierarchy->>'activeNoDeliveryTotal')::integer <> 1
+     OR jsonb_array_length(v_hierarchy->'activeNoDeliveryItems') <> 1
+     OR v_hierarchy->'activeNoDeliveryItems'->0->>'id' <> 'campaign_active_no_delivery'
+     OR v_hierarchy->'activeNoDeliveryItems'->0->>'effectiveStatus' <> 'ACTIVE' THEN
+    RAISE EXCEPTION 'Operational hierarchy did not isolate active campaigns without delivery: %', v_hierarchy;
   END IF;
 
   v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);

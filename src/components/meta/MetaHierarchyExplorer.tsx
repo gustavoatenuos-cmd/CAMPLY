@@ -24,6 +24,7 @@ import {
 } from '../../lib/meta/performanceHierarchyService';
 import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { ClientMetaAccount } from '../../lib/meta/clientMetaAssetService';
+import { formatSnapshotStatusLabel, formatSyncedAtLabel, isSnapshotStale, SNAPSHOT_STALE_WARNING } from '../../lib/meta/snapshotFreshness';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { MetricReconciliationPanel } from './MetricReconciliationPanel';
@@ -278,7 +279,11 @@ export function MetaHierarchyExplorer({
   if (loading) return <div className="flex min-h-48 items-center justify-center gap-2 rounded-xl border border-brand-line text-brand-muted"><LoaderCircle className="animate-spin" size={18} /> Carregando campanhas...</div>;
   if (error && !root) return <StateMessage title="Não foi possível carregar a hierarquia" impact={error} action="Tentar novamente" onAction={() => void refreshRoot()} />;
   if (root?.state === 'period_not_synced') return <StateMessage title="Período ainda não sincronizado" impact="Nenhuma campanha confiável será exibida até uma sincronização completa deste período." />;
-  if (!root || root.items.length === 0) return <StateMessage title="Nenhuma campanha ativa encontrada" impact="A conta não possui campanhas ativas coletadas para este período, ou ainda precisa ser sincronizada." action="Atualizar leitura" onAction={() => void refreshRoot()} />;
+  const noDeliveryItems = root?.activeNoDeliveryItems || [];
+  if (!root || (root.items.length === 0 && noDeliveryItems.length === 0)) return <StateMessage title="Nenhuma campanha ativa encontrada" impact="A conta não possui campanhas ativas coletadas para este período, ou ainda precisa ser sincronizada." action="Recarregar dados salvos" onAction={() => void refreshRoot()} />;
+
+  const syncedAt = root.run?.finishedAt || root.run?.startedAt || null;
+  const stale = isSnapshotStale(syncedAt);
 
   return (
     <div data-testid="meta-hierarchy" className="space-y-3">
@@ -286,10 +291,15 @@ export function MetaHierarchyExplorer({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-white">Hierarquia Meta oficial</p>
-          <p className="text-xs text-brand-muted">{root.total} campanha(s) ativa(s) · run {root.run?.id || 'não informado'} · {root.run?.status || 'sem status'}</p>
+          <p className="text-xs text-brand-muted">{root.total} campanha(s) analisável(is) · run {root.run?.id || 'não informado'} · {formatSyncedAtLabel(syncedAt)}</p>
         </div>
-        <button type="button" onClick={() => void refreshRoot()} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"><RefreshCw size={13} /> Atualizar leitura</button>
+        <button type="button" onClick={() => void refreshRoot()} className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft"><RefreshCw size={13} /> Recarregar dados salvos</button>
       </div>
+      {stale && (
+        <div role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-xs font-bold text-amber-200">
+          {SNAPSHOT_STALE_WARNING}
+        </div>
+      )}
       {root.items.map((item) => (
         <EntityNode
           key={item.id}
@@ -307,6 +317,19 @@ export function MetaHierarchyExplorer({
         />
       ))}
       {root.items.length < root.total && <button type="button" onClick={() => void loadMoreRoot()} disabled={loadingKey === 'root:more'} className="w-full rounded-xl border border-brand-line px-4 py-3 text-sm font-black text-brand-green disabled:opacity-60">{loadingKey === 'root:more' ? 'Carregando...' : `Carregar mais campanhas (${root.total - root.items.length})`}</button>}
+      {noDeliveryItems.length > 0 && (
+        <div data-testid="meta-hierarchy-no-delivery" className="space-y-2 pt-2">
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-muted">
+            Campanhas ativas sem entrega no período ({noDeliveryItems.length})
+          </p>
+          {noDeliveryItems.map((item) => (
+            <div key={item.id} className="rounded-xl border border-dashed border-brand-line bg-brand-surface/60 p-3">
+              <p className="font-bold text-white">{item.name || item.id}</p>
+              <p className="mt-1 text-xs text-brand-muted">Sem entrega no período</p>
+            </div>
+          ))}
+        </div>
+      )}
       <TargetSettingsDrawer
         open={Boolean(targetItem)}
         onClose={() => setTargetItem(null)}
@@ -370,7 +393,7 @@ function EntityNode({
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate font-black text-white">{item.name || item.id}</p>
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-brand-soft">{levelLabels[level]}</span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaused ? 'bg-amber-400/10 text-amber-200' : 'bg-emerald-400/10 text-emerald-200'}`}>{item.effectiveStatus || item.status || 'STATUS N/D'}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaused ? 'bg-amber-400/10 text-amber-200' : 'bg-emerald-400/10 text-emerald-200'}`}>{formatSnapshotStatusLabel(item.effectiveStatus, item.status)}</span>
             </div>
             <p className="mt-1 break-all text-xs text-brand-muted">ID: {item.id}</p>
             <p className="mt-1 text-xs text-brand-muted">{item.classifiedObjective || item.objective || 'Objetivo não informado'} · {item.destinationType || 'Destino não informado'} · {item.attributionSetting || 'Atribuição no detalhe da métrica'}</p>

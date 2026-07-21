@@ -5,7 +5,7 @@ import { invokeFunction } from '../invokeFunction';
 
 export const ANALYTICS_CONTRACT_VERSION = 5;
 
-export const dashboardPeriods = ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'] as const;
+export const dashboardPeriods = ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'] as const;
 export type DashboardPeriod = typeof dashboardPeriods[number];
 
 export const analyticsLevels = ['campaign', 'adset', 'ad'] as const;

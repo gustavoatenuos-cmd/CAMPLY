@@ -2,8 +2,8 @@ import '@testing-library/jest-dom/vitest';
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import React from 'react';
 import { ClientCampaignDrawer } from './ClientCampaignDrawer';
 import { fetchMetaPerformanceHierarchy } from '../../lib/performance/metaPerformanceHierarchy';
@@ -70,6 +70,10 @@ function metric(value: number) {
 describe('ClientCampaignDrawer', () => {
   beforeEach(() => {
     fetchHierarchyMock.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('não chama a hierarquia quando o cliente não tem conta Meta vinculada', async () => {
@@ -155,6 +159,128 @@ describe('ClientCampaignDrawer', () => {
     expect(screen.queryByText('Não foi possível carregar a hierarquia salva.')).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+
+  it('não mostra Compras/CPA/ROAS para campanha de engajamento, mostra métricas de engajamento', async () => {
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'ready',
+      total: 1,
+      items: [
+        {
+          id: 'camp-engagement',
+          name: 'Campanha de Engajamento',
+          status: 'ACTIVE',
+          effectiveStatus: 'ACTIVE',
+          objective: 'OUTCOME_ENGAGEMENT',
+          classifiedObjective: 'ENGAGEMENT',
+          destinationType: null,
+          attributionSetting: null,
+          creativeId: null,
+          metrics: {
+            spend: metric(200),
+            impressions: metric(5000),
+            reach: metric(3000),
+            cpm: metric(40),
+          },
+        },
+      ],
+    });
+    const performance = makePerformance([makeAccount()]);
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
+
+    expect(await screen.findByText('Campanha de Engajamento')).toBeInTheDocument();
+    expect(screen.getByText('Impressões')).toBeInTheDocument();
+    expect(screen.getByText('Alcance')).toBeInTheDocument();
+    expect(screen.getByText('CPM')).toBeInTheDocument();
+    expect(screen.queryByText('Compras')).not.toBeInTheDocument();
+    expect(screen.queryByText('CPA')).not.toBeInTheDocument();
+    expect(screen.queryByText('ROAS')).not.toBeInTheDocument();
+  });
+
+  it('exibe campanhas ativas sem entrega em seção separada, não como analisáveis', async () => {
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'ready',
+      total: 0,
+      items: [],
+      activeNoDeliveryTotal: 1,
+      activeNoDeliveryItems: [
+        {
+          id: 'camp-no-delivery',
+          name: 'Campanha sem entrega',
+          status: 'ACTIVE',
+          effectiveStatus: 'ACTIVE',
+          objective: 'OUTCOME_LEADS',
+          classifiedObjective: 'LEADS',
+          destinationType: null,
+          attributionSetting: null,
+          creativeId: null,
+          metrics: {},
+        },
+      ],
+    });
+    const performance = makePerformance([makeAccount()]);
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
+
+    expect(await screen.findByText('Nenhuma campanha ativa com entrega neste período.')).toBeInTheDocument();
+    expect(screen.getByText(/Campanhas ativas sem entrega no período/)).toBeInTheDocument();
+    expect(screen.getByText('Campanha sem entrega')).toBeInTheDocument();
+  });
+
+  it('mostra status como snapshot ("Ativa no último sync"), não como ACTIVE bruto em tempo real', async () => {
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'ready',
+      total: 1,
+      items: [
+        {
+          id: 'camp-1',
+          name: 'Campanha de Leads',
+          status: 'ACTIVE',
+          effectiveStatus: 'ACTIVE',
+          objective: 'OUTCOME_LEADS',
+          classifiedObjective: 'LEADS',
+          destinationType: 'WHATSAPP',
+          attributionSetting: '7d_click_1d_view',
+          creativeId: null,
+          metrics: { spend: metric(100), leads: metric(4) },
+        },
+      ],
+    });
+    const performance = makePerformance([makeAccount()]);
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
+
+    expect(await screen.findByText('Ativa no último sync')).toBeInTheDocument();
+    expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument();
+  });
+
+  it('mostra aviso de desatualização quando o snapshot tem mais de 24h', async () => {
+    const staleFinishedAt = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'ready',
+      total: 1,
+      items: [
+        {
+          id: 'camp-1',
+          name: 'Campanha de Leads',
+          status: 'ACTIVE',
+          effectiveStatus: 'ACTIVE',
+          objective: 'OUTCOME_LEADS',
+          classifiedObjective: 'LEADS',
+          destinationType: null,
+          attributionSetting: null,
+          creativeId: null,
+          metrics: { spend: metric(100), leads: metric(4) },
+        },
+      ],
+      run: { id: 'run-1', status: 'success', startedAt: staleFinishedAt, finishedAt: staleFinishedAt },
+    });
+    const performance = makePerformance([makeAccount()]);
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
+
+    expect(await screen.findByText(/possível desatualização|pode estar desatualizado/i)).toBeInTheDocument();
   });
 
   it('exibe aviso discreto quando há mais de uma conta Meta vinculada', async () => {

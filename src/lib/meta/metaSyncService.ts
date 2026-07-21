@@ -23,7 +23,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   if (typeof legacyAdAccountId === 'string') {
     return {
       adAccountId: legacyAdAccountId || undefined,
-      periods: ['this_month'],
+      periods: ['last_90d'],
       requestedLevel: 'ad',
     };
   }
@@ -31,7 +31,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   const options = clientOrOptions as MetaSyncOptions;
   return {
     ...options,
-    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['this_month'],
+    periods: options.periods?.length ? Array.from(new Set(options.periods)) : ['last_90d'],
     requestedLevel: options.requestedLevel ?? 'ad',
   };
 }

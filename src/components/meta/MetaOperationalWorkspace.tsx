@@ -16,9 +16,9 @@ import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const periodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
   today: 'Hoje',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
@@ -68,7 +68,7 @@ export function MetaOperationalWorkspace({
   const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
   const [accountId, setAccountId] = useState('');
   const [linkAssetId, setLinkAssetId] = useState('');
-  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('this_month');
+  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('last_90d');
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -265,10 +265,16 @@ export function MetaOperationalWorkspace({
                 {newerAttemptLabel(account) && <p className="mt-1 text-xs text-amber-200">{newerAttemptLabel(account)}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button data-testid="meta-sync-period" type="button" onClick={() => void synchronize('campaign')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-green/40 px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sincronizar período</button>
-                <button data-testid="meta-sync-account" type="button" onClick={() => void synchronize('creative')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-3 py-2 text-xs font-black text-brand-ink disabled:opacity-60">Sincronizar conta completa</button>
+                {!compact && (
+                  <>
+                    <button data-testid="meta-sync-period" type="button" onClick={() => void synchronize('campaign')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-brand-green/40 px-3 py-2 text-xs font-black text-brand-green disabled:opacity-60"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sincronizar últimos 90 dias</button>
+                    <button data-testid="meta-sync-account" type="button" onClick={() => void synchronize('creative')} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-3 py-2 text-xs font-black text-brand-ink disabled:opacity-60">Sincronizar conta completa (90 dias)</button>
+                  </>
+                )}
                 <button type="button" onClick={() => setTargetsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-black text-brand-soft"><Target size={14} /> Metas da conta</button>
-                <button type="button" onClick={() => setConfirmUnlinkOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-xs font-black text-rose-200 disabled:opacity-60"><Unlink size={14} /> Desvincular</button>
+                {!compact && (
+                  <button type="button" onClick={() => setConfirmUnlinkOpen(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-3 py-2 text-xs font-black text-rose-200 disabled:opacity-60"><Unlink size={14} /> Desvincular</button>
+                )}
               </div>
             </div>
             {clientCatalog && clientCatalog.accounts.length > 1 && (

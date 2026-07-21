@@ -37,6 +37,10 @@ export interface MetaHierarchyPage {
   pageSize: number;
   total: number;
   items: MetaHierarchyItem[];
+  // Only populated for level === 'campaign': campaigns that are structurally
+  // ACTIVE but had zero delivery/conversion metrics in the selected period.
+  activeNoDeliveryItems?: MetaHierarchyItem[];
+  activeNoDeliveryTotal?: number;
   clientId?: string;
   clientMetaAssetId?: string;
   metaAssetId?: string;

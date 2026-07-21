@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { X, ExternalLink, Loader2 } from 'lucide-react';
-import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode } from '../../lib/performance/metaPerformanceHierarchy';
+import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyRunSummary } from '../../lib/performance/metaPerformanceHierarchy';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
-import { deriveCostMetric } from '../../lib/performance/traceableMetrics';
+import { resolveCampaignMetricColumns, type CampaignMetricColumn } from '../../lib/performance/campaignMetricColumns';
+import { formatSnapshotStatusLabel, formatSyncedAtLabel, isSnapshotStale, SNAPSHOT_STALE_WARNING } from '../../lib/meta/snapshotFreshness';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
 
 interface ClientCampaignDrawerProps {
@@ -21,7 +22,7 @@ type DrawerState =
   | { kind: 'unauthorized' }
   | { kind: 'empty' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; items: HierarchicalMetricNode[] };
+  | { kind: 'ready'; items: HierarchicalMetricNode[]; noDeliveryItems: HierarchicalMetricNode[]; run: HierarchyRunSummary | undefined };
 
 // Contas sem clientMetaAssetId não têm vínculo analítico oficial e não podem
 // ser usadas para buscar hierarquia — pular silenciosamente para a próxima.
@@ -50,14 +51,15 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
     fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100)
       .then((response) => {
         if (!active) return;
+        const noDeliveryItems = response.activeNoDeliveryItems || [];
         if (response.state === 'period_not_synced') {
           setState({ kind: 'period_not_synced' });
         } else if (response.state === 'unauthorized') {
           setState({ kind: 'unauthorized' });
-        } else if (response.state === 'empty' || response.items.length === 0) {
+        } else if (response.items.length === 0 && noDeliveryItems.length === 0) {
           setState({ kind: 'empty' });
         } else {
-          setState({ kind: 'ready', items: response.items });
+          setState({ kind: 'ready', items: response.items, noDeliveryItems, run: response.run });
         }
       })
       .catch((err) => {
@@ -130,13 +132,43 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
+              <SyncFreshnessBanner run={state.run} />
+              {state.items.length === 0 && (
+                <EmptyMessage>Nenhuma campanha ativa com entrega neste período.</EmptyMessage>
+              )}
               {state.items.map((campaign) => (
                 <CampaignRow key={campaign.id} campaign={campaign} account={account} />
               ))}
+              {state.noDeliveryItems.length > 0 && (
+                <div className="pt-2">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Campanhas ativas sem entrega no período ({state.noDeliveryItems.length})
+                  </p>
+                  <div className="space-y-2">
+                    {state.noDeliveryItems.map((campaign) => (
+                      <div key={campaign.id} className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3">
+                        <p className="font-medium text-gray-700">{campaign.name}</p>
+                        <p className="text-xs text-gray-500">Sem entrega no período</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SyncFreshnessBanner({ run }: { run: HierarchyRunSummary | undefined }) {
+  const syncedAt = run?.finishedAt || run?.startedAt || null;
+  const stale = isSnapshotStale(syncedAt);
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs ${stale ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+      <p>{formatSyncedAtLabel(syncedAt)}</p>
+      {stale && <p className="mt-0.5 font-medium">{SNAPSHOT_STALE_WARNING}</p>}
     </div>
   );
 }
@@ -151,10 +183,9 @@ function EmptyMessage({ children }: { children: ReactNode }) {
 
 function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; account: GlobalPerformanceAccount }) {
   const spendMetric = campaign.metrics.spend;
-  const purchasesMetric = campaign.metrics.purchases;
-  const roasMetric = campaign.metrics.purchase_roas;
-  const cpaMetric = deriveCostMetric('cost_per_purchase', spendMetric, purchasesMetric);
-  const status = campaign.effectiveStatus || campaign.status;
+  const isActive = (campaign.effectiveStatus || campaign.status || '').toUpperCase() === 'ACTIVE';
+  const statusLabel = formatSnapshotStatusLabel(campaign.effectiveStatus, campaign.status);
+  const columns = resolveCampaignMetricColumns(campaign.classifiedObjective, campaign.objective, campaign.metrics);
 
   return (
     <div className="bg-white border rounded-lg p-4 hover:shadow-sm transition-shadow">
@@ -173,8 +204,8 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
             </a>
           </h4>
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span className={`px-2 py-0.5 rounded-full ${status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-              {status}
+            <span className={`px-2 py-0.5 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+              {statusLabel}
             </span>
             <span>•</span>
             <span>{campaign.objective || 'Sem objetivo'}</span>
@@ -184,12 +215,25 @@ function CampaignRow({ campaign, account }: { campaign: HierarchicalMetricNode; 
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-gray-100">
         <MetricCell label="Gasto" value={formatCurrency(metricValue(spendMetric), account.currency)} metric={spendMetric} />
-        <MetricCell label="Compras" value={formatNumber(metricValue(purchasesMetric))} metric={purchasesMetric} />
-        <MetricCell label="CPA" value={formatCurrency(metricValue(cpaMetric), account.currency)} metric={cpaMetric} />
-        <MetricCell label="ROAS" value={roasMetric?.available && roasMetric.value !== null ? `${roasMetric.value.toFixed(2)}x` : '—'} metric={roasMetric} />
+        {columns.map((column) => (
+          <MetricCell
+            key={column.label}
+            label={column.label}
+            value={formatMetricColumn(column, account.currency)}
+            metric={column.metric}
+          />
+        ))}
       </div>
     </div>
   );
+}
+
+function formatMetricColumn(column: CampaignMetricColumn, currency: string | null): string {
+  const value = metricValue(column.metric);
+  if (column.format === 'currency') return formatCurrency(value, currency);
+  if (column.format === 'percent') return value === null ? '—' : `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  if (column.format === 'ratio') return value === null ? '—' : `${value.toFixed(2)}x`;
+  return formatNumber(value);
 }
 
 function MetricCell({ label, value, metric }: { label: string; value: string; metric: HierarchicalMetricNode['metrics'][string] | undefined }) {

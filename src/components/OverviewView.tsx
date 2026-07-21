@@ -32,7 +32,6 @@ import { CollapsibleSection } from './ui/CollapsibleSection';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { isMetaE2EMode } from '../lib/meta/metaE2ERuntime';
 import { metricLabels } from '../lib/analysis/clientAnalysisProfile';
-import { syncMetaAsset } from '../lib/meta/metaSyncService';
 
 
 interface OverviewViewProps {
@@ -43,9 +42,9 @@ interface OverviewViewProps {
 }
 
 const periodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
   today: 'Hoje',
+  yesterday: 'Ontem',
+  today_and_yesterday: 'Hoje e ontem',
   last_7d: 'Últimos 7 dias',
   last_30d: 'Últimos 30 dias',
   last_90d: 'Últimos 90 dias',
@@ -293,31 +292,6 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
     }
   }, [capabilities, period, data.clients]);
 
-  const handleSyncAll = useCallback(async () => {
-    if (!capabilities) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const activeClientsWithAssets = clients.filter(c => c.clientStatus !== 'not_connected');
-      const syncPromises = activeClientsWithAssets.flatMap(c => 
-        c.accounts.map(account => 
-          syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' })
-            .catch(err => { console.error('Erro sync', err); return null; })
-        )
-      );
-      
-      if (syncPromises.length > 0) {
-        await Promise.all(syncPromises);
-      }
-      
-      await loadDashboard();
-    } catch (err) {
-      console.error('Erro na sincronização geral:', err);
-      setError('dashboard_unavailable');
-      setLoading(false);
-    }
-  }, [capabilities, clients, period, loadDashboard]);
-
   useEffect(() => {
     if (capabilities) void loadDashboard();
   }, [capabilities, loadDashboard]);
@@ -449,7 +423,7 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
               </select>
                 <button
                   type="button"
-                  onClick={() => void handleSyncAll()}
+                  onClick={() => void loadDashboard()}
                   disabled={loading}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
                 >
@@ -463,6 +437,8 @@ export function OverviewView({ data, setActiveView }: OverviewViewProps) {
             <span>Período: <strong className="text-white">{periodLabels[period]}</strong></span>
             <span>•</span>
             <span>Intervalo exato: <strong className="text-white">{exactRangeLabel(filteredClients)}</strong></span>
+            <span>•</span>
+            <span>Cobertura: <strong className="text-emerald-300">Dados carregados a partir da sincronização dos últimos 90 dias</strong></span>
             <span>•</span>
             <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
             <span>•</span>

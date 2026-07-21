@@ -145,11 +145,13 @@ const weekMondayIsoDate = (value: string): string => {
 };
 
 const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
-  if (period !== 'this_week') return { date_preset: period };
-  if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today' };
-  const until = localIsoDate(now, timezone);
-  const since = weekMondayIsoDate(until);
-  return { time_range: JSON.stringify({ since, until }) };
+  if (period === 'this_week') {
+    if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today', time_increment: '1' };
+    const until = localIsoDate(now, timezone);
+    const since = weekMondayIsoDate(until);
+    return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
+  }
+  return { date_preset: period, time_increment: '1' };
 };
 
 const isIsoDate = (value: unknown): value is string =>

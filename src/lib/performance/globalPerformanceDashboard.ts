@@ -168,16 +168,12 @@ function applyProfileDataGate(
 function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Date; end: Date } {
   const end = new Date(currentDate);
   const start = new Date(currentDate);
-  if (period === 'this_month') {
-    start.setUTCDate(1);
-    end.setUTCMonth(end.getUTCMonth() + 1, 0);
+  if (period === 'yesterday') {
+    start.setUTCDate(start.getUTCDate() - 1);
+    end.setUTCDate(end.getUTCDate() - 1);
   }
-  if (period === 'this_week') {
-    const day = start.getUTCDay();
-    const daysFromMonday = (day + 6) % 7;
-    start.setUTCDate(start.getUTCDate() - daysFromMonday);
-    end.setTime(start.getTime());
-    end.setUTCDate(end.getUTCDate() + 6);
+  if (period === 'today_and_yesterday') {
+    start.setUTCDate(start.getUTCDate() - 1);
   }
   if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
   if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
@@ -191,17 +187,9 @@ function fullBudgetRange(
   currentDate: Date,
   fallback: { start: Date; end: Date }
 ): { start: string | Date; end: string | Date } {
-  if (!['today', 'this_week', 'this_month'].includes(period)) return fallback;
+  if (period !== 'today') return fallback;
   const exact = exactPeriodRange(period, timezone, currentDate);
-  if (period === 'today') return { start: exact.dateStart, end: exact.dateStop };
-  if (period === 'this_week') {
-    const end = new Date(`${exact.dateStart}T12:00:00Z`);
-    end.setUTCDate(end.getUTCDate() + 6);
-    return { start: exact.dateStart, end: end.toISOString().slice(0, 10) };
-  }
-  const [year, month] = exact.dateStart.split('-').map(Number);
-  const end = new Date(Date.UTC(year, month, 0, 12));
-  return { start: exact.dateStart, end: end.toISOString().slice(0, 10) };
+  return { start: exact.dateStart, end: exact.dateStop };
 }
 
 function buildUnavailableEvaluation(
@@ -319,26 +307,20 @@ function calculateAccountPacing(
   const weekly = accountTargets.find((target) => target.targetKind === 'weekly_budget');
   const monthly = accountTargets.find((target) => target.targetKind === 'monthly_budget');
   const profileBudget = useProfileBudget && profile?.analysisEnabled && profile.plannedBudget && (
-    (profile.budgetPeriod === 'daily' && period === 'today')
-    || (profile.budgetPeriod === 'weekly' && period === 'this_week')
-    || (profile.budgetPeriod === 'monthly' && period === 'this_month')
+    profile.budgetPeriod === 'daily' && period === 'today'
   ) ? profile.plannedBudget : null;
 
   const fallback = fallbackRange(period, currentDate);
   const targetDailyBudget = daily?.targetValue ?? (profile?.budgetPeriod === 'daily' ? profileBudget : null);
-  const targetPeriodBudget = period === 'this_week'
-    ? weekly?.targetValue ?? (profile?.budgetPeriod === 'weekly' ? profileBudget : null)
-    : period === 'this_month'
-      ? monthly?.targetValue ?? (profile?.budgetPeriod === 'monthly' ? profileBudget : null)
-      : null;
+  const targetPeriodBudget = null;
   if (!targetDailyBudget && !targetPeriodBudget) return null;
   const budgetRange = fullBudgetRange(period, account.timezone, currentDate, fallback);
   const result = calculateBudgetPacing({
     actualSpend: spend.value,
     targetDailyBudget,
     targetMonthlyBudget: targetPeriodBudget,
-    periodStart: ['today', 'this_week', 'this_month'].includes(period) ? budgetRange.start : account.dateStart ?? fallback.start,
-    periodEnd: ['today', 'this_week', 'this_month'].includes(period) ? budgetRange.end : account.dateStop ?? fallback.end,
+    periodStart: account.dateStart ?? fallback.start,
+    periodEnd: account.dateStop ?? fallback.end,
     currentDate,
     timezone: account.timezone,
     currency: account.currency,

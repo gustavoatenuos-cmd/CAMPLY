@@ -122,13 +122,13 @@ const mockAccount = (): ClientMetaAccount => ({
   linkedAt: '2026-06-30T12:00:00.000Z',
   availablePeriods: Array.from(metaE2EState.syncedPeriods),
   lastAttempt: {
-    id: 'run-e2e', status: 'success', period: 'this_month', level: 'creative',
+    id: 'run-e2e', status: 'success', period: 'last_90d', level: 'creative',
     scope: 'full_account', startedAt: '2026-06-30T17:59:00.000Z',
     finishedAt: '2026-06-30T18:00:00.000Z', terminationReason: 'completed',
     pagesFetched: 4, recordsFetched: 12,
   },
   lastSuccess: {
-    id: 'run-e2e', period: 'this_month', level: 'creative', scope: 'full_account',
+    id: 'run-e2e', period: 'last_90d', level: 'creative', scope: 'full_account',
     startedAt: '2026-06-30T17:59:00.000Z', finishedAt: '2026-06-30T18:00:00.000Z',
     pagesFetched: 4, recordsFetched: 12,
   },
@@ -349,7 +349,7 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
     lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run));
     if (run.status === 'success') {
       lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run));
-      if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'].includes(run.requested_period)) {
+      if (run.run_scope === 'full_account' && ['last_90d', 'last_30d', 'last_7d', 'today', 'yesterday', 'today_and_yesterday'].includes(run.requested_period)) {
         const periods = periodsByAccount.get(key) || new Set<string>();
         periods.add(run.requested_period);
         periodsByAccount.set(key, periods);

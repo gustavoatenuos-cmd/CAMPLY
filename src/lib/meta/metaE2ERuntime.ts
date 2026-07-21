@@ -51,7 +51,7 @@ const E2E_STATE_KEY = 'camply:meta-e2e:runtime';
 function initialMetaE2EState(): E2EState {
   return {
     linked: false,
-    syncedPeriods: new Set<DashboardPeriod>(['this_month']),
+    syncedPeriods: new Set<DashboardPeriod>(['last_90d']),
     targets: [],
   };
 }
@@ -67,7 +67,7 @@ function storedMetaE2EState(): E2EState | null {
     if (!stored) return null;
     return {
       linked: stored.linked === true,
-      syncedPeriods: new Set(stored.syncedPeriods?.length ? stored.syncedPeriods : ['this_month']),
+      syncedPeriods: new Set(stored.syncedPeriods?.length ? stored.syncedPeriods : ['last_90d']),
       targets: Array.isArray(stored.targets) ? stored.targets : [],
     };
   } catch {

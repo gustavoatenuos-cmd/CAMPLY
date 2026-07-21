@@ -12,9 +12,7 @@ import { PerformanceStatusBadge } from './PerformanceStatusBadge';
 import { TraceableMetricValue } from './TraceableMetricValue';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { CampaignHierarchicalTable } from './CampaignHierarchicalTable';
-import { syncMetaAsset } from '../../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
-import { RefreshCw } from 'lucide-react';
 
 // ─── Helpers de formatação ────────────────────────────────────────────────────
 
@@ -147,39 +145,6 @@ function statusLabel(status: GlobalClientPerformance['clientStatus']): string {
 
 function accountRowKey(clientId: string, account: GlobalPerformanceAccount): string {
   return `${clientId}:${account.clientMetaAssetId}`;
-}
-
-function SyncAction({ account, period }: { account: GlobalPerformanceAccount, period: DashboardPeriod }) {
-  const [syncing, setSyncing] = useState(false);
-  
-  const handleSync = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const result = await syncMetaAsset({ clientMetaAssetId: account.clientMetaAssetId, period, requestedLevel: 'campaign' });
-      if (!result.success) {
-        alert('Erro ao sincronizar: ' + (result.message || 'Erro desconhecido'));
-      } else {
-        alert('Sincronização iniciada com sucesso. Pode levar alguns minutos.');
-      }
-    } catch (err: any) {
-      alert('Erro inesperado: ' + err.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleSync}
-      disabled={syncing}
-      className="mt-2 hidden flex items-center gap-1 rounded-md border border-brand-line/60 bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft hover:bg-white/10 group-hover:inline-flex disabled:opacity-50"
-    >
-      <RefreshCw size={10} className={syncing ? 'animate-spin' : ''} />
-      {syncing ? 'Sincronizando...' : 'Sincronizar'}
-    </button>
-  );
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -475,9 +440,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                             : 'Sem sync confiável'}
                         </p>
                         {/* Botão fantasma — aparece no hover da linha */}
-                        {account && (client.clientStatus === 'failed' || client.clientStatus === 'period_not_synced') ? (
-                          <SyncAction account={account} period={period} />
-                        ) : account ? (
+                        {account ? (
                           <span className="mt-2 hidden rounded-md border border-brand-line/60 px-2 py-1 text-[10px] font-bold text-brand-soft group-hover:inline-block">
                             Ver campanhas
                           </span>
