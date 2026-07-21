@@ -85,7 +85,7 @@ serve(async (req) => {
       action: body?.action || 'unknown',
       period: body?.period || 'unknown',
       userId: user?.id || 'unknown',
-      rpc: action === 'capabilities' ? 'get_analytics_capabilities' : 'get_global_performance_dashboard_v2',
+      rpc: (body?.action) === 'capabilities' ? 'get_analytics_capabilities' : 'get_global_performance_dashboard_v2',
       errorCode: pgError?.code || 'unknown',
       errorMessage: error instanceof Error ? error.message : String(error),
       stage: 'rpc_execution'

@@ -37,15 +37,24 @@ export async function withDirectPostgres<T>(
 
   // Resolve host via Deno connection to bypass Deno's node:dns emulation bugs
   try {
-    const match = dbUrl.match(/@([^:/]+)(:\d+)?\//)
-    if (match && match[1]) {
-      const hostname = match[1]
-      if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^[0-9.]+$/.test(hostname)) {
-        let resolvedIp = await resolveHost(hostname)
+    const url = new URL(dbUrl)
+    // url.hostname extracts the IP or host correctly (e.g. "[2600:1f18...]" or "localhost")
+    let hostname = url.hostname
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('db') || hostname.includes('local');
+    
+    if (isLocalHost) {
+      // Remove brackets if present to resolve IP
+      const cleanHost = hostname.startsWith('[') && hostname.endsWith(']') 
+        ? hostname.slice(1, -1) 
+        : hostname;
+        
+      if (!/^[0-9.]+$/.test(cleanHost)) {
+        let resolvedIp = await resolveHost(cleanHost)
         if (resolvedIp.includes(':') && !resolvedIp.startsWith('[')) {
           resolvedIp = `[${resolvedIp}]`
         }
-        dbUrl = dbUrl.replace(`@${hostname}`, `@${resolvedIp}`)
+        url.hostname = resolvedIp
+        dbUrl = url.toString()
       }
     }
   } catch (err) {
