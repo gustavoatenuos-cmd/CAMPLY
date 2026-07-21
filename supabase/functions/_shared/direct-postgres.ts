@@ -32,22 +32,41 @@ export async function withDirectPostgres<T>(
   operation: (sql: ReturnType<typeof postgres>) => Promise<T>,
   connectTimeoutSeconds = 5,
 ): Promise<T> {
-  let dbUrl = Deno.env.get('DIRECT_DB_URL') || Deno.env.get('SUPABASE_DB_URL')
+  const sourceKey = Deno.env.get('DIRECT_DB_URL') ? 'DIRECT_DB_URL' : 'SUPABASE_DB_URL'
+  let dbUrl = Deno.env.get(sourceKey)
   if (!dbUrl) throw new Error('SUPABASE_DB_URL ou DIRECT_DB_URL não está configurado.')
 
-  // Resolve host via Deno connection to bypass Deno's node:dns emulation bugs
+  let originalHostKind = 'other'
+  let routedVia = 'direct'
+  let poolerHost = ''
+  let poolerPort = '5432'
+
   try {
     const url = new URL(dbUrl)
-    // url.hostname extracts the IP or host correctly (e.g. "[2600:1f18...]" or "localhost")
     let hostname = url.hostname
-    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('db') || hostname.includes('local');
-    
-    if (isLocalHost) {
-      // Remove brackets if present to resolve IP
-      const cleanHost = hostname.startsWith('[') && hostname.endsWith(']') 
-        ? hostname.slice(1, -1) 
-        : hostname;
-        
+
+    if (hostname.includes('supabase.co') && hostname.startsWith('db.')) {
+      originalHostKind = 'supabase_direct'
+      routedVia = 'pooler'
+      // Map db.<ref>.supabase.co to transaction pooler host in Sao Paulo region (sa-east-1)
+      const projectRef = hostname.split('.')[1] || 'ilcvydgogqumwjrpzzro'
+      poolerHost = `aws-0-sa-east-1.pooler.supabase.com`
+      poolerPort = '6543'
+
+      url.hostname = poolerHost
+      url.port = poolerPort
+      // Add necessary options for pooler compatibility
+      url.searchParams.set('sslmode', 'require')
+      dbUrl = url.toString()
+    } else if (hostname.includes('pooler.supabase.com')) {
+      originalHostKind = 'pooler'
+      routedVia = 'pooler'
+      poolerHost = hostname
+      poolerPort = url.port || '6543'
+    } else if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('db') || hostname.includes('local')) {
+      originalHostKind = 'localhost'
+      // For local Docker environment bypass node:dns bugs
+      const cleanHost = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
       if (!/^[0-9.]+$/.test(cleanHost)) {
         let resolvedIp = await resolveHost(cleanHost)
         if (resolvedIp.includes(':') && !resolvedIp.startsWith('[')) {
@@ -57,8 +76,16 @@ export async function withDirectPostgres<T>(
         dbUrl = url.toString()
       }
     }
+
+    console.log('[direct-postgres] Database Connection Metadata:', {
+      source: sourceKey,
+      originalHostKind,
+      routedVia,
+      poolerHost,
+      poolerPort
+    })
   } catch (err) {
-    console.warn('Failed to parse and resolve database host in withDirectPostgres', err)
+    console.warn('Failed to parse database connection string in withDirectPostgres', err)
   }
 
   const sql = postgres(dbUrl, {
