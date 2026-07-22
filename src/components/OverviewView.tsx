@@ -207,19 +207,21 @@ function DashboardUnavailable({
   onRetry: () => void;
 }) {
   return (
-    <div className="grid h-full place-items-center bg-brand-ink p-6">
-      <div className="max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-amber-100">
-        <h1 className="text-xl font-black text-white">Dashboard indisponível</h1>
-        <p className="mt-2 text-sm leading-6">{message}</p>
-        <p className="mt-2 text-sm leading-6">As métricas do workspace e do armazenamento local não serão usadas como substituição.</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          disabled={retrying}
-          className="mt-4 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-3 py-2 font-bold text-amber-100 transition hover:bg-amber-300/10 disabled:cursor-wait disabled:opacity-60"
-        >
-          <RefreshCw size={13} className={retrying ? 'animate-spin' : ''} /> Verificar novamente
-        </button>
+    <div className="h-full overflow-y-auto bg-brand-ink">
+      <div className="grid min-h-full place-items-center p-6">
+        <div className="max-w-xl rounded-2xl border border-amber-400/30 bg-amber-400/10 p-6 text-amber-100">
+          <h1 className="text-xl font-black text-white">Dashboard indisponível</h1>
+          <p className="mt-2 text-sm leading-6">{message}</p>
+          <p className="mt-2 text-sm leading-6">As métricas do workspace e do armazenamento local não serão usadas como substituição.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="mt-4 inline-flex items-center gap-1 rounded-lg border border-amber-300/30 px-3 py-2 font-bold text-amber-100 transition hover:bg-amber-300/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw size={13} className={retrying ? 'animate-spin' : ''} /> Verificar novamente
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -459,10 +461,12 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
 
   if (capabilitiesLoading || !capabilityState) {
     return (
-      <div className="grid h-full place-items-center bg-brand-ink text-brand-muted">
-        <div className="text-center">
-          <RefreshCw className="mx-auto animate-spin text-brand-green" size={26} />
-          <p className="mt-3">Verificando o contrato analítico seguro...</p>
+      <div className="h-full overflow-y-auto bg-brand-ink">
+        <div className="grid min-h-full place-items-center text-brand-muted p-6">
+          <div className="text-center">
+            <RefreshCw className="mx-auto animate-spin text-brand-green" size={26} />
+            <p className="mt-3">Verificando o contrato analítico seguro...</p>
+          </div>
         </div>
       </div>
     );
