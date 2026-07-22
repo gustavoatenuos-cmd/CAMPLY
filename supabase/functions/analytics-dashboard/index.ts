@@ -39,9 +39,48 @@ serve(async (req) => {
     const authResult = await requireAuthenticatedUser(req);
     user = authResult.user;
     body = await req.json().catch(() => ({})) as AnalyticsDashboardBody
-    const action = body.action === 'dashboard' ? 'dashboard' : body.action === 'capabilities' ? 'capabilities' : ''
+    const action = body.action === 'dashboard' ? 'dashboard' : body.action === 'capabilities' ? 'capabilities' : body.action === 'diagnostics' ? 'diagnostics' : ''
 
     if (!action) throw new HttpError('Ação analítica inválida.', 400)
+
+    if (action === 'diagnostics') {
+      const sourceKey = Deno.env.get('DIRECT_DB_URL') ? 'DIRECT_DB_URL' : Deno.env.get('SUPABASE_DB_URL') ? 'SUPABASE_DB_URL' : 'missing'
+      let hostKind = 'unknown'
+      let hostPreview = null
+      let hasPassword = false
+
+      if (sourceKey !== 'missing') {
+        try {
+          const url = new URL(Deno.env.get(sourceKey)!)
+          hostPreview = url.hostname
+          hasPassword = Boolean(url.password)
+          if (hostPreview.includes('pooler.supabase.com')) {
+            hostKind = 'pooler'
+          } else if (hostPreview.includes('supabase.co') && hostPreview.startsWith('db.')) {
+            hostKind = 'supabase_direct'
+          } else if (hostPreview === 'localhost' || hostPreview === '127.0.0.1') {
+            hostKind = 'localhost'
+          }
+        } catch {
+          hostKind = 'parse_error'
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        functionName: "analytics-dashboard",
+        functionBuildId: "9162c2c",
+        expectedContractVersion: 5,
+        validPeriods: Array.from(VALID_PERIODS),
+        supabaseUrlProjectRef: "ilcvydgogqumwjrpzzro",
+        dbConnection: {
+          source: sourceKey,
+          hostKind,
+          hostPreview,
+          hasPassword
+        }
+      })
+    }
 
     const result = await withDirectPostgres(async (sql) => sql.begin(async (tx) => {
       await tx`select set_config('request.jwt.claims', ${JSON.stringify({
