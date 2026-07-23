@@ -166,23 +166,23 @@ BEGIN
   );
 
   v_capabilities := public.get_analytics_capabilities();
-  IF (v_capabilities->>'contractVersion')::integer <> 5
+  IF (v_capabilities->>'contractVersion')::integer <> 6
      OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
      OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
-     OR NOT (v_capabilities->'supportedPeriods' @> '["this_month", "this_week", "today", "last_7d", "last_30d"]'::jsonb)
+     OR NOT (v_capabilities->'supportedPeriods' @> '["today", "yesterday", "today_and_yesterday", "last_7d", "last_30d", "last_90d"]'::jsonb)
      OR NOT (v_capabilities->'supportedLevels' @> '["campaign", "adset", "ad"]'::jsonb)
      OR COALESCE((v_capabilities->>'traceableMetrics')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'Unexpected analytics capability contract: %', v_capabilities;
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('last_30d', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
     RAISE EXCEPTION 'Traceable dashboard v2 must return an array';
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_week', NULL, NULL);
+  v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
   IF jsonb_typeof(v_dashboard) <> 'array' THEN
-    RAISE EXCEPTION 'Traceable dashboard v2 must accept this_week';
+    RAISE EXCEPTION 'Traceable dashboard v2 must accept last_7d';
   END IF;
 
   v_missing_metric := public.decorate_analytics_metric(
@@ -429,6 +429,7 @@ DECLARE
   v_run_id UUID := '10000000-0000-0000-0000-000000000301';
   v_selective_run_id UUID := '10000000-0000-0000-0000-000000000302';
   v_partial_run_id UUID := '10000000-0000-0000-0000-000000000303';
+  v_dashboard_run_id UUID := '10000000-0000-0000-0000-000000000304';
   v_target_id UUID;
   v_next_version BIGINT;
   v_dashboard JSONB;
@@ -758,6 +759,97 @@ BEGIN
 
   INSERT INTO public.meta_sync_runs (
     id, user_id, integration_id, ad_account_id, graph_api_version,
+    requested_period, requested_level, run_scope, request_fingerprint,
+    status, started_at, finished_at, termination_reason, currency, timezone,
+    date_start, date_stop
+  ) VALUES (
+    v_dashboard_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'v23.0',
+    'last_90d', 'campaign', 'full_account', 'dashboard-multiday-rollup-smoke',
+    'success', now() - interval '30 seconds', now() - interval '25 seconds',
+    'completed', 'BRL', 'America/Sao_Paulo',
+    current_date - 89, current_date
+  );
+
+  INSERT INTO public.meta_campaign_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    campaign_name, raw_objective, classified_objective, meta_status, effective_status
+  ) VALUES
+  (
+    v_dashboard_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_active',
+    'Campanha ativa', 'OUTCOME_SALES', 'SALES', 'ACTIVE', 'ACTIVE'
+  ),
+  (
+    v_dashboard_run_id, v_user_a, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'Campanha pausada', 'OUTCOME_SALES', 'SALES', 'PAUSED', 'PAUSED'
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    attribution_setting, source_level, completeness_status
+  )
+  SELECT
+    v_user_a,
+    v_dashboard_run_id,
+    v_integration_a,
+    'act_phase1_a',
+    CASE WHEN scope.source_level = 'campaign' THEN 'campaign_active' ELSE NULL END,
+    metric.metric_id,
+    metric.metric_value,
+    current_date + metric.day_offset,
+    current_date + metric.day_offset,
+    'America/Sao_Paulo',
+    CASE WHEN scope.source_level = 'campaign' THEN '7d_click_1d_view' ELSE NULL END,
+    scope.source_level,
+    'complete'
+  FROM (VALUES ('account'::text), ('campaign'::text)) scope(source_level)
+  CROSS JOIN (VALUES
+    (-1, 'spend', 100::numeric),
+    (-1, 'impressions', 1000::numeric),
+    (-1, 'reach', 800::numeric),
+    (-1, 'link_clicks', 100::numeric),
+    (-1, 'messaging_conversations_started_total', 10::numeric),
+    (-1, 'purchases', 2::numeric),
+    (-1, 'purchase_value', 200::numeric),
+    (-1, 'landing_page_views', 80::numeric),
+    (-1, 'frequency', 1.25::numeric),
+    (-1, 'cpm', 100::numeric),
+    (-1, 'link_ctr', 10::numeric),
+    (-1, 'link_cpc', 1::numeric),
+    (-1, 'cpa', 50::numeric),
+    (-1, 'cost_per_messaging_conversation', 10::numeric),
+    (-1, 'purchase_roas', 2::numeric),
+    (-1, 'page_load_rate', 80::numeric),
+    (0, 'spend', 200::numeric),
+    (0, 'impressions', 4000::numeric),
+    (0, 'reach', 2500::numeric),
+    (0, 'link_clicks', 200::numeric),
+    (0, 'messaging_conversations_started_total', 10::numeric),
+    (0, 'purchases', 3::numeric),
+    (0, 'purchase_value', 600::numeric),
+    (0, 'landing_page_views', 100::numeric),
+    (0, 'frequency', 1.6::numeric),
+    (0, 'cpm', 50::numeric),
+    (0, 'link_ctr', 5::numeric),
+    (0, 'link_cpc', 1::numeric),
+    (0, 'cpa', 66.6666666667::numeric),
+    (0, 'cost_per_messaging_conversation', 20::numeric),
+    (0, 'purchase_roas', 3::numeric),
+    (0, 'page_load_rate', 50::numeric)
+  ) metric(day_offset, metric_id, metric_value);
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    attribution_setting, source_level, completeness_status
+  ) VALUES (
+    v_user_a, v_dashboard_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused',
+    'spend', 999, current_date, current_date, 'America/Sao_Paulo',
+    '7d_click_1d_view', 'campaign', 'complete'
+  );
+
+  INSERT INTO public.meta_sync_runs (
+    id, user_id, integration_id, ad_account_id, graph_api_version,
     requested_period, requested_level, run_scope, selected_entity_ids,
     request_fingerprint, status, started_at, finished_at, termination_reason,
     currency, timezone, date_start, date_stop
@@ -786,7 +878,7 @@ BEGIN
   v_catalog := public.get_client_meta_asset_catalog('client_alpha');
   IF jsonb_array_length(v_catalog->'clients') <> 1
      OR jsonb_array_length(v_catalog->'clients'->0->'accounts') <> 1
-     OR NOT (v_catalog->'clients'->0->'accounts'->0->'availablePeriods' @> '["this_month"]'::jsonb) THEN
+     OR NOT (v_catalog->'clients'->0->'accounts'->0->'availablePeriods' @> '["this_month","last_90d"]'::jsonb) THEN
     RAISE EXCEPTION 'Operational asset catalog is incomplete: %', v_catalog;
   END IF;
 
@@ -806,14 +898,43 @@ BEGIN
     RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
   END IF;
 
-  v_dashboard := public.get_global_performance_dashboard_v2('this_month', NULL, NULL);
-  IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 350
-     OR (v_dashboard->0->'accounts'->0->'metrics'->'reach'->>'value')::numeric <> 5000
-     OR v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'sourceLevel' <> 'account'
-     OR v_dashboard->0->'accounts'->0->>'dateStart' <> date_trunc('month', current_date)::date::text
+  v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
+  IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 300 THEN
+    RAISE EXCEPTION 'Dashboard multi-day spend must be additive: %', v_dashboard->0->'accounts'->0->'metrics'->'spend';
+  END IF;
+  IF round((v_dashboard->0->'accounts'->0->'metrics'->'cpm'->>'value')::numeric, 4) <> 60 THEN
+    RAISE EXCEPTION 'Dashboard multi-day CPM must be recalculated: %', v_dashboard->0->'accounts'->0->'metrics'->'cpm';
+  END IF;
+  IF round((v_dashboard->0->'accounts'->0->'metrics'->'link_ctr'->>'value')::numeric, 4) <> 6 THEN
+    RAISE EXCEPTION 'Dashboard multi-day link CTR must be recalculated: %', v_dashboard->0->'accounts'->0->'metrics'->'link_ctr';
+  END IF;
+  IF round((v_dashboard->0->'accounts'->0->'metrics'->'cost_per_messaging_conversation'->>'value')::numeric, 4) <> 15 THEN
+    RAISE EXCEPTION 'Dashboard multi-day conversation cost must be recalculated: %', v_dashboard->0->'accounts'->0->'metrics'->'cost_per_messaging_conversation';
+  END IF;
+  IF round((v_dashboard->0->'accounts'->0->'metrics'->'purchase_roas'->>'value')::numeric, 4) <> 2.6667 THEN
+    RAISE EXCEPTION 'Dashboard multi-day ROAS must be recalculated: %', v_dashboard->0->'accounts'->0->'metrics'->'purchase_roas';
+  END IF;
+  IF round((v_dashboard->0->'accounts'->0->'metrics'->'page_load_rate'->>'value')::numeric, 4) <> 60 THEN
+    RAISE EXCEPTION 'Dashboard multi-day page load rate must be recalculated: %', v_dashboard->0->'accounts'->0->'metrics'->'page_load_rate';
+  END IF;
+  IF COALESCE((v_dashboard->0->'accounts'->0->'metrics'->'reach'->>'available')::boolean, true) IS NOT FALSE
+     OR COALESCE((v_dashboard->0->'accounts'->0->'metrics'->'frequency'->>'available')::boolean, true) IS NOT FALSE THEN
+    RAISE EXCEPTION 'Dashboard multi-day reach and frequency must not sum daily values: reach=%, frequency=%',
+      v_dashboard->0->'accounts'->0->'metrics'->'reach',
+      v_dashboard->0->'accounts'->0->'metrics'->'frequency';
+  END IF;
+  IF v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'sourceLevel' <> 'account'
+     OR v_dashboard->0->'accounts'->0->>'dateStart' <> (current_date - 6)::text
      OR v_dashboard->0->'accounts'->0->>'dateStop' <> current_date::text
-     OR v_dashboard->0->'accounts'->0->'lastSuccessfulRun'->>'id' <> v_run_id::text THEN
-    RAISE EXCEPTION 'Monthly dashboard did not use the exact successful account run: %', v_dashboard;
+     OR v_dashboard->0->'accounts'->0->'lastSuccessfulRun'->>'id' <> v_dashboard_run_id::text THEN
+    RAISE EXCEPTION 'Dashboard must expose the selected range and successful source run: %', v_dashboard->0->'accounts'->0;
+  END IF;
+  IF jsonb_array_length(v_dashboard->0->'metricGroups') <> 1 THEN
+    RAISE EXCEPTION 'Dashboard must expose only active campaigns: %', v_dashboard->0->'metricGroups';
+  END IF;
+  IF round((v_dashboard->0->'metricGroups'->0->'metrics'->'cpm'->>'value')::numeric, 4) <> 60
+     OR COALESCE((v_dashboard->0->'metricGroups'->0->'metrics'->'reach'->>'available')::boolean, true) IS NOT FALSE THEN
+    RAISE EXCEPTION 'Campaign group must use the same safe period rollup: %', v_dashboard->0->'metricGroups'->0;
   END IF;
 
   PERFORM public.set_client_performance_target(
