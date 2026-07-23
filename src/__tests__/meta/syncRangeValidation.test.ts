@@ -36,12 +36,14 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
 }));
 
 let validateReturnedPeriodRange: any;
+let groupAccountInsightsByDateRange: any;
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: () => '' } });
   const indexStr = '../../../supabase/functions/meta-sync-performance/index.ts';
   const module = await import(indexStr);
   validateReturnedPeriodRange = module.validateReturnedPeriodRange;
+  groupAccountInsightsByDateRange = module.groupAccountInsightsByDateRange;
 });
 
 describe('Meta sync returned period range validation', () => {
@@ -109,5 +111,29 @@ describe('Meta sync returned period range validation', () => {
     expect(result.errors).toEqual([]);
     expect(result.metadata.expectedDateStart).toBe('2026-07-13');
     expect(result.metadata.expectedDateStop).toBe('2026-07-15');
+  });
+});
+
+describe('Meta account insight grouping', () => {
+  it('groups duplicate account rows by exact daily range before normalization', () => {
+    const groups = groupAccountInsightsByDateRange([
+      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '10' },
+      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '20' },
+      { date_start: '2026-07-15', date_stop: '2026-07-15', spend: '30' },
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toHaveLength(2);
+    expect(groups[1]).toHaveLength(1);
+  });
+
+  it('keeps rows without valid dates in one validation bucket', () => {
+    const groups = groupAccountInsightsByDateRange([
+      { spend: '10' },
+      { date_start: 'invalid', date_stop: null, spend: '20' },
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
   });
 });

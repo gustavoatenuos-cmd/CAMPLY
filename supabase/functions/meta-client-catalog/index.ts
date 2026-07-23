@@ -167,7 +167,7 @@ serve(async (req) => {
         lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run))
         if (run.status === 'success') {
           lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run))
-          if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d'].includes(run.requested_period)) {
+          if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'].includes(run.requested_period)) {
             const periods = periodsByAccount.get(key) || new Set<string>()
             periods.add(run.requested_period)
             periodsByAccount.set(key, periods)
