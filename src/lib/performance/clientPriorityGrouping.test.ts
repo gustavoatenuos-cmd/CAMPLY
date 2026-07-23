@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GlobalClientPerformance } from './globalPerformanceDashboard';
 import type { ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import {
@@ -9,6 +9,15 @@ import {
   reasonLabel,
   summarizeDiagnosis,
 } from './clientPriorityGrouping';
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T15:00:00.000Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function metric(value: number | null, available = true) {
   return { value, available, partial: false } as any;

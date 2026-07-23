@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import type { GlobalClientPerformance } from '../performance/globalPerformanceDashboard';
 import {
   buildOperationalClientState,
   type OperationalClientStateInput,
 } from './operationalClientState';
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T15:00:00.000Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 const profile = {
   clientId: 'client-1',

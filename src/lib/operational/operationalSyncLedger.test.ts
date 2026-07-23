@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildOperationalSyncLedger } from './operationalSyncLedger';
 import type { GlobalClientPerformance } from '../performance/globalPerformanceDashboard';
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T15:00:00.000Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientPerformance {
   return {

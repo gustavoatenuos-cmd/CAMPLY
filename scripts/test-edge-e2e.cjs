@@ -19,8 +19,7 @@ async function runScenario(scenarioName, clientMetaAssetId, accessToken, assertF
   executedCount++;
   console.log(`\n--- Running Scenario: ${scenarioName} ---`);
 
-  // Rule: requestedPeriods -> periods
-  const payload = { clientMetaAssetId, periods: ['last_7d'], ...extraPayload };
+  const payload = { clientMetaAssetId, periods: ['last_90d'], ...extraPayload };
   const res = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: {
@@ -146,20 +145,20 @@ async function run() {
     assertEqual(runs, '1', 'Run persisted');
   });
 
-  await runScenario('this_month_exact_account_source', assets.simple, accessToken, (res, json, q) => {
+  await runScenario('official_last_90d_account_source', assets.simple, accessToken, (res, json, q) => {
     assertEqual(res.status, 200, 'HTTP Status');
     assertEqual(json.success, true, 'JSON Success');
     const runContract = q(`SELECT requested_period || ':' || requested_level || ':' || run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(runContract, 'this_month:campaign:full_account', 'Official monthly run contract');
-    const exactRange = q(`SELECT date_start = date_trunc('month', now() AT TIME ZONE timezone)::date AND date_stop = (now() AT TIME ZONE timezone)::date FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(exactRange, 't', 'Monthly run persisted the exact account-timezone range');
+    assertEqual(runContract, 'last_90d:campaign:full_account', 'Official last_90d run contract');
+    const exactRange = q(`SELECT date_start = '2026-06-27'::date AND date_stop = '2026-06-27'::date FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(exactRange, 't', 'Run persisted the exact range returned by the mock Meta API');
     const accountSource = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account'`);
-    assertEqual(accountSource, 't', 'Monthly run persisted official account-level metrics');
+    assertEqual(accountSource, 't', 'Official run persisted account-level metrics');
     const pausedCampaign = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);
     assertEqual(pausedCampaign, '1', 'Paused campaign with period delivery remains collected');
     const pausedAdset = q(`SELECT count(*) FROM meta_adset_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);
     assertEqual(pausedAdset, '1', 'Paused Ad Set remains collected');
-  }, { periods: ['this_month'] });
+  });
 
   // 2. zero_delivery
   await runScenario('zero_delivery', assets.zero, accessToken, (res, json, q) => {
@@ -292,7 +291,7 @@ async function run() {
   const resUnauth = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer fake_token` },
-    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'] })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_90d'] })
   });
   assertEqual(resUnauth.status, 401, 'HTTP 401');
   passedCount++;
@@ -437,7 +436,7 @@ async function run() {
     assertEqual(json.requestedLevel, 'creative', 'Response carries requestedLevel creative');
     const ads = json.campaigns?.[0]?.classifiedAdsets?.[0]?.ads || [];
     assertEqual(ads.length, 2, 'Response carries selected campaign ads');
-    assertEqual(ads[0].metricsByPeriod.last_7d.leads, 5, 'Response carries ad metrics by period');
+    assertEqual(ads[0].metricsByPeriod.last_90d.leads, 5, 'Response carries ad metrics by official period');
   }, { selectedCampaigns: ['camp_123'], requestedLevel: 'creative' });
 
   // 19. ssrf_blocked
@@ -465,7 +464,7 @@ async function run() {
   const resRej = await fetch('http://127.0.0.1:54321/functions/v1/meta-sync-performance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_7d'], syncRunId: 'some-malicious-id' })
+    body: JSON.stringify({ clientMetaAssetId: assets.simple, periods: ['last_90d'], syncRunId: 'some-malicious-id' })
   });
   assertEqual(resRej.status, 400, 'HTTP 400');
   passedCount++;

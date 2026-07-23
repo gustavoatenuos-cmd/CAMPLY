@@ -247,7 +247,10 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "9. Rodando script E2E NodeJS..."
-node scripts/test-edge-e2e.cjs
+if ! node scripts/test-edge-e2e.cjs; then
+  dump_diagnostics "test-edge-e2e"
+  exit 1
+fi
 
 # 9. Executar lint, testes e build
 echo "9. Executando Lint..."
