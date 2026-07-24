@@ -498,65 +498,28 @@ async function resolveOwnedClientMetaAsset(
 ): Promise<OwnedClientMetaAsset | null> {
   const dbReadPublicMessage = 'Não foi possível ler o vínculo Meta no banco agora. A conexão Meta foi preservada; tente novamente em alguns segundos.';
 
-  const { data: link, error: linkError } = await supabaseClient
-    .from('client_meta_assets')
-    .select('id,client_id,meta_asset_id,user_id,unlinked_at')
-    .eq('id', clientMetaAssetId)
-    .eq('user_id', userId)
-    .is('unlinked_at', null)
-    .maybeSingle();
+  const { data, error } = await supabaseClient.rpc('resolve_meta_sync_client_asset', {
+    p_user_id: userId,
+    p_client_meta_asset_id: clientMetaAssetId,
+  });
 
-  if (linkError) {
-    throw new HttpError(`Failed to load client Meta asset link: ${linkError.message}`, 500, dbReadPublicMessage);
+  if (error) {
+    throw new HttpError(`Failed to resolve client Meta asset link: ${error.message}`, 500, dbReadPublicMessage);
   }
-  if (!link) return null;
 
-  const { data: client, error: clientError } = await supabaseClient
-    .from('client_identity')
-    .select('client_id')
-    .eq('user_id', userId)
-    .eq('client_id', link.client_id)
-    .is('archived_at', null)
-    .maybeSingle();
-
-  if (clientError) {
-    throw new HttpError(`Failed to verify active client link: ${clientError.message}`, 500, dbReadPublicMessage);
-  }
-  if (!client) return null;
-
-  const { data: asset, error: assetError } = await supabaseClient
-    .from('meta_assets')
-    .select('id,asset_id,integration_id,asset_type')
-    .eq('id', link.meta_asset_id)
-    .eq('asset_type', 'adaccount')
-    .maybeSingle();
-
-  if (assetError) {
-    throw new HttpError(`Failed to load Meta asset: ${assetError.message}`, 500, dbReadPublicMessage);
-  }
-  if (!asset) return null;
-
-  const { data: integration, error: integrationError } = await supabaseClient
-    .from('meta_integrations')
-    .select('id,user_id,status,access_token_encrypted')
-    .eq('id', asset.integration_id)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (integrationError) {
-    throw new HttpError(`Failed to load Meta integration: ${integrationError.message}`, 500, dbReadPublicMessage);
-  }
-  if (!integration) return null;
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  const row = rows[0];
+  if (!row) return null;
 
   return {
-    client_meta_asset_id: String(link.id),
-    client_id: String(link.client_id),
-    id: String(asset.id),
-    asset_id: String(asset.asset_id),
-    integration_id: String(integration.id),
-    integration_user_id: String(integration.user_id),
-    integration_status: String(integration.status),
-    access_token_encrypted: String(integration.access_token_encrypted),
+    client_meta_asset_id: String(row.client_meta_asset_id),
+    client_id: String(row.client_id),
+    id: String(row.id),
+    asset_id: String(row.asset_id),
+    integration_id: String(row.integration_id),
+    integration_user_id: String(row.integration_user_id),
+    integration_status: String(row.integration_status),
+    access_token_encrypted: String(row.access_token_encrypted),
   };
 }
 
