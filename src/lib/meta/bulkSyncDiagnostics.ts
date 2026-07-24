@@ -13,6 +13,7 @@ export interface BulkSyncAccountResult {
   runId?: string | null;
   message?: string;
   error?: string;
+  errorCode?: string | null;
 }
 
 export interface BulkSyncProgress {
@@ -82,7 +83,15 @@ export function classifySyncOutcome(
   return { status: 'failed', runId: result.runId, message, error: message };
 }
 
-export function outcomeFromThrownError(error: unknown): Pick<BulkSyncAccountResult, 'status' | 'error'> {
+export function outcomeFromThrownError(error: unknown): Pick<BulkSyncAccountResult, 'status' | 'error' | 'runId' | 'errorCode'> {
+  if (error instanceof InvokeError) {
+    return {
+      status: 'failed',
+      error: extractSyncErrorMessage(error),
+      runId: error.runId,
+      errorCode: error.code,
+    };
+  }
   return { status: 'failed', error: extractSyncErrorMessage(error) };
 }
 

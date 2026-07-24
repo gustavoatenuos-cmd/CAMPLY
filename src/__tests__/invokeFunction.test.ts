@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: true,
 }));
 
-import { invokeFunction } from '../lib/invokeFunction';
+import { invokeFunction, InvokeError } from '../lib/invokeFunction';
 
 describe('invokeFunction', () => {
   beforeEach(() => {
@@ -25,13 +25,21 @@ describe('invokeFunction', () => {
 
   it('shows structured Edge Function errors instead of the generic non-2xx message', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      runId: 'run-123',
       error: {
         code: 'META_PERSISTENCE_FAILED',
         message: 'Database persistence verification failed',
       },
     }), { status: 503 }));
 
-    await expect(invokeFunction('meta-sync-performance', { metaAssetId: 'asset_1' }))
-      .rejects.toThrow('Database persistence verification failed');
+    await invokeFunction('meta-sync-performance', { metaAssetId: 'asset_1' }).catch((error) => {
+      expect(error).toBeInstanceOf(InvokeError);
+      expect(error).toHaveProperty('message', 'Database persistence verification failed');
+      expect(error).toMatchObject({
+        code: 'META_PERSISTENCE_FAILED',
+        runId: 'run-123',
+        status: 503,
+      });
+    });
   });
 });

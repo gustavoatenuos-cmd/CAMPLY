@@ -438,6 +438,58 @@ function safeCollectionFailureMessage(label: string, result: Pick<PaginatedResul
   return `A Meta recusou a coleta de ${label}. Revalide a conexão e tente novamente.`;
 }
 
+function rawErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || '');
+}
+
+function safeMetaErrorMessage(label: string, rawMessage: string): string | null {
+  const trimmed = rawMessage.trim();
+  if (!trimmed) return null;
+
+  if (/rate limit|too many calls|too many requests|code[:\s]*4\b|code[:\s]*17\b|code[:\s]*32\b|code[:\s]*613\b|8000\d/i.test(trimmed)) {
+    return `A Meta limitou temporariamente a coleta de ${label}. Aguarde alguns minutos e tente novamente.`;
+  }
+  if (/timeout|timed out|AbortError|aborted|fetch failed|network/i.test(trimmed)) {
+    return `A Meta demorou demais para responder à coleta de ${label}. Tente novamente em alguns minutos.`;
+  }
+  if (/access token|token|session|OAuthException|code[:\s]*190\b|\b190\b/i.test(trimmed)) {
+    return `A Meta recusou a coleta de ${label}: token expirado ou inválido. Reautorize a integração com Facebook.`;
+  }
+  if (/permission|permissions|ads_read|read_insights|not authorized|does not have access|requires business_management|Missing Permissions/i.test(trimmed)) {
+    return `A Meta recusou a coleta de ${label}: falta permissão para ler esta conta de anúncios. Revise as permissões do app/usuário no Facebook.`;
+  }
+  if (/Unsupported get request|Object with ID|cannot be loaded|does not exist|cannot be accessed|invalid ad account/i.test(trimmed)) {
+    return `A Meta recusou a coleta de ${label}: a conta ou estrutura não está mais acessível para este usuário.`;
+  }
+  if (/Meta API Error|Meta campaign collection failed|Meta account context unavailable/i.test(trimmed)) {
+    return `A Meta recusou a coleta de ${label}: ${trimmed.slice(0, 220)}`;
+  }
+
+  return null;
+}
+
+function safeSyncFailureMessage(error: unknown, terminationReason: string): string {
+  if (error instanceof MetaRateLimitError || terminationReason === 'rate_limit_exhausted') {
+    return 'A Meta limitou temporariamente a sincronização. Aguarde alguns minutos e tente novamente.';
+  }
+
+  const message = rawErrorMessage(error);
+  const metaMessage = safeMetaErrorMessage('dados da conta', message);
+  if (metaMessage) return metaMessage;
+
+  if (/Database persistence verification failed/i.test(message)) {
+    return 'Os dados foram coletados, mas o banco não confirmou a gravação da leitura analítica. Recarregue a página e tente sincronizar novamente.';
+  }
+  if (/Database persistence failed|Failed to create sync run|Failed to persist|persist run context|persist Meta account context|update failed|PGRST|PostgREST|connection pool|timed out acquiring connection/i.test(message)) {
+    return 'Não foi possível salvar a leitura Meta no banco agora. A conexão Meta foi preservada; tente novamente em alguns segundos.';
+  }
+  if (/META_APP_SECRET|server configuration|Supabase server configuration/i.test(message)) {
+    return 'A sincronização Meta está com configuração de servidor incompleta. Revise os secrets das Edge Functions no Supabase.';
+  }
+
+  return `Não foi possível concluir a sincronização. A conexão Meta foi preservada; tente novamente e, se repetir, revise token/permissões da conta no Facebook. Código técnico: ${terminationReason}.`;
+}
+
 type SupabaseAdminClient = Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'];
 
 interface PersistedSyncVerification {
@@ -1677,7 +1729,14 @@ export async function handleRequest(req: Request) {
               ? 'META_VALIDATION_ERROR'
               : 'META_PERSISTENCE_FAILED'
         : 'META_PERSISTENCE_FAILED';
-    return errorResponse(error, corsHeaders, usedRunId, errorCode);
+    const responseError = error instanceof HttpError && error.publicMessage
+      ? error
+      : new HttpError(
+          rawErrorMessage(error) || 'Unexpected Meta sync error',
+          error instanceof HttpError ? error.status : 500,
+          safeSyncFailureMessage(error, terminationReason)
+        );
+    return errorResponse(responseError, corsHeaders, usedRunId, errorCode);
   }
 }
 serve(handleRequest);

@@ -7,9 +7,13 @@ import {
 import { OperationTimedOutError } from './withTimeout';
 
 type FunctionEnvelope = {
-  error?: string;
+  error?: string | {
+    code?: unknown;
+    message?: unknown;
+  };
   isError?: boolean;
   message?: string;
+  runId?: unknown;
 };
 
 function envelopeMessage(payload: unknown): string | null {
@@ -25,8 +29,27 @@ function envelopeMessage(payload: unknown): string | null {
   return typeof message === 'string' && message.trim() ? message : null;
 }
 
+function envelopeErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const error = (payload as Record<string, unknown>).error;
+  if (!error || typeof error !== 'object') return null;
+  const code = (error as Record<string, unknown>).code;
+  return typeof code === 'string' && code.trim() ? code : null;
+}
+
+function envelopeRunId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const runId = (payload as Record<string, unknown>).runId;
+  return typeof runId === 'string' && runId.trim() ? runId : null;
+}
+
 export class InvokeError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(
+    message: string,
+    public status: number,
+    public code: string | null = null,
+    public runId: string | null = null
+  ) {
     super(message);
     this.name = 'InvokeError';
   }
@@ -82,13 +105,23 @@ export async function invokeFunction<T>(
   }
 
   if (!response.ok) {
-    throw new InvokeError(envelopeMessage(data) || `Falha ao executar ${name}.`, response.status);
+    throw new InvokeError(
+      envelopeMessage(data) || `Falha ao executar ${name}.`,
+      response.status,
+      envelopeErrorCode(data),
+      envelopeRunId(data)
+    );
   }
   if (!data) {
     throw new Error(`A função ${name} não retornou dados.`);
   }
   if (data.isError || data.error) {
-    throw new InvokeError(envelopeMessage(data) || `Falha ao executar ${name}.`, response.status);
+    throw new InvokeError(
+      envelopeMessage(data) || `Falha ao executar ${name}.`,
+      response.status,
+      envelopeErrorCode(data),
+      envelopeRunId(data)
+    );
   }
 
   return data as T;
