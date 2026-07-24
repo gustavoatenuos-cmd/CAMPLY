@@ -98,8 +98,9 @@ serve(async (req) => {
     return jsonResponse({
       success: false,
       error: {
-        code: 'ANALYTICS_DASHBOARD_FAILED',
-        message: 'Não foi possível carregar o contrato analítico salvo.',
+        code: pgError?.code || 'ANALYTICS_DASHBOARD_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+        details: pgError?.details || pgError?.hint || ''
       },
     }, 500)
   }
