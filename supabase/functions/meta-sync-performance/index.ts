@@ -23,7 +23,6 @@ import {
   type TrendPeriodSignature,
 } from '../_shared/meta/aggregation.ts';
 import { insightHasDelivery } from '../_shared/meta/mixedAttributionDetector.ts';
-import { withDirectPostgres } from '../_shared/direct-postgres.ts';
 
 interface SyncRequestBody {
   clientMetaAssetId?: string;
@@ -492,6 +491,75 @@ function safeSyncFailureMessage(error: unknown, terminationReason: string): stri
 
 type SupabaseAdminClient = Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'];
 
+async function resolveOwnedClientMetaAsset(
+  supabaseClient: SupabaseAdminClient,
+  userId: string,
+  clientMetaAssetId: string,
+): Promise<OwnedClientMetaAsset | null> {
+  const dbReadPublicMessage = 'Não foi possível ler o vínculo Meta no banco agora. A conexão Meta foi preservada; tente novamente em alguns segundos.';
+
+  const { data: link, error: linkError } = await supabaseClient
+    .from('client_meta_assets')
+    .select('id,client_id,meta_asset_id,user_id,unlinked_at')
+    .eq('id', clientMetaAssetId)
+    .eq('user_id', userId)
+    .is('unlinked_at', null)
+    .maybeSingle();
+
+  if (linkError) {
+    throw new HttpError(`Failed to load client Meta asset link: ${linkError.message}`, 500, dbReadPublicMessage);
+  }
+  if (!link) return null;
+
+  const { data: client, error: clientError } = await supabaseClient
+    .from('client_identity')
+    .select('client_id')
+    .eq('user_id', userId)
+    .eq('client_id', link.client_id)
+    .is('archived_at', null)
+    .maybeSingle();
+
+  if (clientError) {
+    throw new HttpError(`Failed to verify active client link: ${clientError.message}`, 500, dbReadPublicMessage);
+  }
+  if (!client) return null;
+
+  const { data: asset, error: assetError } = await supabaseClient
+    .from('meta_assets')
+    .select('id,asset_id,integration_id,asset_type')
+    .eq('id', link.meta_asset_id)
+    .eq('asset_type', 'adaccount')
+    .maybeSingle();
+
+  if (assetError) {
+    throw new HttpError(`Failed to load Meta asset: ${assetError.message}`, 500, dbReadPublicMessage);
+  }
+  if (!asset) return null;
+
+  const { data: integration, error: integrationError } = await supabaseClient
+    .from('meta_integrations')
+    .select('id,user_id,status,access_token_encrypted')
+    .eq('id', asset.integration_id)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (integrationError) {
+    throw new HttpError(`Failed to load Meta integration: ${integrationError.message}`, 500, dbReadPublicMessage);
+  }
+  if (!integration) return null;
+
+  return {
+    client_meta_asset_id: String(link.id),
+    client_id: String(link.client_id),
+    id: String(asset.id),
+    asset_id: String(asset.asset_id),
+    integration_id: String(integration.id),
+    integration_user_id: String(integration.user_id),
+    integration_status: String(integration.status),
+    access_token_encrypted: String(integration.access_token_encrypted),
+  };
+}
+
 interface PersistedSyncVerification {
   runId: string;
   status: string | null;
@@ -642,38 +710,11 @@ export async function handleRequest(req: Request) {
     }
     usedRunId = generatedRunId;
 
-    // Resolve the account exclusively through the client link: client_meta_assets
-    // (unlinked_at IS NULL) -> client_identity (archived_at IS NULL) -> meta_assets
-    // -> meta_integrations. A discovered-but-unlinked meta_assets row, or a link
-    // whose client was archived, must never resolve here.
-    const asset = await withDirectPostgres(async (sql) => {
-      const rows = await sql<OwnedClientMetaAsset[]>`
-        select cma.id::text as client_meta_asset_id,
-               cma.client_id,
-               ma.id::text as id,
-               ma.asset_id,
-               mi.id::text as integration_id,
-               mi.user_id::text as integration_user_id,
-               mi.status as integration_status,
-               mi.access_token_encrypted
-        from public.client_meta_assets cma
-        join public.client_identity ci
-          on ci.user_id = cma.user_id
-         and ci.client_id = cma.client_id
-         and ci.archived_at is null
-        join public.meta_assets ma
-          on ma.id = cma.meta_asset_id
-        join public.meta_integrations mi
-          on mi.id = ma.integration_id
-         and mi.user_id::text = cma.user_id::text
-        where cma.id::text = ${clientMetaAssetId}
-          and cma.user_id::text = ${userId}
-          and cma.unlinked_at is null
-          and ma.asset_type = 'adaccount'
-        limit 1
-      `;
-      return rows[0] || null;
-    });
+    // Resolve the account exclusively through the client link using the
+    // Supabase admin client. This must not depend on DIRECT_DB_URL/SUPABASE_DB_URL:
+    // if that direct connection is unavailable, the run would fail before
+    // meta_sync_runs is even created, leaving the UI with an orphan run id.
+    const asset = await resolveOwnedClientMetaAsset(supabaseClient, userId, clientMetaAssetId);
 
     if (!asset) {
       console.error('Client Meta asset link was not found or is not active', {
