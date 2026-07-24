@@ -56,7 +56,7 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: SidebarProps) {
   return (
-    <aside className="relative z-40 flex w-full shrink-0 flex-col border-b border-brand-line bg-brand-surface/50 backdrop-blur-xl xl:h-screen xl:w-72 xl:border-b-0 xl:border-r">
+    <aside className="relative z-40 flex w-full shrink-0 flex-col border-b border-brand-line bg-brand-surface/50 backdrop-blur-xl xl:sticky xl:top-0 xl:h-dvh xl:w-72 xl:border-b-0 xl:border-r">
       {/* Decorative Gradient Glow */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-brand-green/5 to-transparent pointer-events-none" />
 

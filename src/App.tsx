@@ -360,7 +360,7 @@ export default function App() {
   const agentAlertCount = (data.agentAlerts || []).filter(a => a.status === 'active').length;
 
   return (
-    <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-brand-ink text-white xl:flex-row">
+    <div className="flex min-h-dvh flex-col bg-brand-ink text-white xl:flex-row">
       <Sidebar
         activeView={activeView}
         setActiveView={setActiveView}
@@ -381,7 +381,7 @@ export default function App() {
           void supabase?.auth.signOut();
         }}
       />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="min-w-0 flex-1">
         {remoteLoadError && (
           <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
             <span className="flex-1">{remoteLoadError}</span>
@@ -394,7 +394,7 @@ export default function App() {
             </button>
           </div>
         )}
-        <div className="min-h-0 flex-1">
+        <div className="min-h-full">
           <ErrorBoundary key={activeView} viewName={activeView}>
             <Suspense fallback={<div className="flex h-full items-center justify-center text-brand-soft">Carregando tela...</div>}>
               {activeView === 'today' && (

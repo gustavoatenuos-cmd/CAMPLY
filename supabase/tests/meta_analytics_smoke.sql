@@ -438,6 +438,7 @@ DECLARE
   v_target_history JSONB;
   v_error_seen BOOLEAN;
   v_original_target NUMERIC;
+  v_local_today DATE := (timezone('America/Sao_Paulo', now()))::date;
 BEGIN
   DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
 
@@ -767,7 +768,7 @@ BEGIN
     'last_90d', 'campaign', 'full_account', 'dashboard-multiday-rollup-smoke',
     'success', now() - interval '30 seconds', now() - interval '25 seconds',
     'completed', 'BRL', 'America/Sao_Paulo',
-    current_date - 89, current_date
+    v_local_today - 89, v_local_today
   );
 
   INSERT INTO public.meta_campaign_snapshots (
@@ -796,8 +797,8 @@ BEGIN
     CASE WHEN scope.source_level = 'campaign' THEN 'campaign_active' ELSE NULL END,
     metric.metric_id,
     metric.metric_value,
-    current_date + metric.day_offset,
-    current_date + metric.day_offset,
+    v_local_today + metric.day_offset,
+    v_local_today + metric.day_offset,
     'America/Sao_Paulo',
     CASE WHEN scope.source_level = 'campaign' THEN '7d_click_1d_view' ELSE NULL END,
     scope.source_level,
@@ -844,7 +845,7 @@ BEGIN
     attribution_setting, source_level, completeness_status
   ) VALUES (
     v_user_a, v_dashboard_run_id, v_integration_a, 'act_phase1_a', 'campaign_paused',
-    'spend', 999, current_date, current_date, 'America/Sao_Paulo',
+    'spend', 999, v_local_today, v_local_today, 'America/Sao_Paulo',
     '7d_click_1d_view', 'campaign', 'complete'
   );
 
@@ -924,8 +925,8 @@ BEGIN
       v_dashboard->0->'accounts'->0->'metrics'->'frequency';
   END IF;
   IF v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'sourceLevel' <> 'account'
-     OR v_dashboard->0->'accounts'->0->>'dateStart' <> (current_date - 6)::text
-     OR v_dashboard->0->'accounts'->0->>'dateStop' <> current_date::text
+     OR v_dashboard->0->'accounts'->0->>'dateStart' <> (v_local_today - 6)::text
+     OR v_dashboard->0->'accounts'->0->>'dateStop' <> v_local_today::text
      OR v_dashboard->0->'accounts'->0->'lastSuccessfulRun'->>'id' <> v_dashboard_run_id::text THEN
     RAISE EXCEPTION 'Dashboard must expose the selected range and successful source run: %', v_dashboard->0->'accounts'->0;
   END IF;

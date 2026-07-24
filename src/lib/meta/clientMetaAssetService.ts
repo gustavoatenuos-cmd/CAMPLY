@@ -222,6 +222,7 @@ type DirectRunRow = {
   started_at: string;
   finished_at: string | null;
   termination_reason?: string | null;
+  error_message?: string | null;
   pages_fetched?: number | null;
   records_fetched?: number | null;
   integration_id: string;
@@ -238,7 +239,7 @@ function runSummary(run?: DirectRunRow): MetaRunSummary | null {
     scope: run.run_scope,
     startedAt: run.started_at,
     finishedAt: run.finished_at,
-    terminationReason: run.termination_reason ?? null,
+    terminationReason: run.termination_reason ?? run.error_message ?? null,
     pagesFetched: run.pages_fetched ?? undefined,
     recordsFetched: run.records_fetched ?? undefined,
   };
@@ -326,7 +327,7 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
     : await withTimeout(
       supabaseData
         .from('meta_sync_runs')
-        .select('id,status,requested_period,requested_level,run_scope,started_at,finished_at,termination_reason,pages_fetched,records_fetched,integration_id,ad_account_id')
+        .select('id,status,requested_period,requested_level,run_scope,started_at,finished_at,termination_reason,error_message,pages_fetched,records_fetched,integration_id,ad_account_id')
         .in('integration_id', integrationIds)
         .in('ad_account_id', adAccountIds)
         .order('started_at', { ascending: false })
