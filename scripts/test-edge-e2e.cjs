@@ -269,7 +269,7 @@ async function run() {
     assertEqual(res.status, 502, 'HTTP 502 for api error');
     assertEqual(json.success, false, 'success=false');
     assertEqual(json.error.code, 'META_API_ERROR', 'Public code META_API_ERROR');
-    assertContains(text, 'Não foi possível concluir', 'Sanitized message');
+    assertContains(text, 'A Meta recusou a coleta de campanhas', 'Safe Meta API message');
     assertNotEqual(text.includes('fbtrace_id'), true, 'No raw fbtrace_id exposed');
   });
 
@@ -322,7 +322,7 @@ async function run() {
     assertEqual(json.success, false, 'JSON Failed');
     const status = q(`SELECT status FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(status, 'failed', 'Run failed');
-    assertContains(text, 'Não foi possível concluir', 'Sanitized error message');
+    assertContains(text, 'A Meta limitou temporariamente a coleta de campanhas', 'Safe rate-limit message');
     const statsRes = await fetch('http://127.0.0.1:9999/test-stats');
     const stats = await statsRes.json();
     assertEqual(stats.request_counts['act_rate_limit_exhausted'] >= 3, true, 'Mock received at least 3 requests before exhaustion');
