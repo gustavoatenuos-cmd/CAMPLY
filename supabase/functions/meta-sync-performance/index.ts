@@ -487,7 +487,7 @@ function safeSyncFailureMessage(error: unknown, terminationReason: string): stri
     return 'A sincronização Meta está com configuração de servidor incompleta. Revise os secrets das Edge Functions no Supabase.';
   }
 
-  return 'Não foi possível concluir a sincronização. A conexão Meta foi preservada; tente novamente e, se repetir, revise token/permissões da conta no Facebook.';
+  return `Não foi possível concluir a sincronização. A conexão Meta foi preservada; tente novamente e, se repetir, revise token/permissões da conta no Facebook. Código técnico: ${terminationReason}.`;
 }
 
 type SupabaseAdminClient = Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'];

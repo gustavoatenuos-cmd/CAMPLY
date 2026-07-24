@@ -62,6 +62,14 @@ describe('extractSyncErrorMessage / outcomeFromThrownError', () => {
     expect(extractSyncErrorMessage(new InvokeError('', 500))).toBe('Falha na sincronização (HTTP 500).');
   });
 
+  it('preserves safe function code and runId from thrown InvokeError', () => {
+    const outcome = outcomeFromThrownError(new InvokeError('Falha rastreável', 500, 'META_PERSISTENCE_FAILED', 'run-123'));
+    expect(outcome.status).toBe('failed');
+    expect(outcome.error).toBe('Falha rastreável');
+    expect(outcome.errorCode).toBe('META_PERSISTENCE_FAILED');
+    expect(outcome.runId).toBe('run-123');
+  });
+
   it('surfaces a plain Error message', () => {
     expect(extractSyncErrorMessage(new Error('Timeout de rede'))).toBe('Timeout de rede');
   });

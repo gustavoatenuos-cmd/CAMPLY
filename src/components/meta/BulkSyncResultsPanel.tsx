@@ -25,6 +25,7 @@ export function BulkSyncResultsPanel({ results, onRetry, retryDisabled = false }
               <p className="font-bold text-white">{result.clientName}</p>
               <p className="truncate text-xs text-brand-muted">{result.accountName} · {result.adAccountId}</p>
               {detail && <p className="mt-1 text-xs text-brand-soft">{detail}</p>}
+              {result.errorCode && <p className="mt-1 text-[10px] text-brand-muted">Código: {result.errorCode}</p>}
               {result.runId && <p className="mt-1 text-[10px] text-brand-muted">Run: {result.runId}</p>}
             </div>
             <div className="flex shrink-0 items-center gap-2">
