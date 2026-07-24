@@ -47,6 +47,7 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
 
 let handleRequest: any;
 let requireAuthenticatedUser: any;
+let resolvedClientMetaAsset: any;
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: (k: string) => (k === 'META_APP_SECRET' ? 'secret' : '') } });
@@ -74,7 +75,15 @@ const createMockSupabase = () => ({
     insert: vi.fn().mockImplementation(() => Promise.resolve({ error: { message: 'not reached' } })),
     update: vi.fn().mockImplementation(() => ({ match: vi.fn().mockResolvedValue({ error: null }) })),
   })),
-  rpc: vi.fn().mockResolvedValue({ error: null }),
+  rpc: vi.fn().mockImplementation((rpcName: string) => {
+    if (rpcName === 'resolve_meta_sync_client_asset') {
+      return Promise.resolve({
+        data: resolvedClientMetaAsset ? [resolvedClientMetaAsset] : [],
+        error: null,
+      });
+    }
+    return Promise.resolve({ error: null });
+  }),
 });
 
 const runRequest = async (userId: string, body: any) => {
@@ -88,11 +97,10 @@ const runRequest = async (userId: string, body: any) => {
 describe('meta-sync-performance linked-client resolution', () => {
   beforeEach(() => {
     withDirectPostgresMock.mockReset();
+    resolvedClientMetaAsset = null;
   });
 
   it('rejects a clientMetaAssetId that does not resolve to any active client link', async () => {
-    withDirectPostgresMock.mockResolvedValue(null);
-
     const { response, json } = await runRequest('user_123', {
       clientMetaAssetId: 'cma-does-not-exist',
       periods: ['today'],
@@ -105,8 +113,6 @@ describe('meta-sync-performance linked-client resolution', () => {
   it('rejects an unlinked account the same way (query already filters unlinked_at IS NULL)', async () => {
     // client_meta_assets.unlinked_at IS NULL is enforced in the SQL WHERE clause,
     // so an unlinked link resolves to no row, identical to a non-existent one.
-    withDirectPostgresMock.mockResolvedValue(null);
-
     const { response, json } = await runRequest('user_123', {
       clientMetaAssetId: 'cma-unlinked',
       periods: ['today'],
@@ -117,7 +123,7 @@ describe('meta-sync-performance linked-client resolution', () => {
   });
 
   it('rejects a resolved link whose integration belongs to a different user', async () => {
-    withDirectPostgresMock.mockResolvedValue({
+    resolvedClientMetaAsset = {
       client_meta_asset_id: 'cma-1',
       client_id: 'client-1',
       id: 'asset-1',
@@ -126,7 +132,7 @@ describe('meta-sync-performance linked-client resolution', () => {
       integration_user_id: 'someone_else',
       integration_status: 'active',
       access_token_encrypted: 'abc',
-    });
+    };
 
     const { response, json } = await runRequest('user_123', {
       clientMetaAssetId: 'cma-1',
@@ -138,7 +144,7 @@ describe('meta-sync-performance linked-client resolution', () => {
   });
 
   it('rejects a resolved link whose integration is not active', async () => {
-    withDirectPostgresMock.mockResolvedValue({
+    resolvedClientMetaAsset = {
       client_meta_asset_id: 'cma-1',
       client_id: 'client-1',
       id: 'asset-1',
@@ -147,7 +153,7 @@ describe('meta-sync-performance linked-client resolution', () => {
       integration_user_id: 'user_123',
       integration_status: 'revoked',
       access_token_encrypted: 'abc',
-    });
+    };
 
     const { response, json } = await runRequest('user_123', {
       clientMetaAssetId: 'cma-1',

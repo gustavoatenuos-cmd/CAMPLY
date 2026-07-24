@@ -156,6 +156,21 @@ describe('Persistence Failure Handling through Orchestrator', () => {
         })
       })),
       rpc: vi.fn().mockImplementation((rpcName) => {
+        if (rpcName === 'resolve_meta_sync_client_asset') {
+          return Promise.resolve({
+            data: [{
+              client_meta_asset_id: 'cma_123',
+              client_id: 'client_123',
+              id: 'act_123',
+              asset_id: 'act_mock_account',
+              integration_id: 'int_123',
+              integration_user_id: 'user_123',
+              integration_status: 'active',
+              access_token_encrypted: 'abc',
+            }],
+            error: null,
+          });
+        }
         if (rpcName === 'persist_meta_sync_run' && failConfig?.target === 'rpc_persist') {
            return Promise.resolve({ error: { message: `DB Failure on RPC persist` } });
         }
