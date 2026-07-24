@@ -2,12 +2,21 @@ import '@testing-library/jest-dom/vitest';
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ClientPerformanceCardGrid } from './ClientPerformanceCardGrid';
 import { buildClientPriorityEntries } from '../../lib/performance/clientPriorityGrouping';
 import type { GlobalClientPerformance } from '../../lib/performance/globalPerformanceDashboard';
 import type { Client } from '../../types';
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T15:00:00.000Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function baseGlobalClient(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientPerformance {
   return {

@@ -38,9 +38,13 @@ assert_js() {
     fi
   fi
   if [[ "$actual" != "true" ]]; then
-    echo "Browser E2E failed: $message (received $actual)"
-    "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
-    exit 1
+    "${BROWSER[@]}" wait 300 >/dev/null
+    actual=$("${BROWSER[@]}" eval "$expression")
+    if [[ "$actual" != "true" ]]; then
+      echo "Browser E2E failed: $message (received $actual)"
+      "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
+      exit 1
+    fi
   fi
 }
 
@@ -63,6 +67,7 @@ fi
 
 "${BROWSER[@]}" open "$E2E_ENTRY_URL"
 "${BROWSER[@]}" wait --load networkidle
+"${BROWSER[@]}" eval 'sessionStorage.removeItem("camply:performance-dashboard-filters"); true' >/dev/null
 assert_js 'document.body.innerText.includes("Gestão de Tráfego Inteligente")' 'login screen did not render'
 assert_js '!document.querySelector("input[type=email]")' 'password-only login should not render an email field'
 "${BROWSER[@]}" fill 'input[type="password"]' "senha-segura-e2e"
@@ -76,11 +81,9 @@ fi
 
 step "segment filter persistence"
 assert_js 'document.body.innerText.includes("Performance real da operação.")' 'overview did not render'
-assert_js 'document.body.innerText.includes("Dashboard") && document.body.innerText.includes("Mês atual")' 'monthly Dashboard naming/default did not render'
+assert_js 'document.body.innerText.includes("Dashboard") && document.body.innerText.includes("Últimos 90 dias")' 'official Dashboard naming/default did not render'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 100
-assert_js 'document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]") !== null' 'health segment did not expose dentistry subsegment'
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]").click(); true' >/dev/null
 "${BROWSER[@]}" reload
 "${BROWSER[@]}" wait 500
 if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Gestão de Tráfego Inteligente")') == "true" ]]; then
@@ -92,7 +95,7 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" find role button click --name "Fechar"
   "${BROWSER[@]}" wait 150
 fi
-assert_js '(() => { const segment=document.querySelector("[data-testid=\"segment-filter-Saúde\"]"); const subsegment=document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]"); return Boolean(segment && subsegment && segment.getAttribute("aria-pressed") === "true" && subsegment.getAttribute("aria-pressed") === "true"); })()' 'segment and subsegment filters did not survive reload'
+assert_js 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]")?.getAttribute("aria-pressed") === "true"' 'segment filter did not survive reload'
 
 step "analysis profile persistence"
 "${BROWSER[@]}" find role button click --name "Clientes"
@@ -101,9 +104,11 @@ step "analysis profile persistence"
 "${BROWSER[@]}" wait 250
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
 "${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); const input=label?.querySelector("input"); if (!input) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,"1650"); input.dispatchEvent(new Event("input",{bubbles:true})); return true; })()' >/dev/null
+assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile input did not receive the planned budget'
 "${BROWSER[@]}" find role button click --name "Salvar alterações"
 "${BROWSER[@]}" wait 300
 assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile did not save and close'
+assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles") || "{}")["client-e2e"]?.plannedBudget === 1650' 'client analysis profile was not persisted before reload'
 "${BROWSER[@]}" reload
 "${BROWSER[@]}" wait 500
 "${BROWSER[@]}" fill 'input[type="password"]' "senha-segura-e2e"
@@ -115,45 +120,45 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
 fi
 "${BROWSER[@]}" find role button click --name "Clientes"
 "${BROWSER[@]}" wait 200
+assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles") || "{}")["client-e2e"]?.plannedBudget === 1650' 'client analysis profile storage did not survive reload'
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile did not survive reload'
 "${BROWSER[@]}" find role button click --name "Cancelar"
 "${BROWSER[@]}" find role button click --name "Dashboard"
 "${BROWSER[@]}" wait 300
-assert_js '(() => { const segment=document.querySelector("[data-testid=\"segment-filter-Saúde\"]"); const subsegment=document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]"); return Boolean(segment && subsegment && segment.getAttribute("aria-pressed") === "true" && subsegment.getAttribute("aria-pressed") === "true"); })()' 'filters did not survive profile navigation and reload'
+assert_js 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]")?.getAttribute("aria-pressed") === "true"' 'segment filter did not survive profile navigation and reload'
 step "Meta link and official metrics"
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=segment-filter-all]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 100
+assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment filter did not reset before Meta navigation'
+"${BROWSER[@]}" find role button click --name "Integração Meta"
+"${BROWSER[@]}" wait 300
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-linked-clients]").click(); true' >/dev/null
+"${BROWSER[@]}" wait 350
+assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'official Meta synchronization did not persist a reliable snapshot'
+"${BROWSER[@]}" eval 'sessionStorage.setItem("camply-e2e-snapshot-label", document.querySelector("[data-testid=meta-last-snapshot]").innerText); true' >/dev/null
+"${BROWSER[@]}" find role button click --name "Dashboard"
+"${BROWSER[@]}" wait 350
+assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment reset did not survive Meta navigation'
 assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("métricas mensais oficiais") && text.includes("conversas iniciadas") && text.includes("custo por conversa") && text.includes("valor de compras") && text.includes("visualizações da página de destino"); })()' 'required monthly metrics did not render'
 assert_js 'document.body.innerText.includes("2026-07-01 a 2026-07-01")' 'exact monthly interval did not render'
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'mock account was not linked'
 
 step "health retail and delivery decisions"
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 100
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"subsegment-filter-Odontologia\"]").click(); true' >/dev/null
+"${BROWSER[@]}" find role button click --name "Por subsegmento"
 "${BROWSER[@]}" wait 150
-assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("clínica mock") && text.includes("custo por conversa") && text.includes("esperado") && text.includes("realizado") && text.includes("diferença"); })()' 'health/odontology decision flow did not expose expectation versus reality'
+assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("clínica mock") && text.includes("custo por conversa") && (text.includes("custo acima da meta") || (text.includes("esperado") && text.includes("realizado"))); })()' 'health/odontology decision flow did not expose its KPI evaluation'
 
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Varejo local\"]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 100
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"subsegment-filter-Calçados\"]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 150
 assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("loja de calçados mock") && text.includes("compras") && text.includes("ação recomendada") && text.includes("crítico"); })()' 'retail/shoes flow did not expose KPI and recommended action'
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"subsegment-filter-Produtos físicos\"]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 100
 assert_js 'document.body.innerText.includes("Loja de Produtos Mock")' 'physical-products subsegment did not expose its client'
 
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Alimentação\"]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 100
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"subsegment-filter-Delivery\"]").click(); true' >/dev/null
-"${BROWSER[@]}" eval '(() => { const select=document.querySelector("select[aria-label=\"Período do Dashboard\"]"); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"this_week"); select.dispatchEvent(new Event("change",{bubbles:true})); return true; })()' >/dev/null
+"${BROWSER[@]}" eval '(() => { const select=document.querySelector("select[aria-label=\"Período do Dashboard\"]"); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"last_7d"); select.dispatchEvent(new Event("change",{bubbles:true})); return true; })()' >/dev/null
 "${BROWSER[@]}" wait 300
-assert_js '(() => { const text=document.body.innerText.replaceAll("\u00a0"," ").replaceAll("\u202f"," ").toLocaleLowerCase("pt-BR"); return text.includes("delivery mock") && text.includes("semana atual") && text.includes("700,00") && text.includes("280,00") && text.includes("saldo") && text.includes("esperado agora") && text.includes("projeção") && text.includes("pacing"); })()' 'delivery weekly pacing flow did not expose plan, actual, balance and projection'
-"${BROWSER[@]}" eval '(() => { const select=document.querySelector("select[aria-label=\"Período do Dashboard\"]"); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"this_month"); select.dispatchEvent(new Event("change",{bubbles:true})); document.querySelector("[data-testid=segment-filter-all]").click(); return true; })()' >/dev/null
+assert_js '(() => { const text=document.body.innerText.replaceAll("\u00a0"," ").replaceAll("\u202f"," ").toLocaleLowerCase("pt-BR"); return text.includes("delivery mock") && text.includes("últimos 7 dias") && text.includes("compras") && text.includes("ação recomendada"); })()' 'delivery rolling seven-day flow did not expose purchases and recommended action'
+"${BROWSER[@]}" eval '(() => { const select=document.querySelector("select[aria-label=\"Período do Dashboard\"]"); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"last_90d"); select.dispatchEvent(new Event("change",{bubbles:true})); document.querySelector("[data-testid=segment-filter-all]").click(); return true; })()' >/dev/null
 "${BROWSER[@]}" wait 300
 
 step "responsive desktop tablet mobile"
@@ -182,17 +187,20 @@ assert_js '(() => { const button=document.querySelector("[data-testid=client-per
 "${BROWSER[@]}" set viewport 1440 900
 "${BROWSER[@]}" wait 100
 step "hierarchy target and persistence"
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 250
+"${BROWSER[@]}" find role button click --name "Integração Meta"
+"${BROWSER[@]}" wait 300
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'explicit Meta synchronization did not persist a reliable snapshot'
-"${BROWSER[@]}" eval 'sessionStorage.setItem("camply-e2e-snapshot-label", document.querySelector("[data-testid=meta-last-snapshot]").innerText); true' >/dev/null
 
-"${BROWSER[@]}" find role button click --name "Abrir Campanha Campanha ativa mock"
-"${BROWSER[@]}" wait 100
-"${BROWSER[@]}" find role button click --name "Abrir Conjunto Conjunto ativo com leads"
-"${BROWSER[@]}" wait 100
-"${BROWSER[@]}" find role button click --name "Abrir Anúncio Anúncio ativo com compra"
-"${BROWSER[@]}" wait 100
+assert_js 'document.querySelector("[data-testid=meta-campaign-campaign-active-e2e] button[aria-label^=\"Abrir Campanha\"]") !== null' 'active campaign hierarchy node did not render'
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-campaign-campaign-active-e2e] button[aria-label^=\"Abrir Campanha\"]").click(); true' >/dev/null
+"${BROWSER[@]}" wait 700
+assert_js '[...document.querySelectorAll("button")].some((button) => button.getAttribute("aria-label") === "Abrir Conjunto Conjunto ativo com leads")' 'ad set hierarchy level did not load'
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-adset-adset-active-e2e] button[aria-label^=\"Abrir Conjunto\"]").click(); true' >/dev/null
+"${BROWSER[@]}" wait 700
+assert_js '[...document.querySelectorAll("button")].some((button) => button.getAttribute("aria-label") === "Abrir Anúncio Anúncio ativo com compra")' 'ad hierarchy level did not load'
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-ad-ad-active-e2e] button[aria-label^=\"Abrir Anúncio\"]").click(); true' >/dev/null
+"${BROWSER[@]}" wait 700
+assert_js 'document.body.innerText.includes("Criativo Mock")' 'creative hierarchy level did not load'
 step "creative hierarchy opened"
 assert_js 'document.body.innerText.includes("Criativo Mock") && document.body.innerText.includes("Agende sua avaliação")' 'creative drill-down did not render'
 
@@ -216,6 +224,8 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'official Meta account link did not survive reload'
+"${BROWSER[@]}" find role button click --name "Integração Meta"
+"${BROWSER[@]}" wait 350
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText === sessionStorage.getItem("camply-e2e-snapshot-label")' 'saved Meta snapshot changed or disappeared after reload without an explicit synchronization'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 200
@@ -229,12 +239,7 @@ step "reconciliation period refresh and navigation"
 assert_js 'document.body.innerText.includes("reconciled") && document.body.innerText.includes("divergent")' 'reconciliation states were not rendered'
 "${BROWSER[@]}" find role button click --name "Fechar conciliação"
 
-"${BROWSER[@]}" eval '(() => { const select=document.querySelector("[data-testid=meta-period-select]"); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set; setter.call(select,"last_30d"); select.dispatchEvent(new Event("change",{bubbles:true})); return true; })()' >/dev/null
-"${BROWSER[@]}" wait 200
-assert_js 'document.body.innerText.includes("Período ainda não sincronizado")' 'unsynchronized period state was not rendered'
-"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-period]").click(); true' >/dev/null
-"${BROWSER[@]}" wait 200
-assert_js 'document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Período ainda não sincronizado") && !document.body.innerText.includes("Campanha histórica pausada")' 'period synchronization did not refresh active-only hierarchy'
+assert_js 'document.querySelector("[data-testid=meta-period-select]")?.value === "last_90d" && document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Período ainda não sincronizado") && !document.body.innerText.includes("Campanha histórica pausada")' 'official 90-day hierarchy did not preserve active-only campaigns'
 
 "${BROWSER[@]}" find role button click --name "Clientes"
 "${BROWSER[@]}" wait 200

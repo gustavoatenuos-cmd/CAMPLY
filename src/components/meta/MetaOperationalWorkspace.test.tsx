@@ -62,6 +62,10 @@ describe('MetaOperationalWorkspace read-only contract', () => {
 
     await waitFor(() => expect(screen.getByTestId('meta-account-name')).toBeInTheDocument());
 
+    expect(screen.getByTestId('meta-period-select')).toHaveValue('last_90d');
+    expect(screen.queryByRole('option', { name: 'Mês atual' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Semana atual' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Últimos 30 dias' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('meta-sync-period')).not.toBeInTheDocument();
     expect(screen.queryByTestId('meta-sync-account')).not.toBeInTheDocument();
     expect(screen.getByText(/sincronização oficial acontece somente/i)).toBeInTheDocument();

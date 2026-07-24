@@ -169,6 +169,27 @@ const insightRangeSummary = (rows: MetaInsightRow[]): MetaInsightRow | undefined
   };
 };
 
+export const groupAccountInsightsByDateRange = (
+  rows: MetaInsightRow[]
+): MetaInsightRow[][] => {
+  const groups = new Map<string, MetaInsightRow[]>();
+
+  for (const row of rows) {
+    const dateStart = isIsoDate(row.date_start) ? row.date_start : null;
+    const dateStop = isIsoDate(row.date_stop) ? row.date_stop : null;
+    const key = JSON.stringify([dateStart, dateStop]);
+    const group = groups.get(key);
+
+    if (group) {
+      group.push(row);
+    } else {
+      groups.set(key, [row]);
+    }
+  }
+
+  return Array.from(groups.values());
+};
+
 const SAFE_META_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 const assertSafeMetaId = (value: string, label: string, status = 400) => {
@@ -1113,7 +1134,7 @@ export async function handleRequest(req: Request) {
         && (!row.campaign_id || activeCampaignIds.has(row.campaign_id))
         && (!row.adset_id || activeAdSetIds.has(row.adset_id))
       );
-      const accountInsight = accountInsightsResult.data[0];
+      const accountHasDelivery = accountInsightsResult.data.some((row) => insightHasDelivery(row));
       const accountCollectionStatus = mergeCompletenessStatuses([
         collectionStatus(accountInsightsResult),
         accountContextStatus,
@@ -1121,7 +1142,9 @@ export async function handleRequest(req: Request) {
       ]);
 
       collectionStatusByPeriod[period] = {
-        account: accountCollectionStatus === 'complete' && accountInsight && !insightHasDelivery(accountInsight)
+        account: accountCollectionStatus === 'complete'
+          && accountInsightsResult.data.length > 0
+          && !accountHasDelivery
           ? 'zero_delivery'
           : accountCollectionStatus,
         campaign: mergeCompletenessStatuses([
@@ -1189,7 +1212,8 @@ export async function handleRequest(req: Request) {
     for (const period of periods) {
       const accountInsights = accountInsightsByPeriod[period];
       if (accountInsights.length === 0) continue;
-      for (const accountInsight of accountInsights) {
+      for (const accountInsightGroup of groupAccountInsightsByDateRange(accountInsights)) {
+        const accountInsight = accountInsightGroup[0];
         const accountNormalized = [
           'UNCLASSIFIED',
           'WHATSAPP',
@@ -1198,7 +1222,11 @@ export async function handleRequest(req: Request) {
           'TRAFFIC',
         ].reduce<Record<string, ReturnType<typeof normalizeMetaMetrics>[string]>>((metrics, objective) => ({
           ...metrics,
-          ...normalizeMetaMetrics([accountInsight], objective as Parameters<typeof normalizeMetaMetrics>[1], 'account'),
+          ...normalizeMetaMetrics(
+            accountInsightGroup,
+            objective as Parameters<typeof normalizeMetaMetrics>[1],
+            'account'
+          ),
         }), {});
 
         Object.entries(accountNormalized).forEach(([metricId, result]) => {

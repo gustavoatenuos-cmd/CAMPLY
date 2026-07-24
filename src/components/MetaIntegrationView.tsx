@@ -554,7 +554,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
           </article>
         </div>
 
-        <MetaOperationalWorkspace data={data} />
+        <MetaOperationalWorkspace data={data} onDataChanged={() => void loadCatalog()} />
 
         <article className="rounded-2xl border border-brand-line bg-brand-surface p-5">
           <h2 className="flex items-center gap-2 font-black text-white"><ShieldCheck className="text-brand-green" size={18} /> Limites de segurança</h2>

@@ -2,10 +2,19 @@ import '@testing-library/jest-dom/vitest';
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { ExecutiveSummary } from './ExecutiveSummary';
 import type { GlobalClientPerformance, GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T15:00:00.000Z'));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function account(overrides: Partial<GlobalPerformanceAccount> = {}): GlobalPerformanceAccount {
   return {

@@ -192,7 +192,9 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(metaSyncPerformanceFunction).toContain("const OFFICIAL_SYNC_PERIOD = 'last_90d'");
     expect(metaSyncPerformanceFunction).toContain('const periods = [OFFICIAL_SYNC_PERIOD]');
     expect(metaSyncPerformanceFunction).toContain("time_increment: '1'");
-    expect(metaSyncPerformanceFunction).toContain('for (const accountInsight of accountInsights)');
+    expect(metaSyncPerformanceFunction).toContain(
+      'for (const accountInsightGroup of groupAccountInsightsByDateRange(accountInsights))'
+    );
     expect(metaSyncPerformanceFunction).toContain('for (const dailyCampaignInsight of campaignInsights)');
   });
 

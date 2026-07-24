@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock3, Link2, LoaderCircle, RefreshCw, Target, Unlink } from 'lucide-react';
 import type { CamplyData } from '../../types';
-import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
+import {
+  periodLabels,
+  type DashboardPeriod,
+} from '../../lib/performance/analyticsCapabilities';
+import { OFFICIAL_META_SYNC_PERIOD } from '../../lib/meta/metaSyncService';
 import {
   linkClientMetaAsset,
   loadClientMetaAssetCatalog,
@@ -12,17 +16,6 @@ import {
 import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-
-const periodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
-  today: 'Hoje',
-  yesterday: 'Ontem',
-  today_and_yesterday: 'Hoje e ontem',
-  last_7d: 'Últimos 7 dias',
-  last_30d: 'Últimos 30 dias',
-  last_90d: 'Últimos 90 dias',
-};
 
 function savedSnapshotLabel(account: ClientMetaAccount): string {
   const run = account.lastSuccess;
@@ -68,7 +61,7 @@ export function MetaOperationalWorkspace({
   const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
   const [accountId, setAccountId] = useState('');
   const [linkAssetId, setLinkAssetId] = useState('');
-  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('this_month');
+  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>('last_90d');
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -187,7 +180,7 @@ export function MetaOperationalWorkspace({
           <label className="text-xs font-bold text-brand-soft">
             Período exato
             <select data-testid="meta-period-select" value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white">
-              {Object.entries(periodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              <option value={OFFICIAL_META_SYNC_PERIOD}>{periodLabels[OFFICIAL_META_SYNC_PERIOD]}</option>
             </select>
           </label>
           <button type="button" onClick={() => void refreshReading()} disabled={loading} title="Relê o snapshot salvo sem consultar o Facebook" className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-sm font-bold text-brand-soft disabled:opacity-60">
