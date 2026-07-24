@@ -54,7 +54,8 @@ function accountSyncEvidence(account: ClientMetaAccount): string {
   if (!run) return '\u00daltima sync: sem tentativa';
   const status = run.status ?? 'success';
   const period = bulkPeriodLabels[run.period as DashboardPeriod] ?? run.period;
-  return `\u00daltima sync: ${status} - Per\u00edodo: ${period} - Run: ${run.id}`;
+  const reason = run.terminationReason ? ` - Motivo: ${run.terminationReason}` : '';
+  return `\u00daltima sync: ${status} - Per\u00edodo: ${period}${reason} - Run: ${run.id}`;
 }
 
 interface MetaIntegrationViewProps {

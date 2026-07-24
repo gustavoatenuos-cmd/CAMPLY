@@ -9,9 +9,11 @@ type VerifiedJwtPayload = {
 
 export class HttpError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  publicMessage?: string;
+  constructor(message: string, status = 400, publicMessage?: string) {
     super(message)
     this.status = status;
+    this.publicMessage = publicMessage;
   }
 }
 
@@ -114,7 +116,7 @@ export function errorResponse(error: unknown, headers: Record<string, string>, r
     // For 500s, mask them to avoid leaking DB or Meta details.
     if (status >= 500) {
       console.error(`[${runId || 'NO_RUN_ID'}] Masked 500 Error:`, error.message);
-      message = 'Não foi possível concluir a sincronização.';
+      message = error.publicMessage || 'Não foi possível concluir a sincronização.';
     } else {
       message = error.message;
     }

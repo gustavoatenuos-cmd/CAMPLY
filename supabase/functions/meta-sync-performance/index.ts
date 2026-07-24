@@ -414,6 +414,30 @@ const terminationReasonForError = (error: unknown): string => {
   return 'unexpected_error';
 };
 
+function safeCollectionFailureMessage(label: string, result: Pick<PaginatedResult, 'completionStatus' | 'errorMessage'>): string {
+  if (result.completionStatus === 'rate_limit_exhausted') {
+    return `A Meta limitou temporariamente a coleta de ${label}. Aguarde alguns minutos e tente novamente.`;
+  }
+  if (result.completionStatus === 'timeout') {
+    return `A Meta demorou demais para responder à coleta de ${label}. Tente novamente em alguns minutos.`;
+  }
+
+  const rawMessage = typeof result.errorMessage === 'string' ? result.errorMessage.trim() : '';
+  if (/access token|token|session|OAuthException|code 190|190/i.test(rawMessage)) {
+    return `A Meta recusou a coleta de ${label}: token expirado ou inválido. Reautorize a integração com Facebook.`;
+  }
+  if (/permission|permissions|ads_read|read_insights|not authorized|does not have access|requires business_management/i.test(rawMessage)) {
+    return `A Meta recusou a coleta de ${label}: falta permissão para ler esta conta de anúncios. Revise as permissões do app/usuário no Facebook.`;
+  }
+  if (/Unsupported get request|Object with ID|cannot be loaded|does not exist/i.test(rawMessage)) {
+    return `A Meta recusou a coleta de ${label}: a conta ou estrutura não está mais acessível para este usuário.`;
+  }
+  if (rawMessage) {
+    return `A Meta recusou a coleta de ${label}: ${rawMessage.slice(0, 220)}`;
+  }
+  return `A Meta recusou a coleta de ${label}. Revalide a conexão e tente novamente.`;
+}
+
 type SupabaseAdminClient = Awaited<ReturnType<typeof requireAuthenticatedUser>>['adminClient'];
 
 interface PersistedSyncVerification {
@@ -808,7 +832,8 @@ export async function handleRequest(req: Request) {
       if (campaignsResult.completionStatus === 'rate_limit_exhausted') {
         hardFailureTerminationReason = 'rate_limit_exhausted';
       }
-      throw new HttpError('Meta campaign collection failed', 502);
+      const publicMessage = safeCollectionFailureMessage('campanhas', campaignsResult);
+      throw new HttpError(`Meta campaign collection failed: ${campaignsResult.errorMessage || campaignsResult.completionStatus}`, 502, publicMessage);
     }
 
     const allCampaigns = campaignsResult.data;
