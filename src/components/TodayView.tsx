@@ -3,19 +3,19 @@ import { FormEvent, useState } from 'react';
 import { createActivityLog, daysUntil, formatDate, makeId, money } from '../data/camplyStore';
 import { BrandLogo } from './BrandLogo';
 import { Modal } from './ui/Modal';
-import { CamplyData, Insight, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
+import { CamplyData, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Project } from '../types';
 import { clientDisplayName } from './ClientsView';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
 import { buildClientMetaAnalytics, buildSnapshot } from '../lib/meta/clientAnalytics';
 
 interface TodayViewProps {
   data: CamplyData;
-  insights: Insight[];
+
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView: (view: ViewId) => void;
 }
 
-export function TodayView({ data, insights, updateData, setActiveView }: TodayViewProps) {
+export function TodayView({ data, updateData, setActiveView }: TodayViewProps) {
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskType, setTaskType] = useState<TaskType>('otimizacao');
   const [taskArea, setTaskArea] = useState<TaskArea>('geral');
@@ -801,7 +801,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric icon={Megaphone} label="Campanhas ativas" value={activeCampaigns.length.toString()} />
-        <Metric icon={AlertTriangle} label="Alertas" value={insights.filter((item) => item.level !== 'good').length.toString()} tone="warning" />
+        <Metric icon={AlertTriangle} label="Alertas" value={data.agentAlerts.filter(a => a.status === 'active' && a.severity !== 'good').length.toString()} tone="warning" />
         <Metric icon={Banknote} label="A receber" value={money(amountToReceive)} />
         <Metric icon={Target} label="Projetos abertos" value={data.projects.filter((item) => item.status !== 'done').length.toString()} />
       </div>
@@ -810,11 +810,11 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         <div className="space-y-6">
           <Panel title="Prioridades do assistente" button="Ver inteligência" onClick={() => setActiveView('intelligence')}>
             <div className="space-y-3">
-              {insights.slice(0, 4).map((insight) => (
-                <div key={insight.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
-                  <p className="font-semibold text-white">{insight.title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-brand-muted">{insight.description}</p>
-                  <p className="mt-3 text-sm font-semibold text-brand-green">{insight.recommendation}</p>
+              {data.agentAlerts.filter(a => a.status === 'active').slice(0, 4).map((alert) => (
+                <div key={alert.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
+                  <p className="font-semibold text-white">{alert.title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-brand-muted">{alert.message}</p>
+                  {alert.suggestedAction && <p className="mt-3 text-sm font-semibold text-brand-green">{alert.suggestedAction}</p>}
                 </div>
               ))}
             </div>

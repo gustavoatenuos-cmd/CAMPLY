@@ -324,7 +324,7 @@ export interface ActivityLog {
 
 // ===================== AGENT TYPES =====================
 
-export type EntityType = 'client' | 'campaign' | 'project' | 'task';
+export type EntityType = 'client' | 'campaign' | 'project' | 'task' | 'receivable' | 'system';
 export type SeverityLevel = 'critical' | 'warning' | 'info' | 'good';
 
 export interface AgentRule {
@@ -457,13 +457,7 @@ export interface MetricSnapshot {
   syncedAt?: string;
 }
 
-export interface Insight {
-  id: string;
-  level: 'critical' | 'warning' | 'good' | 'info';
-  title: string;
-  description: string;
-  recommendation: string;
-}
+
 
 // ===================== CREATIVE CRITIC =====================
 

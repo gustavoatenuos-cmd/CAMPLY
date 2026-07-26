@@ -10,7 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CamplyData, ClientStatus, Insight, ViewId } from '../types';
+import type { CamplyData, ClientStatus, ViewId } from '../types';
 import { createActivityLog } from '../data/camplyStore';
 import {
   loadGlobalPerformanceDashboard,
@@ -49,7 +49,7 @@ import { resolveDashboardPeriod, writeDashboardPeriodToUrl } from '../lib/perfor
 
 interface OverviewViewProps {
   data: CamplyData;
-  insights: Insight[];
+
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView: (view: ViewId) => void;
 }

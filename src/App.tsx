@@ -5,12 +5,13 @@ import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
+import { clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
 import { hasNewerRemoteVersion, loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
 import { setSupabaseSession, supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
-import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
+import { evaluateOperationalSignals } from './lib/operational/evaluateOperationalSignals';
+import { syncOperationalSignals } from './lib/operational/syncOperationalSignals';
 import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState, restoreMetaE2EState } from './lib/meta/metaE2ERuntime';
 import { resetE2EAnalysisProfiles } from './lib/analysis/clientAnalysisProfile';
 
@@ -294,14 +295,13 @@ export default function App() {
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
     setData((current) => {
-      const { newAlerts } = runAgentEngine(current);
-      if (newAlerts.length > 0) {
-        return {
-          ...current,
-          agentAlerts: [...newAlerts, ...current.agentAlerts],
-        };
-      }
-      return current;
+      const evaluated = evaluateOperationalSignals(current);
+      const nextSignals = syncOperationalSignals(current.agentAlerts, evaluated);
+      // Check if there are any changes (simplified check, real app might want a deep equals if needed, but array reference is fine for now if we always return a new array only when changed. Actually syncOperationalSignals always returns a new array, so let's just use it).
+      return {
+        ...current,
+        agentAlerts: nextSignals,
+      };
     });
   }, [authenticated, remoteLoaded]);
 
@@ -310,19 +310,17 @@ export default function App() {
     // Removed automatic Claude API call on load to prevent 500 errors and avoid critical dependency
   }, [authenticated, data, remoteLoaded]);
 
-  const insights = useMemo(() => buildInsights(data), [data]);
+
 
   const updateData = (updater: (data: CamplyData) => CamplyData) => {
     setData((current) => {
       const next = updater(current);
-      const { newAlerts } = runAgentEngine(next);
-      if (newAlerts.length > 0) {
-        return {
-          ...next,
-          agentAlerts: [...newAlerts, ...next.agentAlerts],
-        };
-      }
-      return next;
+      const evaluated = evaluateOperationalSignals(next);
+      const nextSignals = syncOperationalSignals(next.agentAlerts, evaluated);
+      return {
+        ...next,
+        agentAlerts: nextSignals,
+      };
     });
   };
 
@@ -395,7 +393,6 @@ export default function App() {
               {activeView === 'today' && (
                 <OverviewView
                   data={data}
-                  insights={insights}
                   updateData={updateData}
                   setActiveView={setActiveView}
                 />
@@ -404,7 +401,7 @@ export default function App() {
               {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
-              {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
+              {activeView === 'intelligence' && <IntelligenceView data={data} />}
               {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
 
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
