@@ -1,4 +1,4 @@
-import { CamplyData, AgentAlert, AgentRule, AgentActivityLog, EntityType, SeverityLevel } from '../types';
+import { CamplyData, OperationalSignal, AgentRule, AgentActivityLog, EntityType, SeverityLevel, SignalSourceDomain, SignalType } from '../types';
 import { makeId } from '../data/camplyStore';
 
 // Helper to calculate days between dates
@@ -11,9 +11,9 @@ function daysBetween(date1: string | Date, date2: string | Date): number {
 }
 
 export function runAgentEngine(data: CamplyData): {
-  newAlerts: AgentAlert[];
+  newAlerts: OperationalSignal[];
 } {
-  const newAlerts: AgentAlert[] = [];
+  const newAlerts: OperationalSignal[] = [];
   const today = new Date();
   const todayIso = today.toISOString();
 
@@ -22,18 +22,24 @@ export function runAgentEngine(data: CamplyData): {
     relatedEntityId: string,
     relatedEntityType: EntityType,
     clientId: string | undefined,
+    signalType: SignalType,
+    sourceDomain: SignalSourceDomain,
     title: string,
     message: string,
     severity: SeverityLevel,
     suggestedAction?: string
   ) => {
+    const deduplicationKey = `${clientId || 'global'}_${signalType}_${relatedEntityId}`;
+    
     // Prevent duplicate active alerts for the same entity and reason
     const existingActive = data.agentAlerts.find(
-      (a) => a.relatedEntityId === relatedEntityId && a.title === title && a.status === 'active'
+      (a) => a.deduplicationKey === deduplicationKey && a.status === 'active'
     );
     if (!existingActive) {
       newAlerts.push({
-        id: makeId('alert'),
+        id: makeId('signal'),
+        signalType,
+        sourceDomain,
         relatedEntityId,
         relatedEntityType,
         clientId,
@@ -42,6 +48,7 @@ export function runAgentEngine(data: CamplyData): {
         severity,
         status: 'active',
         suggestedAction,
+        deduplicationKey,
         triggeredAt: todayIso,
       });
     }
@@ -54,9 +61,9 @@ export function runAgentEngine(data: CamplyData): {
     if (task.dueDate) {
       const days = daysBetween(todayIso, task.dueDate);
       if (days < 0) {
-        addAlert(task.id, 'task', task.clientId, 'Tarefa Atrasada', `A tarefa "${task.title}" está atrasada.`, 'critical', 'Concluir ou reagendar a tarefa.');
+        addAlert(task.id, 'task', task.clientId, 'tarefa_atrasada', 'tasks', 'Tarefa Atrasada', `A tarefa "${task.title}" está atrasada.`, 'critical', 'Concluir ou reagendar a tarefa.');
       } else if (days === 0) {
-        addAlert(task.id, 'task', task.clientId, 'Vence Hoje', `A tarefa "${task.title}" vence hoje.`, 'warning', 'Priorizar a execução desta tarefa hoje.');
+        addAlert(task.id, 'task', task.clientId, 'tarefa_hoje', 'tasks', 'Vence Hoje', `A tarefa "${task.title}" vence hoje.`, 'warning', 'Priorizar a execução desta tarefa hoje.');
       }
     }
   });
@@ -68,9 +75,9 @@ export function runAgentEngine(data: CamplyData): {
     if (project.dueDate) {
       const days = daysBetween(todayIso, project.dueDate);
       if (days < 0) {
-        addAlert(project.id, 'project', project.clientId, 'Projeto Atrasado', `O projeto "${project.name}" passou do prazo.`, 'critical', 'Revisar cronograma e alinhar com o cliente.');
+        addAlert(project.id, 'project', project.clientId, 'projeto_atrasado', 'projects', 'Projeto Atrasado', `O projeto "${project.name}" passou do prazo.`, 'critical', 'Revisar cronograma e alinhar com o cliente.');
       } else if (days === 0) {
-        addAlert(project.id, 'project', project.clientId, 'Entrega Hoje', `A entrega do projeto "${project.name}" é hoje.`, 'warning', 'Finalizar pendências e preparar entrega.');
+        addAlert(project.id, 'project', project.clientId, 'projeto_entrega_hoje', 'projects', 'Entrega Hoje', `A entrega do projeto "${project.name}" é hoje.`, 'warning', 'Finalizar pendências e preparar entrega.');
       }
     }
 
@@ -78,7 +85,7 @@ export function runAgentEngine(data: CamplyData): {
     if (project.lastActivityAt) {
       const idleDays = daysBetween(project.lastActivityAt, todayIso);
       if (idleDays > 7 && project.status !== 'waiting') {
-        addAlert(project.id, 'project', project.clientId, 'Projeto Parado', `Projeto sem atualizações há mais de 7 dias.`, 'warning', 'Atualizar o andamento ou contatar o cliente.');
+        addAlert(project.id, 'project', project.clientId, 'projeto_parado', 'projects', 'Projeto Parado', `Projeto sem atualizações há mais de 7 dias.`, 'warning', 'Atualizar o andamento ou contatar o cliente.');
       }
     }
   });
@@ -90,7 +97,7 @@ export function runAgentEngine(data: CamplyData): {
     if (campaign.lastOptimizedAt) {
       const idleDays = daysBetween(campaign.lastOptimizedAt, todayIso);
       if (idleDays >= 3) {
-        addAlert(campaign.id, 'campaign', campaign.clientId, 'Campanha Parada', `Campanha sem otimização há ${idleDays} dias.`, 'warning', 'Analisar métricas e registrar otimização.');
+        addAlert(campaign.id, 'campaign', campaign.clientId, 'campanha_parada', 'campaigns', 'Campanha Parada', `Campanha sem otimização há ${idleDays} dias.`, 'warning', 'Analisar métricas e registrar otimização.');
       }
     }
   });
@@ -104,7 +111,7 @@ export function runAgentEngine(data: CamplyData): {
     const criticalCount = clientAlerts.filter(a => a.severity === 'critical').length;
     
     if (criticalCount >= 3) {
-      addAlert(client.id, 'client', client.id, 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, 'critical', 'Realizar força-tarefa para resolver pendências.');
+      addAlert(client.id, 'client', client.id, 'atencao_critica', 'system', 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, 'critical', 'Realizar força-tarefa para resolver pendências.');
     }
   });
 

@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, ShieldAlert, Bell, TrendingUp, Sparkles, Users, Megaphone, BriefcaseBusiness, ListChecks } from 'lucide-react';
-import { CamplyData, Insight, AgentAlert } from '../types';
+import { CamplyData, Insight, OperationalSignal } from '../types';
 import { useState } from 'react';
 
 interface IntelligenceViewProps {
@@ -31,7 +31,7 @@ export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
   });
 
   // Group by client
-  const alertsByClient = new Map<string, AgentAlert[]>();
+  const alertsByClient = new Map<string, OperationalSignal[]>();
   activeAlerts.forEach(a => {
     const key = a.clientId || 'sem-cliente';
     if (!alertsByClient.has(key)) alertsByClient.set(key, []);
@@ -218,14 +218,14 @@ const iconFor = (level: Insight['level']) => {
   return 'bg-sky-400/10 text-sky-300';
 };
 
-const alertBorderFor = (severity: AgentAlert['severity']) => {
+const alertBorderFor = (severity: OperationalSignal['severity']) => {
   if (severity === 'critical') return 'border-rose-500/40';
   if (severity === 'warning') return 'border-amber-400/40';
   if (severity === 'good') return 'border-brand-green/40';
   return 'border-sky-400/40';
 };
 
-const alertIconFor = (severity: AgentAlert['severity']) => {
+const alertIconFor = (severity: OperationalSignal['severity']) => {
   if (severity === 'critical') return 'bg-rose-500/10 text-rose-400';
   if (severity === 'warning') return 'bg-amber-400/10 text-amber-300';
   if (severity === 'good') return 'bg-brand-green/10 text-brand-green';

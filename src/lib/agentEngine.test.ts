@@ -45,6 +45,9 @@ describe('runAgentEngine', () => {
       }],
       agentAlerts: [{
         id: 'alert-1',
+        signalType: 'tarefa_atrasada',
+        sourceDomain: 'tasks',
+        deduplicationKey: 'global_tarefa_atrasada_task-1',
         relatedEntityId: 'task-1',
         relatedEntityType: 'task',
         title: 'Tarefa Atrasada',

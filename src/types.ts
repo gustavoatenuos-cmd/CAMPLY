@@ -341,17 +341,25 @@ export interface AgentRule {
   updatedAt: string;
 }
 
-export interface AgentAlert {
-  id: string;
-  relatedEntityId: string;
-  relatedEntityType: EntityType;
-  clientId?: string;
-  title: string;
-  message: string;
-  severity: SeverityLevel;
-  status: 'active' | 'dismissed' | 'resolved';
-  suggestedAction?: string;
-  triggeredAt: string;
+export type SignalSourceDomain = 'tasks' | 'projects' | 'receivables' | 'campaigns' | 'system' | 'meta';
+export type SignalType = string; // Define the kind of rule that generated it
+
+export interface OperationalSignal {
+  id: string; // identificação
+  signalType: SignalType; // tipo
+  sourceDomain: SignalSourceDomain; // domínio de origem
+  relatedEntityId: string; // entidade relacionada
+  relatedEntityType: EntityType; // (legado/complementar)
+  clientId?: string; 
+  title: string; // título
+  message: string; // explicação
+  evidence?: Record<string, unknown>; // evidências adicionais
+  severity: SeverityLevel; // severidade
+  status: 'active' | 'dismissed' | 'resolved'; // status
+  suggestedAction?: string; // ação recomendada
+  deduplicationKey: string; // chave de deduplicação (workspaceId+signalType+clientId...)
+  triggeredAt: string; // data de detecção
+  resolvedAt?: string; // data de resolução
   readAt?: string;
 }
 
@@ -375,7 +383,7 @@ export interface CamplyData {
   tasks: Task[];
   activityLogs: ActivityLog[];
   agentRules: AgentRule[];
-  agentAlerts: AgentAlert[];
+  agentAlerts: OperationalSignal[];
   agentLogs: AgentActivityLog[];
 }
 

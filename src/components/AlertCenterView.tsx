@@ -4,7 +4,7 @@
  * Also shows cost-related alerts derived from campaign data in real time.
  */
 import React, { useMemo, useState } from 'react';
-import type { CamplyData, AgentAlert, Campaign, Client } from '../types';
+import type { CamplyData, OperationalSignal, Campaign, Client } from '../types';
 import { AlertBadge } from './ui/AlertBadge';
 import { formatMetricValue } from '../lib/meta/metricsSelector';
 

@@ -1,5 +1,5 @@
 import { ShieldAlert, AlertTriangle, Clock, CheckCircle2, X, ChevronRight } from 'lucide-react';
-import { CamplyData, AgentAlert, ViewId } from '../types';
+import { CamplyData, OperationalSignal, ViewId } from '../types';
 import { useEffect, useState } from 'react';
 
 interface StartupModalProps {

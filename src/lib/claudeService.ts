@@ -1,4 +1,4 @@
-import { CamplyData, AgentAlert, Campaign, Client } from '../types';
+import { CamplyData, OperationalSignal, Campaign, Client } from '../types';
 import { invokeFunction } from './invokeFunction';
 
 
