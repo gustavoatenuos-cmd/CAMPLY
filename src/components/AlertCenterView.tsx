@@ -13,96 +13,6 @@ interface AlertCenterViewProps {
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
 }
 
-// Derives real-time cost alerts from campaign data
-function deriveCostAlerts(data: CamplyData): Array<{
-  id: string;
-  clientId: string;
-  campaignId?: string;
-  severity: 'critical' | 'warning' | 'info';
-  type: string;
-  title: string;
-  message: string;
-  action: string;
-  client?: Client;
-  campaign?: Campaign;
-}> {
-  const alerts: ReturnType<typeof deriveCostAlerts> = [];
-
-  data.campaigns.forEach(campaign => {
-    const client = data.clients.find(c => c.id === campaign.clientId);
-    const base = { clientId: campaign.clientId, campaignId: campaign.id, client, campaign };
-
-    // Budget exhausted (>90%)
-    if (campaign.budget > 0) {
-      const pct = (campaign.spent / campaign.budget) * 100;
-      if (pct >= 90 && !['paused', 'setup'].includes(campaign.status)) {
-        alerts.push({
-          ...base,
-          id: `budget_exhausted_${campaign.id}`,
-          severity: 'critical',
-          type: 'budget_exhausted',
-          title: 'Budget esgotado',
-          message: `${campaign.name} consumiu ${pct.toFixed(0)}% do budget (${formatMetricValue('spent', campaign.spent)})`,
-          action: 'Revisar orçamento ou pausar campanha',
-        });
-      } else if (pct >= 70 && !['paused', 'setup'].includes(campaign.status)) {
-        alerts.push({
-          ...base,
-          id: `budget_high_${campaign.id}`,
-          severity: 'warning',
-          type: 'budget_high',
-          title: 'Budget acima de 70%',
-          message: `${campaign.name} já consumiu ${pct.toFixed(0)}% do budget`,
-          action: 'Monitorar consumo e ajustar se necessário',
-        });
-      }
-    }
-
-    // Campaign without optimization for 3+ days
-    if (campaign.lastOptimizedAt && !['paused', 'setup'].includes(campaign.status)) {
-      const days = Math.floor((Date.now() - new Date(campaign.lastOptimizedAt).getTime()) / 86400000);
-      if (days >= 7) {
-        alerts.push({
-          ...base,
-          id: `no_optim_critical_${campaign.id}`,
-          severity: 'critical',
-          type: 'no_optimization',
-          title: 'Sem otimização há 7+ dias',
-          message: `${campaign.name} está há ${days} dias sem otimização`,
-          action: 'Revisar métricas e otimizar urgentemente',
-        });
-      } else if (days >= 3) {
-        alerts.push({
-          ...base,
-          id: `no_optim_warning_${campaign.id}`,
-          severity: 'warning',
-          type: 'no_optimization',
-          title: `Sem otimização há ${days} dias`,
-          message: `${campaign.name} precisa de revisão`,
-          action: 'Analisar métricas e registrar otimização',
-        });
-      }
-    }
-
-    // High CPM vs benchmark
-    if (campaign.cpr !== undefined && client?.benchmarks?.cpr) {
-      const ratio = campaign.cpr / client.benchmarks.cpr;
-      if (ratio > 2) {
-        alerts.push({
-          ...base,
-          id: `high_cpr_${campaign.id}`,
-          severity: 'warning',
-          type: 'high_cost',
-          title: 'Custo por resultado alto',
-          message: `${campaign.name}: CPR ${formatMetricValue('cpr', campaign.cpr)} vs benchmark ${formatMetricValue('cpr', client.benchmarks.cpr)}`,
-          action: 'Revisar criativos e segmentação',
-        });
-      }
-    }
-  });
-
-  return alerts;
-}
 
 // ==================== ALERT ITEM ====================
 
@@ -160,8 +70,6 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
   const [showResolved, setShowResolved] = useState(false);
 
-  // Derived cost alerts
-  const costAlerts = useMemo(() => deriveCostAlerts(data), [data]);
 
   // Existing agent alerts
   const agentAlerts = useMemo(() => {
@@ -173,20 +81,14 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
       });
   }, [data.agentAlerts, showResolved]);
 
-  const filteredCostAlerts = useMemo(() => {
-    if (filter === 'all') return costAlerts;
-    return costAlerts.filter(a => a.severity === filter);
-  }, [costAlerts, filter]);
 
   const filteredAgentAlerts = useMemo(() => {
     if (filter === 'all') return agentAlerts;
     return agentAlerts.filter(a => (a.severity as string) === filter);
   }, [agentAlerts, filter]);
 
-  const criticalCount = costAlerts.filter(a => a.severity === 'critical').length
-    + agentAlerts.filter(a => a.severity === 'critical').length;
-  const warningCount = costAlerts.filter(a => a.severity === 'warning').length
-    + agentAlerts.filter(a => a.severity === 'warning').length;
+  const criticalCount = agentAlerts.filter(a => a.severity === 'critical').length;
+  const warningCount = agentAlerts.filter(a => a.severity === 'warning').length;
   const totalActive = criticalCount + warningCount;
 
   function dismissAlert(alertId: string) {
@@ -275,31 +177,6 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
         </div>
       </div>
 
-      {/* Cost Alerts (real-time derived) */}
-      {filteredCostAlerts.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
-            Alertas de Custo e Performance
-            <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-zinc-400">
-              {filteredCostAlerts.length}
-            </span>
-          </h2>
-          <div className="flex flex-col gap-2">
-            {filteredCostAlerts.map(alert => (
-              <AlertItem
-                key={alert.id}
-                severity={alert.severity}
-                title={alert.title}
-                message={alert.message}
-                action={alert.action}
-                clientName={alert.client?.name}
-                campaignName={alert.campaign?.name !== alert.message.split(':')[0] ? undefined : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Agent Alerts (operational) */}
       {filteredAgentAlerts.length > 0 && (
@@ -331,13 +208,15 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
       )}
 
       {/* Empty state */}
-      {filteredCostAlerts.length === 0 && filteredAgentAlerts.length === 0 && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/15">
+      {filteredAgentAlerts.length === 0 && (
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <div className="mb-4 rounded-full bg-brand-green/10 p-4 text-brand-green">
             <span className="text-3xl">✓</span>
           </div>
-          <p className="text-lg font-semibold text-emerald-400">Operação Saudável</p>
-          <p className="text-sm text-zinc-500">Nenhum alerta para o filtro selecionado</p>
+          <h3 className="text-lg font-bold text-white">Tudo sob controle</h3>
+          <p className="mt-2 text-sm text-zinc-400">
+            Não há alertas que exijam atenção no momento.
+          </p>
         </div>
       )}
     </div>

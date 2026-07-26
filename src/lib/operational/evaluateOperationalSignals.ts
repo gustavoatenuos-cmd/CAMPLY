@@ -112,6 +112,24 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     if (!campaign.metaCampaignId && spentRate >= 0.8 && campaign.spent > 0) {
       addSignal(campaign.id, 'campaign', campaign.clientId, 'verba_operacional_critica', 'campaigns', `${campaign.name} está perto do limite de verba (Manual)`, `${client?.name ?? 'Cliente'} já consumiu ${Math.round(spentRate * 100)}% da verba operacional cadastrada.`, 'critical', 'Verifique se os dados estão atualizados ou aumente o limite de verba.');
     }
+
+    // Budget check from deriveCostAlerts
+    if (campaign.budget > 0) {
+      const pct = (campaign.spent / campaign.budget) * 100;
+      if (pct >= 90 && !['paused', 'setup'].includes(campaign.status)) {
+        addSignal(campaign.id, 'campaign', campaign.clientId, 'budget_exhausted', 'campaigns', 'Budget esgotado', `${campaign.name} consumiu ${pct.toFixed(0)}% do budget`, 'critical', 'Revisar orçamento ou pausar campanha');
+      } else if (pct >= 70 && !['paused', 'setup'].includes(campaign.status)) {
+        addSignal(campaign.id, 'campaign', campaign.clientId, 'budget_high', 'campaigns', 'Budget acima de 70%', `${campaign.name} já consumiu ${pct.toFixed(0)}% do budget`, 'warning', 'Monitorar consumo e ajustar se necessário');
+      }
+    }
+
+    // High CPM vs benchmark from deriveCostAlerts
+    if (campaign.cpr !== undefined && client?.benchmarks?.cpr) {
+      const ratio = campaign.cpr / client.benchmarks.cpr;
+      if (ratio > 2) {
+        addSignal(campaign.id, 'campaign', campaign.clientId, 'high_cost', 'campaigns', 'Custo por resultado alto', `${campaign.name}: CPR acima do benchmark`, 'warning', 'Revisar criativos e segmentação');
+      }
+    }
   });
 
   // ==========================================
