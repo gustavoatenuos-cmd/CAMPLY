@@ -112,7 +112,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
         newCampaign = {
           id: makeId('camp'),
           clientId,
-          name: `Tráfego ${client?.company || ''}`,
+          name: `Tráfego ${client?.company || client?.name || 'Geral'}`,
           platform: 'Meta Ads',
           status: 'setup',
           objective: 'Tráfego',
@@ -855,7 +855,7 @@ export function TodayView({ data, insights, updateData, setActiveView }: TodayVi
             </div>
           </Panel>
 
-          <Panel title="Recebimentos próximos" button="Meu financeiro" onClick={() => setActiveView('personalFinance')}>
+          <Panel title="Recebimentos próximos" button="Dashboard" onClick={() => setActiveView('today')}>
             <div className="space-y-3">
               {pendingPayments.map((item) => {
                 const client = data.clients.find((clientItem) => clientItem.id === item.clientId);

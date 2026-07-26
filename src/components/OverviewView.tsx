@@ -700,7 +700,7 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
                   <QuickMetric icon={CheckSquare2} label="Tarefas abertas" value={openTasks} onClick={() => setActiveView('projects')} />
                   <QuickMetric icon={BriefcaseBusiness} label="Projetos abertos" value={openProjects} onClick={() => setActiveView('projects')} />
                   <QuickMetric icon={AlertTriangle} label="Alertas ativos" value={activeAlerts} onClick={() => setActiveView('intelligence')} />
-                  <QuickMetric icon={Banknote} label="A receber" value={formatCurrency(pendingReceivables)} onClick={() => setActiveView('personalFinance')} />
+                  <QuickMetric icon={Banknote} label="A receber" value={formatCurrency(pendingReceivables)} onClick={() => setActiveView('today')} />
                 </div>
               </article>
             </div>

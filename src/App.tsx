@@ -18,14 +18,11 @@ const ActivityView = React.lazy(() => import('./components/ActivityView').then(m
 const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
 const CampaignsView = React.lazy(() => import('./components/CampaignsView').then(m => ({ default: m.CampaignsView })));
 const ClientsView = React.lazy(() => import('./components/ClientsView').then(m => ({ default: m.ClientsView })));
-const FinanceView = React.lazy(() => import('./components/FinanceView').then(m => ({ default: m.FinanceView })));
 const IntelligenceView = React.lazy(() => import('./components/IntelligenceView').then(m => ({ default: m.IntelligenceView })));
 
 const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegrationView').then(m => ({ default: m.MetaIntegrationView })));
-const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 const OverviewView = React.lazy(() => import('./components/OverviewView').then(m => ({ default: m.OverviewView })));
-const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 // Phase 1 — Analytics views
 const ClientAnalyticsView = React.lazy(() => import('./components/ClientAnalyticsView').then(m => ({ default: m.ClientAnalyticsView })));
 const AlertCenterView = React.lazy(() => import('./components/AlertCenterView').then(m => ({ default: m.AlertCenterView })));
@@ -297,12 +294,11 @@ export default function App() {
   useEffect(() => {
     if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
     setData((current) => {
-      const { newAlerts, newLogs } = runAgentEngine(current);
-      if (newAlerts.length > 0 || newLogs.length > 0) {
+      const { newAlerts } = runAgentEngine(current);
+      if (newAlerts.length > 0) {
         return {
           ...current,
           agentAlerts: [...newAlerts, ...current.agentAlerts],
-          agentLogs: [...newLogs, ...current.agentLogs],
         };
       }
       return current;
@@ -319,12 +315,11 @@ export default function App() {
   const updateData = (updater: (data: CamplyData) => CamplyData) => {
     setData((current) => {
       const next = updater(current);
-      const { newAlerts, newLogs } = runAgentEngine(next);
-      if (newAlerts.length > 0 || newLogs.length > 0) {
+      const { newAlerts } = runAgentEngine(next);
+      if (newAlerts.length > 0) {
         return {
           ...next,
           agentAlerts: [...newAlerts, ...next.agentAlerts],
-          agentLogs: [...newLogs, ...next.agentLogs],
         };
       }
       return next;
@@ -407,14 +402,11 @@ export default function App() {
               )}
               {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
               {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
-              {activeView === 'mediaFinance' && <FinanceView data={data} />}
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
-              {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
               {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
               {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
 
-              {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}
               {/* Phase 1 — Analytics views */}
               {activeView === 'clientAnalytics' && <ClientAnalyticsView data={data} updateData={updateData} setActiveView={setActiveView} />}

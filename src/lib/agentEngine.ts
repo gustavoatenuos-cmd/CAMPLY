@@ -12,10 +12,8 @@ function daysBetween(date1: string | Date, date2: string | Date): number {
 
 export function runAgentEngine(data: CamplyData): {
   newAlerts: AgentAlert[];
-  newLogs: AgentActivityLog[];
 } {
   const newAlerts: AgentAlert[] = [];
-  const newLogs: AgentActivityLog[] = [];
   const today = new Date();
   const todayIso = today.toISOString();
 
@@ -110,5 +108,5 @@ export function runAgentEngine(data: CamplyData): {
     }
   });
 
-  return { newAlerts, newLogs };
+  return { newAlerts };
 }

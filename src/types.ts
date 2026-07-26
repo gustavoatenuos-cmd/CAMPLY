@@ -10,20 +10,13 @@ export type ViewId =
   | 'today'
   | 'campaigns'
   | 'clients'
-  | 'mediaFinance'
   | 'projects'
-  | 'personalFinance'
   | 'activity'
   | 'intelligence'
   | 'agentSettings'
-  | 'agentChat'
   | 'metaIntegration'
-  | 'creativeCritic'
-  // Analytical views (Phase 1+)
   | 'clientAnalytics'
-  | 'budgetTracker'
-  | 'alertCenter'
-  | 'campaignDrilldown';
+  | 'alertCenter';
 
 // ===================== CLIENT CATEGORY =====================
 
@@ -304,6 +297,7 @@ export type ActivityAction =
   | 'client_updated'
   | 'client_status_changed'
   | 'campaign_created'
+  | 'campaign_edited'
   | 'campaign_status_changed'
   | 'task_created'
   | 'task_completed'

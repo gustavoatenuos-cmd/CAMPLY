@@ -26,17 +26,13 @@ const navGroups: NavItem[][] = [
   [
     { id: 'today',           label: 'Dashboard',     icon: LayoutDashboard },
     { id: 'clientAnalytics', label: 'Analytics',     icon: BarChart3 },
-
     { id: 'campaigns',       label: 'Campanhas',     icon: Columns3 },
-    { id: 'creativeCritic',  label: 'Lab. Criativo', icon: Sparkles },
     { id: 'alertCenter',     label: 'Alertas',       icon: Bell },
   ],
-  // Grupo 2 — clientes e financeiro
+  // Grupo 2 — clientes e projetos
   [
     { id: 'clients',         label: 'Clientes',        icon: Users },
-    { id: 'mediaFinance',    label: 'Verbas de mídia', icon: Banknote },
     { id: 'projects',        label: 'Projetos',        icon: BriefcaseBusiness },
-    { id: 'personalFinance', label: 'Meu financeiro',  icon: Landmark },
   ],
   // Grupo 3 — histórico e configuração
   [

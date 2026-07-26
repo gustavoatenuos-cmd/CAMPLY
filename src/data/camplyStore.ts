@@ -214,13 +214,21 @@ export const daysUntil = (value: string) => {
   return Math.ceil((target.getTime() - base.getTime()) / 86400000);
 };
 
+export const daysSince = (value: string) => {
+  const target = new Date(`${value}T12:00:00`);
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  return Math.floor((base.getTime() - target.getTime()) / 86400000);
+};
+
 export const buildInsights = (data: CamplyData): Insight[] => {
   const insights: Insight[] = [];
 
   data.campaigns.forEach((campaign) => {
     const client = data.clients.find((item) => item.id === campaign.clientId);
-    const daysWithoutOptimization = campaign.lastOptimizedAt
-      ? Math.abs(daysUntil(campaign.lastOptimizedAt))
+    const refDate = campaign.lastOptimizedAt || campaign.createdAt;
+    const daysWithoutOptimization = refDate
+      ? Math.max(0, daysSince(refDate))
       : 0;
     const spentRate = campaign.budget ? campaign.spent / campaign.budget : 0;
 
@@ -234,13 +242,13 @@ export const buildInsights = (data: CamplyData): Insight[] => {
       });
     }
 
-    if (spentRate >= 0.8) {
+    if (!campaign.metaCampaignId && spentRate >= 0.8 && campaign.spent > 0) {
       insights.push({
         id: `budget-${campaign.id}`,
         level: 'critical',
-        title: `${campaign.name} está perto do limite de verba`,
-        description: `${client?.name ?? 'Cliente'} já consumiu ${Math.round(spentRate * 100)}% da verba cadastrada.`,
-        recommendation: 'Conferir performance antes de manter ou aumentar orçamento.',
+        title: `${campaign.name} está perto do limite de verba (Manual)`,
+        description: `${client?.name ?? 'Cliente'} já consumiu ${Math.round(spentRate * 100)}% da verba operacional cadastrada.`,
+        recommendation: 'Verifique se os dados estão atualizados ou aumente o limite de verba.',
       });
     }
   });
@@ -261,7 +269,10 @@ export const buildInsights = (data: CamplyData): Insight[] => {
   });
 
   data.projects.forEach((project) => {
-    if (project.status !== 'done' && daysUntil(project.dueDate) <= 7) {
+    // Projetos recorrentes não devem gerar alerta de prazo indevido
+    if (project.projectType === 'traffic' || project.billingType === 'recurring') return;
+
+    if (project.status !== 'done' && project.dueDate && daysUntil(project.dueDate) <= 7) {
       insights.push({
         id: `project-${project.id}`,
         level: 'info',
