@@ -585,44 +585,40 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
           </div>
         ) : (
           <>
-            {!periodHasAnySync ? (
-              <div data-testid="period-not-synced-panel" className="rounded-2xl border border-dashed border-brand-line bg-brand-surface p-10 text-center">
-                <RefreshCw className="mx-auto text-brand-muted" size={28} />
-                <p className="mt-4 text-lg font-black text-white">Base Meta Ads não sincronizada.</p>
-                <p className="mt-2 text-sm text-brand-muted">Vá em Integração Meta Ads e sincronize os últimos 90 dias.</p>
+            {!periodHasAnySync && (
+              <div data-testid="period-not-synced-panel" className="mb-8 rounded-2xl border border-dashed border-brand-line bg-brand-surface p-6 text-center">
+                <RefreshCw className="mx-auto text-brand-muted" size={24} />
+                <p className="mt-2 text-md font-black text-white">Base Meta Ads não sincronizada.</p>
+                <p className="mt-1 text-xs text-brand-muted">As funções analíticas dependem de sincronização, mas sua operação continua disponível abaixo.</p>
                 <button
                   type="button"
                   onClick={() => setActiveView('metaIntegration')}
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110"
+                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2 text-xs font-black text-brand-ink transition hover:brightness-110"
                 >
-                  Ir para Integração Meta Ads
+                  Sincronizar Meta Ads
                 </button>
               </div>
-            ) : (
-              <>
-                <ExecutiveSummary
-                  clients={operationalClients}
-                  period={period}
-                  statusFilter={statusFilter}
-                  onStatusFilterChange={setStatusFilter}
-                />
-
-                <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
-
-                <ClientPerformanceCardGrid
-                  entries={priorityEntries}
-                  period={period}
-                  onViewAnalytics={handleViewClientAnalytics}
-                  onEditClient={handleEditClient}
-                  onDeactivateClient={setDeactivatingClientId}
-                  onReactivateClient={reactivateClient}
-                  isClientOperationallyActive={isEntryOperationallyActive}
-                  registerCardRef={registerCardRef}
-                />
-              </>
             )}
 
-            <CollapsibleSection
+            <ExecutiveSummary
+              clients={operationalClients}
+              period={period}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+            />
+
+            <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
+
+            <ClientPerformanceCardGrid
+              entries={priorityEntries}
+              period={period}
+              onViewAnalytics={handleViewClientAnalytics}
+              onEditClient={handleEditClient}
+              onDeactivateClient={setDeactivatingClientId}
+              onReactivateClient={reactivateClient}
+              isClientOperationallyActive={isEntryOperationallyActive}
+              registerCardRef={registerCardRef}
+            />            <CollapsibleSection
               title="Tabela detalhada"
               subtitle="Visão de auditoria e comparação por conta — clique em uma linha para abrir as campanhas."
               defaultOpen={isMetaE2EMode}

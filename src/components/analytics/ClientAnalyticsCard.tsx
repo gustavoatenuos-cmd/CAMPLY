@@ -202,8 +202,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
           Ver detalhes
         </button>
         <button 
-          className="w-full text-xs inline-flex items-center justify-center px-3 py-1.5 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-          disabled={hasDataIssues}
+          className="w-full text-xs inline-flex items-center justify-center px-3 py-1.5 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           onClick={() => onOpenCampaigns(performance)}
         >
           Ver campanhas
