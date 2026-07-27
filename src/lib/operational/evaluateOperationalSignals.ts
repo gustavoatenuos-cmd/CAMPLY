@@ -1,4 +1,4 @@
-import { CamplyData, OperationalSignal, EntityType, SeverityLevel, SignalSourceDomain, SignalType } from '../../types';
+import { CamplyData, OperationalSignal, EntityType, SeverityLevel, SignalSourceDomain, SignalType, AgentRule } from '../../types';
 import { makeId } from '../../data/camplyStore';
 
 // Helper to calculate days between dates
@@ -45,6 +45,10 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     });
   };
 
+  const getRule = (conditionType: string, entityType: string): AgentRule | undefined => {
+    return data.agentRules?.find(r => r.conditionType === conditionType && (r.entityType === entityType || r.entityType === 'system'));
+  };
+
   // ==========================================
   // RULES FROM agentEngine (Tasks)
   // ==========================================
@@ -53,10 +57,13 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     
     if (task.dueDate) {
       const days = daysBetween(todayIso, task.dueDate);
-      if (days < 0) {
-        addSignal(task.id, 'task', task.clientId, 'tarefa_atrasada', 'tasks', 'Tarefa Atrasada', `A tarefa "${task.title}" está atrasada.`, 'critical', 'Concluir ou reagendar a tarefa.');
-      } else if (days === 0) {
-        addSignal(task.id, 'task', task.clientId, 'tarefa_hoje', 'tasks', 'Vence Hoje', `A tarefa "${task.title}" vence hoje.`, 'warning', 'Priorizar a execução desta tarefa hoje.');
+      const overdueRule = getRule('overdue', 'task');
+      const todayRule = getRule('deadline_today', 'task');
+      
+      if (days < 0 && overdueRule?.enabled) {
+        addSignal(task.id, 'task', task.clientId, 'tarefa_atrasada', 'tasks', 'Tarefa Atrasada', `A tarefa "${task.title}" está atrasada.`, overdueRule.severity || 'critical', 'Concluir ou reagendar a tarefa.');
+      } else if (days === 0 && todayRule?.enabled) {
+        addSignal(task.id, 'task', task.clientId, 'tarefa_hoje', 'tasks', 'Vence Hoje', `A tarefa "${task.title}" vence hoje.`, todayRule.severity || 'warning', 'Priorizar a execução desta tarefa hoje.');
       }
     }
   });
@@ -71,20 +78,23 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     if (project.projectType !== 'traffic' && project.billingType !== 'recurring') {
       if (project.dueDate) {
         const days = daysBetween(todayIso, project.dueDate);
-        if (days < 0) {
-          addSignal(project.id, 'project', project.clientId, 'projeto_atrasado', 'projects', 'Projeto Atrasado', `O projeto "${project.name}" passou do prazo.`, 'critical', 'Revisar cronograma e alinhar com o cliente.');
-        } else if (days === 0) {
-          addSignal(project.id, 'project', project.clientId, 'projeto_entrega_hoje', 'projects', 'Entrega Hoje', `A entrega do projeto "${project.name}" é hoje.`, 'warning', 'Finalizar pendências e preparar entrega.');
+        const overdueRule = getRule('overdue', 'project') || getRule('overdue', 'task'); // fallback to task rule if not defined specifically for project
+        const todayRule = getRule('deadline_today', 'project') || getRule('deadline_today', 'task');
+        
+        if (days < 0 && (overdueRule?.enabled ?? true)) {
+          addSignal(project.id, 'project', project.clientId, 'projeto_atrasado', 'projects', 'Projeto Atrasado', `O projeto "${project.name}" passou do prazo.`, overdueRule?.severity || 'critical', 'Revisar cronograma e alinhar com o cliente.');
+        } else if (days === 0 && (todayRule?.enabled ?? true)) {
+          addSignal(project.id, 'project', project.clientId, 'projeto_entrega_hoje', 'projects', 'Entrega Hoje', `A entrega do projeto "${project.name}" é hoje.`, todayRule?.severity || 'warning', 'Finalizar pendências e preparar entrega.');
         } else if (days <= 7 && days > 0) {
-          // Ex-buildInsights alert for projects due soon
-          addSignal(project.id, 'project', project.clientId, 'projeto_foco', 'projects', `Projeto em foco: ${project.name}`, `Prazo em ${project.dueDate} com ${project.progress}% de progresso.`, 'warning', project.nextAction); // 'warning' used to be 'info', adapting to valid SeverityLevel
+          addSignal(project.id, 'project', project.clientId, 'projeto_foco', 'projects', `Projeto em foco: ${project.name}`, `Prazo em ${project.dueDate} com ${project.progress}% de progresso.`, 'warning', project.nextAction);
         }
       }
 
       if (project.lastActivityAt) {
         const idleDays = daysBetween(project.lastActivityAt, todayIso);
-        if (idleDays > 7 && project.status !== 'waiting') {
-          addSignal(project.id, 'project', project.clientId, 'projeto_parado', 'projects', 'Projeto Parado', `Projeto sem atualizações há mais de 7 dias.`, 'warning', 'Atualizar o andamento ou contatar o cliente.');
+        const idleRule = getRule('idle_days', 'project');
+        if (idleRule?.enabled && idleDays >= (idleRule.thresholdValue || 7) && project.status !== 'waiting') {
+          addSignal(project.id, 'project', project.clientId, 'projeto_parado', 'projects', 'Projeto Parado', `Projeto sem atualizações há mais de ${idleRule.thresholdValue || 7} dias.`, idleRule.severity || 'warning', 'Atualizar o andamento ou contatar o cliente.');
         }
       }
     }
@@ -97,12 +107,12 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     const client = data.clients.find((item) => item.id === campaign.clientId);
     const refDate = campaign.lastOptimizedAt || campaign.createdAt;
     
-    // Idle campaign check (combining >= 4 and >= 3 days logic into one standard >= 4 from buildInsights, or using >= 3 from agentEngine. Let's use >= 3 from agentEngine which is more strict).
     if (['live', 'optimize'].includes(campaign.status)) {
       if (refDate) {
         const idleDays = daysBetween(refDate, todayIso);
-        if (idleDays >= 3) {
-          addSignal(campaign.id, 'campaign', campaign.clientId, 'campanha_parada', 'campaigns', 'Campanha Parada', `Campanha sem otimização há ${idleDays} dias.`, 'warning', campaign.nextAction || 'Analisar métricas e registrar otimização.');
+        const idleRule = getRule('idle_days', 'campaign');
+        if (idleRule?.enabled && idleDays >= (idleRule.thresholdValue || 3)) {
+          addSignal(campaign.id, 'campaign', campaign.clientId, 'campanha_parada', 'campaigns', 'Campanha Parada', `Campanha sem otimização há ${idleDays} dias.`, idleRule.severity || 'warning', campaign.nextAction || 'Analisar métricas e registrar otimização.');
         }
       }
     }
@@ -151,8 +161,9 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     if (client.status !== 'active') return;
 
     const criticalCount = signals.filter(a => a.clientId === client.id && a.severity === 'critical').length;
-    if (criticalCount >= 3) {
-      addSignal(client.id, 'client', client.id, 'atencao_critica', 'system', 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, 'critical', 'Realizar força-tarefa para resolver pendências.');
+    const clientRule = getRule('many_pending', 'client');
+    if (clientRule?.enabled && criticalCount >= (clientRule.thresholdValue || 3)) {
+      addSignal(client.id, 'client', client.id, 'atencao_critica', 'system', 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, clientRule.severity || 'critical', 'Realizar força-tarefa para resolver pendências.');
     }
   });
 
