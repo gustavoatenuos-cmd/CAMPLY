@@ -12,6 +12,7 @@ import { CamplyData, ViewId } from './types';
 import { generateAgentSummary } from './lib/claudeService';
 import { evaluateOperationalSignals } from './lib/operational/evaluateOperationalSignals';
 import { syncOperationalSignals } from './lib/operational/syncOperationalSignals';
+import { countActiveActionableSignals } from './lib/operational/signalFilters';
 import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState, restoreMetaE2EState } from './lib/meta/metaE2ERuntime';
 import { resetE2EAnalysisProfiles } from './lib/analysis/clientAnalysisProfile';
 
@@ -24,6 +25,9 @@ const IntelligenceView = React.lazy(() => import('./components/IntelligenceView'
 const MetaIntegrationView = React.lazy(() => import('./components/MetaIntegrationView').then(m => ({ default: m.MetaIntegrationView })));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 const OverviewView = React.lazy(() => import('./components/OverviewView').then(m => ({ default: m.OverviewView })));
+const FinanceView = React.lazy(() => import('./components/FinanceView').then(m => ({ default: m.FinanceView })));
+const PersonalFinanceView = React.lazy(() => import('./components/PersonalFinanceView').then(m => ({ default: m.PersonalFinanceView })));
+const CreativeCriticView = React.lazy(() => import('./components/CreativeCriticView').then(m => ({ default: m.CreativeCriticView })));
 // Phase 1 — Analytics views
 const ClientAnalyticsView = React.lazy(() => import('./components/ClientAnalyticsView').then(m => ({ default: m.ClientAnalyticsView })));
 const AlertCenterView = React.lazy(() => import('./components/AlertCenterView').then(m => ({ default: m.AlertCenterView })));
@@ -350,7 +354,7 @@ export default function App() {
     } : undefined} />;
   }
 
-  const agentAlertCount = (data.agentAlerts || []).filter(a => a.status === 'active').length;
+  const agentAlertCount = countActiveActionableSignals(data.agentAlerts);
 
   return (
     <div className="flex min-h-dvh flex-col bg-brand-ink text-white xl:flex-row">
@@ -402,6 +406,9 @@ export default function App() {
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
               {activeView === 'intelligence' && <IntelligenceView data={data} />}
+              {activeView === 'mediaFinance' && <FinanceView data={data} />}
+              {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
+              {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
               {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
 
               {activeView === 'metaIntegration' && <MetaIntegrationView data={data} updateData={updateData} />}

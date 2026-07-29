@@ -16,7 +16,10 @@ export type ViewId =
   | 'agentSettings'
   | 'metaIntegration'
   | 'clientAnalytics'
-  | 'alertCenter';
+  | 'alertCenter'
+  | 'mediaFinance'
+  | 'personalFinance'
+  | 'creativeCritic';
 
 // ===================== CLIENT CATEGORY =====================
 
@@ -344,6 +347,16 @@ export interface AgentRule {
 export type SignalSourceDomain = 'tasks' | 'projects' | 'receivables' | 'campaigns' | 'system' | 'meta';
 export type SignalType = string; // Define the kind of rule that generated it
 
+export interface OperationalEvidence {
+  key: string;
+  label: string;
+  value: string | number | boolean;
+  source: string;
+  quality: 'manual' | 'computed' | 'system' | 'api';
+  observedAt: string;
+  period?: string;
+}
+
 export interface OperationalSignal {
   id: string; // identificação
   signalType: SignalType; // tipo
@@ -353,13 +366,16 @@ export interface OperationalSignal {
   clientId?: string; 
   title: string; // título
   message: string; // explicação
-  evidence?: Record<string, unknown>; // evidências adicionais
+  evidence: OperationalEvidence[]; // evidências adicionais (agora obrigatório, array)
   severity: SeverityLevel; // severidade
   status: 'active' | 'dismissed' | 'resolved'; // status
   suggestedAction?: string; // ação recomendada
   deduplicationKey: string; // chave de deduplicação (workspaceId+signalType+clientId...)
   triggeredAt: string; // data de detecção
+  lastDetectedAt?: string;
   resolvedAt?: string; // data de resolução
+  dismissedAt?: string;
+  occurrenceCount?: number;
   readAt?: string;
 }
 

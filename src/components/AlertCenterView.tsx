@@ -4,7 +4,8 @@
  * Also shows cost-related alerts derived from campaign data in real time.
  */
 import React, { useMemo, useState } from 'react';
-import type { CamplyData, OperationalSignal, Campaign, Client } from '../types';
+import { CamplyData, OperationalSignal, ViewId } from '../types';
+import { selectActiveActionableSignals } from '../lib/operational/signalFilters';
 import { AlertBadge } from './ui/AlertBadge';
 import { formatMetricValue } from '../lib/meta/metricsSelector';
 
@@ -166,7 +167,7 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
             />
             Ver dispensados
           </label>
-          {agentAlerts.filter(a => a.status === 'active').length > 0 && (
+          {selectActiveActionableSignals(agentAlerts).length > 0 && (
             <button
               onClick={dismissAll}
               className="rounded-lg border border-white/10 px-3 py-1 text-xs text-zinc-400 transition hover:border-white/20 hover:text-white"

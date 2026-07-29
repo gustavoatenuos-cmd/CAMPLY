@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, ShieldAlert, Bell, TrendingUp, Sparkles, Users, Megaphone, BriefcaseBusiness, ListChecks } from 'lucide-react';
 import { CamplyData, OperationalSignal } from '../types';
+import { selectActiveActionableSignals } from '../lib/operational/signalFilters';
 import { useState } from 'react';
 
 interface IntelligenceViewProps {
@@ -16,7 +17,7 @@ export function IntelligenceView({ data }: IntelligenceViewProps) {
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
 
   const allAlerts = data.agentAlerts || [];
-  const activeAlerts = allAlerts.filter(a => a.status === 'active');
+  const activeAlerts = selectActiveActionableSignals(allAlerts);
 
   // Filter logic
   const filteredAlerts = allAlerts.filter(a => {

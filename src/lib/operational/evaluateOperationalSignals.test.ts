@@ -197,6 +197,7 @@ describe('syncOperationalSignals — lifecycle', () => {
     clientId: 'c1',
     title: 'Tarefa Atrasada',
     message: 'A tarefa está atrasada.',
+    evidence: [],
     severity: 'critical',
     status: 'active',
     deduplicationKey: 'c1_tarefa_atrasada_t1',
@@ -286,10 +287,10 @@ describe('active signal counting consistency', () => {
     //   (AlertCenterView also shows dismissed in its list, but counts use active filter)
     
     const signals: OperationalSignal[] = [
-      { id: '1', signalType: 'a', sourceDomain: 'tasks', relatedEntityId: 'e1', relatedEntityType: 'task', title: '', message: '', severity: 'critical', status: 'active', deduplicationKey: 'k1', triggeredAt: '' },
-      { id: '2', signalType: 'b', sourceDomain: 'tasks', relatedEntityId: 'e2', relatedEntityType: 'task', title: '', message: '', severity: 'warning', status: 'resolved', deduplicationKey: 'k2', triggeredAt: '' },
-      { id: '3', signalType: 'c', sourceDomain: 'tasks', relatedEntityId: 'e3', relatedEntityType: 'task', title: '', message: '', severity: 'critical', status: 'dismissed', deduplicationKey: 'k3', triggeredAt: '' },
-      { id: '4', signalType: 'd', sourceDomain: 'tasks', relatedEntityId: 'e4', relatedEntityType: 'task', title: '', message: '', severity: 'good', status: 'active', deduplicationKey: 'k4', triggeredAt: '' },
+      { id: '1', signalType: 'a', sourceDomain: 'tasks', relatedEntityId: 'e1', relatedEntityType: 'task', title: '', message: '', evidence: [], severity: 'critical', status: 'active', deduplicationKey: 'k1', triggeredAt: '' },
+      { id: '2', signalType: 'b', sourceDomain: 'tasks', relatedEntityId: 'e2', relatedEntityType: 'task', title: '', message: '', evidence: [], severity: 'warning', status: 'resolved', deduplicationKey: 'k2', triggeredAt: '' },
+      { id: '3', signalType: 'c', sourceDomain: 'tasks', relatedEntityId: 'e3', relatedEntityType: 'task', title: '', message: '', evidence: [], severity: 'critical', status: 'dismissed', deduplicationKey: 'k3', triggeredAt: '' },
+      { id: '4', signalType: 'd', sourceDomain: 'tasks', relatedEntityId: 'e4', relatedEntityType: 'task', title: '', message: '', evidence: [], severity: 'good', status: 'active', deduplicationKey: 'k4', triggeredAt: '' },
     ];
 
     // The canonical active filter (used by App.tsx, TodayView, OverviewView):

@@ -7,6 +7,7 @@ import { CamplyData, Task, ViewId, TaskType, TaskArea, Receivable, Campaign, Pro
 import { clientDisplayName } from './ClientsView';
 import { CampaignObjectiveBlocks } from './meta/CampaignObjectiveBlocks';
 import { buildClientMetaAnalytics, buildSnapshot } from '../lib/meta/clientAnalytics';
+import { selectActiveActionableSignals } from '../lib/operational/signalFilters';
 
 interface TodayViewProps {
   data: CamplyData;
@@ -199,7 +200,7 @@ export function TodayView({ data, updateData, setActiveView }: TodayViewProps) {
   const clientCampaigns = data.campaigns.filter(c => c.clientId === selectedClientId);
   const showCampaignSelector = taskArea === 'tráfego' && selectedClientId && clientCampaigns.length > 0;
 
-  const activeAlerts = data.agentAlerts?.filter(a => a.status === 'active') || [];
+  const activeAlerts = selectActiveActionableSignals(data.agentAlerts);
   const alertsAtrasados = activeAlerts.filter(a => a.title.includes('Atrasad'));
   const alertsUrgentes = activeAlerts.filter(a => a.title.includes('Hoje'));
   const alertsParados = activeAlerts.filter(a => a.title.includes('Parad'));
@@ -810,7 +811,7 @@ export function TodayView({ data, updateData, setActiveView }: TodayViewProps) {
         <div className="space-y-6">
           <Panel title="Prioridades do assistente" button="Ver inteligência" onClick={() => setActiveView('intelligence')}>
             <div className="space-y-3">
-              {data.agentAlerts.filter(a => a.status === 'active').slice(0, 4).map((alert) => (
+              {selectActiveActionableSignals(data.agentAlerts).slice(0, 4).map((alert) => (
                 <div key={alert.id} className="rounded-lg border border-brand-line bg-brand-surface p-4">
                   <p className="font-semibold text-white">{alert.title}</p>
                   <p className="mt-1 text-sm leading-relaxed text-brand-muted">{alert.message}</p>

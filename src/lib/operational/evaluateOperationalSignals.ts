@@ -1,5 +1,6 @@
-import { CamplyData, OperationalSignal, EntityType, SeverityLevel, SignalSourceDomain, SignalType, AgentRule } from '../../types';
+import { CamplyData, OperationalSignal, EntityType, SeverityLevel, SignalSourceDomain, SignalType, OperationalEvidence } from '../../types';
 import { makeId } from '../../data/camplyStore';
+import { operationalRuleRegistry, resolveRuleConfiguration } from './operationalRuleRegistry';
 
 // Helper to calculate days between dates
 function daysBetween(date1: string | Date, date2: string | Date): number {
@@ -23,6 +24,7 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     sourceDomain: SignalSourceDomain,
     title: string,
     message: string,
+    evidence: OperationalEvidence[],
     severity: SeverityLevel,
     suggestedAction?: string
   ) => {
@@ -37,33 +39,43 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
       clientId,
       title,
       message,
+      evidence,
       severity,
       status: 'active',
       suggestedAction,
       deduplicationKey,
       triggeredAt: todayIso,
+      lastDetectedAt: todayIso,
+      occurrenceCount: 1,
     });
-  };
-
-  const getRule = (conditionType: string, entityType: string): AgentRule | undefined => {
-    return data.agentRules?.find(r => r.conditionType === conditionType && (r.entityType === entityType || r.entityType === 'system'));
   };
 
   // ==========================================
   // RULES FROM agentEngine (Tasks)
   // ==========================================
+  const taskOverdueConfig = resolveRuleConfiguration(operationalRuleRegistry.task_overdue, data.agentRules);
+  const taskTodayConfig = resolveRuleConfiguration(operationalRuleRegistry.task_deadline_today, data.agentRules);
+
   data.tasks.forEach((task) => {
     if (task.done) return;
     
     if (task.dueDate) {
       const days = daysBetween(todayIso, task.dueDate);
-      const overdueRule = getRule('overdue', 'task');
-      const todayRule = getRule('deadline_today', 'task');
       
-      if (days < 0 && overdueRule?.enabled) {
-        addSignal(task.id, 'task', task.clientId, 'tarefa_atrasada', 'tasks', 'Tarefa Atrasada', `A tarefa "${task.title}" está atrasada.`, overdueRule.severity || 'critical', 'Concluir ou reagendar a tarefa.');
-      } else if (days === 0 && todayRule?.enabled) {
-        addSignal(task.id, 'task', task.clientId, 'tarefa_hoje', 'tasks', 'Vence Hoje', `A tarefa "${task.title}" vence hoje.`, todayRule.severity || 'warning', 'Priorizar a execução desta tarefa hoje.');
+      if (days < 0 && taskOverdueConfig.enabled) {
+        addSignal(
+          task.id, 'task', task.clientId, 'tarefa_atrasada', 'tasks', 'Tarefa Atrasada',
+          `A tarefa "${task.title}" está atrasada.`,
+          [{ key: 'days_overdue', label: 'Dias Atraso', value: Math.abs(days), source: 'local', quality: 'computed', observedAt: todayIso }],
+          taskOverdueConfig.severity, 'Concluir ou reagendar a tarefa.'
+        );
+      } else if (days === 0 && taskTodayConfig.enabled) {
+        addSignal(
+          task.id, 'task', task.clientId, 'tarefa_hoje', 'tasks', 'Vence Hoje',
+          `A tarefa "${task.title}" vence hoje.`,
+          [{ key: 'due_date', label: 'Vencimento', value: task.dueDate, source: 'local', quality: 'computed', observedAt: todayIso }],
+          taskTodayConfig.severity, 'Priorizar a execução desta tarefa hoje.'
+        );
       }
     }
   });
@@ -71,6 +83,10 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
   // ==========================================
   // RULES FROM agentEngine (Projects)
   // ==========================================
+  const projectOverdueConfig = resolveRuleConfiguration(operationalRuleRegistry.project_overdue, data.agentRules);
+  const projectTodayConfig = resolveRuleConfiguration(operationalRuleRegistry.project_deadline_today, data.agentRules);
+  const projectIdleConfig = resolveRuleConfiguration(operationalRuleRegistry.project_idle_days, data.agentRules);
+
   data.projects.forEach((project) => {
     if (project.status === 'done') return;
     
@@ -78,23 +94,45 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
     if (project.projectType !== 'traffic' && project.billingType !== 'recurring') {
       if (project.dueDate) {
         const days = daysBetween(todayIso, project.dueDate);
-        const overdueRule = getRule('overdue', 'project') || getRule('overdue', 'task'); // fallback to task rule if not defined specifically for project
-        const todayRule = getRule('deadline_today', 'project') || getRule('deadline_today', 'task');
         
-        if (days < 0 && (overdueRule?.enabled ?? true)) {
-          addSignal(project.id, 'project', project.clientId, 'projeto_atrasado', 'projects', 'Projeto Atrasado', `O projeto "${project.name}" passou do prazo.`, overdueRule?.severity || 'critical', 'Revisar cronograma e alinhar com o cliente.');
-        } else if (days === 0 && (todayRule?.enabled ?? true)) {
-          addSignal(project.id, 'project', project.clientId, 'projeto_entrega_hoje', 'projects', 'Entrega Hoje', `A entrega do projeto "${project.name}" é hoje.`, todayRule?.severity || 'warning', 'Finalizar pendências e preparar entrega.');
+        if (days < 0 && projectOverdueConfig.enabled) {
+          addSignal(
+            project.id, 'project', project.clientId, 'projeto_atrasado', 'projects', 'Projeto Atrasado',
+            `O projeto "${project.name}" passou do prazo.`,
+            [{ key: 'days_overdue', label: 'Dias Atraso', value: Math.abs(days), source: 'local', quality: 'computed', observedAt: todayIso }],
+            projectOverdueConfig.severity, 'Revisar cronograma e alinhar com o cliente.'
+          );
+        } else if (days === 0 && projectTodayConfig.enabled) {
+          addSignal(
+            project.id, 'project', project.clientId, 'projeto_entrega_hoje', 'projects', 'Entrega Hoje',
+            `A entrega do projeto "${project.name}" é hoje.`,
+            [{ key: 'due_date', label: 'Vencimento', value: project.dueDate, source: 'local', quality: 'computed', observedAt: todayIso }],
+            projectTodayConfig.severity, 'Finalizar pendências e preparar entrega.'
+          );
         } else if (days <= 7 && days > 0) {
-          addSignal(project.id, 'project', project.clientId, 'projeto_foco', 'projects', `Projeto em foco: ${project.name}`, `Prazo em ${project.dueDate} com ${project.progress}% de progresso.`, 'warning', project.nextAction);
+          // Warning within 7 days
+          addSignal(
+            project.id, 'project', project.clientId, 'projeto_foco', 'projects', `Projeto em foco: ${project.name}`,
+            `Prazo em ${project.dueDate} com ${project.progress}% de progresso.`,
+            [
+              { key: 'days_until_due', label: 'Dias Restantes', value: days, source: 'local', quality: 'computed', observedAt: todayIso },
+              { key: 'progress', label: 'Progresso', value: `${project.progress}%`, source: 'local', quality: 'computed', observedAt: todayIso }
+            ],
+            'warning', project.nextAction
+          );
         }
       }
 
-      if (project.lastActivityAt) {
+      if (project.lastActivityAt && projectIdleConfig.enabled) {
         const idleDays = daysBetween(project.lastActivityAt, todayIso);
-        const idleRule = getRule('idle_days', 'project');
-        if (idleRule?.enabled && idleDays >= (idleRule.thresholdValue || 7) && project.status !== 'waiting') {
-          addSignal(project.id, 'project', project.clientId, 'projeto_parado', 'projects', 'Projeto Parado', `Projeto sem atualizações há mais de ${idleRule.thresholdValue || 7} dias.`, idleRule.severity || 'warning', 'Atualizar o andamento ou contatar o cliente.');
+        const limit = projectIdleConfig.threshold || 7;
+        if (idleDays >= limit && project.status !== 'waiting') {
+          addSignal(
+            project.id, 'project', project.clientId, 'projeto_parado', 'projects', 'Projeto Parado',
+            `Projeto sem atualizações há mais de ${limit} dias.`,
+            [{ key: 'idle_days', label: 'Dias Parado', value: idleDays, source: 'local', quality: 'computed', observedAt: todayIso }],
+            projectIdleConfig.severity, 'Atualizar o andamento ou contatar o cliente.'
+          );
         }
       }
     }
@@ -103,41 +141,62 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
   // ==========================================
   // RULES FROM buildInsights + agentEngine (Campaigns)
   // ==========================================
+  const campaignIdleConfig = resolveRuleConfiguration(operationalRuleRegistry.campaign_idle_days, data.agentRules);
+  const campaignBudgetConfig = resolveRuleConfiguration(operationalRuleRegistry.campaign_budget_consumption, data.agentRules);
+  const campaignHighCostConfig = resolveRuleConfiguration(operationalRuleRegistry.campaign_high_cost, data.agentRules);
+
   data.campaigns.forEach((campaign) => {
     const client = data.clients.find((item) => item.id === campaign.clientId);
     const refDate = campaign.lastOptimizedAt || campaign.createdAt;
     
     if (['live', 'optimize'].includes(campaign.status)) {
-      if (refDate) {
+      if (refDate && campaignIdleConfig.enabled) {
         const idleDays = daysBetween(refDate, todayIso);
-        const idleRule = getRule('idle_days', 'campaign');
-        if (idleRule?.enabled && idleDays >= (idleRule.thresholdValue || 3)) {
-          addSignal(campaign.id, 'campaign', campaign.clientId, 'campanha_parada', 'campaigns', 'Campanha Parada', `Campanha sem otimização há ${idleDays} dias.`, idleRule.severity || 'warning', campaign.nextAction || 'Analisar métricas e registrar otimização.');
+        const limit = campaignIdleConfig.threshold || 3;
+        if (idleDays >= limit) {
+          addSignal(
+            campaign.id, 'campaign', campaign.clientId, 'campanha_parada', 'campaigns', 'Campanha Parada',
+            `Campanha sem otimização há ${idleDays} dias.`,
+            [{ key: 'idle_days', label: 'Dias Sem Otimizar', value: idleDays, source: 'local', quality: 'computed', observedAt: todayIso }],
+            campaignIdleConfig.severity, campaign.nextAction || 'Analisar métricas e registrar otimização.'
+          );
         }
       }
     }
 
-    // Budget check (Manual)
-    const spentRate = campaign.budget ? campaign.spent / campaign.budget : 0;
-    if (!campaign.metaCampaignId && spentRate >= 0.8 && campaign.spent > 0) {
-      addSignal(campaign.id, 'campaign', campaign.clientId, 'verba_operacional_critica', 'campaigns', `${campaign.name} está perto do limite de verba (Manual)`, `${client?.name ?? 'Cliente'} já consumiu ${Math.round(spentRate * 100)}% da verba operacional cadastrada.`, 'critical', 'Verifique se os dados estão atualizados ou aumente o limite de verba.');
-    }
-
-    // Budget check from deriveCostAlerts
-    if (campaign.budget > 0) {
+    if (campaignBudgetConfig.enabled && campaign.budget > 0) {
       const pct = (campaign.spent / campaign.budget) * 100;
+      const warnThreshold = campaignBudgetConfig.threshold || 70;
+      
       if (pct >= 90 && !['paused', 'setup'].includes(campaign.status)) {
-        addSignal(campaign.id, 'campaign', campaign.clientId, 'budget_exhausted', 'campaigns', 'Budget esgotado', `${campaign.name} consumiu ${pct.toFixed(0)}% do budget`, 'critical', 'Revisar orçamento ou pausar campanha');
-      } else if (pct >= 70 && !['paused', 'setup'].includes(campaign.status)) {
-        addSignal(campaign.id, 'campaign', campaign.clientId, 'budget_high', 'campaigns', 'Budget acima de 70%', `${campaign.name} já consumiu ${pct.toFixed(0)}% do budget`, 'warning', 'Monitorar consumo e ajustar se necessário');
+        addSignal(
+          campaign.id, 'campaign', campaign.clientId, 'operational_budget_consumption', 'campaigns', 'Budget Esgotando',
+          `${campaign.name} consumiu ${pct.toFixed(0)}% do budget.`,
+          [{ key: 'consumption_pct', label: 'Consumo', value: pct.toFixed(1), source: 'local', quality: 'computed', observedAt: todayIso }],
+          'critical', 'Revisar orçamento ou pausar campanha'
+        );
+      } else if (pct >= warnThreshold && !['paused', 'setup'].includes(campaign.status)) {
+        addSignal(
+          campaign.id, 'campaign', campaign.clientId, 'operational_budget_consumption', 'campaigns', 'Budget Alto',
+          `${campaign.name} já consumiu ${pct.toFixed(0)}% do budget.`,
+          [{ key: 'consumption_pct', label: 'Consumo', value: pct.toFixed(1), source: 'local', quality: 'computed', observedAt: todayIso }],
+          campaignBudgetConfig.severity, 'Monitorar consumo e ajustar se necessário'
+        );
       }
     }
 
-    // High CPM vs benchmark from deriveCostAlerts
-    if (campaign.cpr !== undefined && client?.benchmarks?.cpr) {
+    if (campaignHighCostConfig.enabled && campaign.cpr !== undefined && client?.benchmarks?.cpr) {
       const ratio = campaign.cpr / client.benchmarks.cpr;
       if (ratio > 2) {
-        addSignal(campaign.id, 'campaign', campaign.clientId, 'high_cost', 'campaigns', 'Custo por resultado alto', `${campaign.name}: CPR acima do benchmark`, 'warning', 'Revisar criativos e segmentação');
+        addSignal(
+          campaign.id, 'campaign', campaign.clientId, 'high_cost', 'campaigns', 'Custo por resultado alto',
+          `${campaign.name}: CPR acima do benchmark`,
+          [
+            { key: 'current_cpr', label: 'CPR Atual', value: campaign.cpr, source: 'local', quality: 'computed', observedAt: todayIso },
+            { key: 'benchmark_cpr', label: 'Benchmark', value: client.benchmarks.cpr, source: 'local', quality: 'computed', observedAt: todayIso }
+          ],
+          campaignHighCostConfig.severity, 'Revisar criativos e segmentação'
+        );
       }
     }
   });
@@ -145,30 +204,56 @@ export function evaluateOperationalSignals(data: CamplyData): OperationalSignal[
   // ==========================================
   // RULES FROM buildInsights (Receivables)
   // ==========================================
+  const recOverdueConfig = resolveRuleConfiguration(operationalRuleRegistry.receivable_overdue, data.agentRules);
+  const recUpcomingConfig = resolveRuleConfiguration(operationalRuleRegistry.receivable_upcoming, data.agentRules);
+
   data.receivables.forEach((item) => {
     const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
     const distance = daysBetween(todayIso, item.dueDate);
 
-    if (item.status === 'overdue' || (item.status === 'pending' && distance <= 3)) {
-      addSignal(item.id, 'receivable', item.clientId, item.status === 'overdue' ? 'pagamento_atrasado' : 'pagamento_proximo', 'receivables', item.status === 'overdue' ? `Pagamento atrasado: ${client?.name}` : `Pagamento próximo: ${client?.name}`, `${item.description} de ${item.amount} vence${distance < 0 ? 'u' : ''} em ${item.dueDate}.`, item.status === 'overdue' ? 'critical' : 'warning', item.status === 'overdue' ? 'Enviar cobrança e registrar retorno.' : 'Preparar lembrete de mensalidade.');
+    if (item.status === 'overdue' && recOverdueConfig.enabled) {
+      addSignal(
+        item.id, 'receivable', item.clientId, 'pagamento_atrasado', 'receivables', `Pagamento atrasado: ${client?.name || 'Desconhecido'}`,
+        `${item.description} de ${item.amount} venceu há ${Math.abs(distance)} dias.`,
+        [
+          { key: 'days_overdue', label: 'Dias Atraso', value: Math.abs(distance), source: 'local', quality: 'computed', observedAt: todayIso },
+          { key: 'amount', label: 'Valor', value: item.amount, source: 'local', quality: 'manual', observedAt: todayIso }
+        ],
+        recOverdueConfig.severity, 'Enviar cobrança e registrar retorno.'
+      );
+    } else if (item.status === 'pending' && distance >= 0 && distance <= (recUpcomingConfig.threshold || 3) && recUpcomingConfig.enabled) {
+      addSignal(
+        item.id, 'receivable', item.clientId, 'pagamento_proximo', 'receivables', `Pagamento próximo: ${client?.name || 'Desconhecido'}`,
+        `${item.description} de ${item.amount} vence em ${distance} dias.`,
+        [
+          { key: 'days_until_due', label: 'Dias Restantes', value: distance, source: 'local', quality: 'computed', observedAt: todayIso },
+          { key: 'amount', label: 'Valor', value: item.amount, source: 'local', quality: 'manual', observedAt: todayIso }
+        ],
+        recUpcomingConfig.severity, 'Preparar lembrete de cobrança.'
+      );
     }
   });
 
   // ==========================================
   // RULES FROM agentEngine (Client Priorities)
   // ==========================================
-  data.clients.forEach((client) => {
-    if (client.status !== 'active') return;
+  const clientPendingConfig = resolveRuleConfiguration(operationalRuleRegistry.client_many_pending, data.agentRules);
 
-    const criticalCount = signals.filter(a => a.clientId === client.id && a.severity === 'critical').length;
-    const clientRule = getRule('many_pending', 'client');
-    if (clientRule?.enabled && criticalCount >= (clientRule.thresholdValue || 3)) {
-      addSignal(client.id, 'client', client.id, 'atencao_critica', 'system', 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, clientRule.severity || 'critical', 'Realizar força-tarefa para resolver pendências.');
-    }
-  });
+  if (clientPendingConfig.enabled) {
+    data.clients.forEach((client) => {
+      if (client.status !== 'active') return;
 
-  if (signals.length === 0) {
-    addSignal('all-clear', 'system', undefined, 'all_clear', 'system', 'Operação sem alertas críticos', 'Nenhum pagamento, campanha ou projeto exige atenção imediata agora.', 'good', 'Aproveite para revisar criativos, métricas e próximos testes.');
+      const criticalCount = signals.filter(a => a.clientId === client.id && a.severity === 'critical').length;
+      const limit = clientPendingConfig.threshold || 3;
+      if (criticalCount >= limit) {
+        addSignal(
+          client.id, 'client', client.id, 'atencao_critica', 'system', 'Atenção Crítica',
+          `O cliente possui ${criticalCount} pendências críticas acumuladas.`,
+          [{ key: 'critical_count', label: 'Pendências Críticas', value: criticalCount, source: 'system', quality: 'computed', observedAt: todayIso }],
+          clientPendingConfig.severity, 'Realizar força-tarefa para resolver pendências.'
+        );
+      }
+    });
   }
 
   return signals;
