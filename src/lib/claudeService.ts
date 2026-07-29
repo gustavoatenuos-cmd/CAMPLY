@@ -1,5 +1,6 @@
-import { CamplyData, AgentAlert, Campaign, Client } from '../types';
+import { CamplyData, OperationalSignal, Campaign, Client } from '../types';
 import { invokeFunction } from './invokeFunction';
+import { selectActiveActionableSignals } from './operational/signalFilters';
 
 
 // ============================================================
@@ -39,7 +40,7 @@ export interface ClaudeAgentResponse {
 }
 
 function buildContext(data: CamplyData, userEmail?: string | null): ClaudeAgentContext {
-  const activeAlerts = (data.agentAlerts || []).filter(a => a.status === 'active');
+  const activeAlerts = selectActiveActionableSignals(data.agentAlerts);
 
   return {
     user: userEmail ?? 'Gestor',
@@ -91,7 +92,7 @@ export async function generateAgentSummary(data: CamplyData, userEmail?: string 
 
 // Fallback determinístico quando o Claude não está disponível
 function generateLocalSummary(data: CamplyData): ClaudeAgentResponse {
-  const activeAlerts = (data.agentAlerts || []).filter(a => a.status === 'active');
+  const activeAlerts = selectActiveActionableSignals(data.agentAlerts);
   const criticals = activeAlerts.filter(a => a.severity === 'critical');
   const warnings = activeAlerts.filter(a => a.severity === 'warning');
 

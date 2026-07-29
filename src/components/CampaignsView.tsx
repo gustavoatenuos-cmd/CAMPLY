@@ -46,7 +46,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
         ? current.campaigns.map((item) => item.id === editing.id ? campaign : item)
         : [campaign, ...current.campaigns],
       activityLogs: [createActivityLog({
-        action: 'campaign_created',
+        action: editing ? 'campaign_edited' : 'campaign_created',
         title: editing ? `Campanha operacional editada: ${name}` : `Campanha operacional criada: ${name}`,
         description: `${campaign.platform} para ${clientDisplayName(client)}. Métricas oficiais permanecem na central Meta.`,
         projectId: client.projectId,

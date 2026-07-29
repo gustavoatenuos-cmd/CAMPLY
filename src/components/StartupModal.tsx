@@ -1,5 +1,6 @@
 import { ShieldAlert, AlertTriangle, Clock, CheckCircle2, X, ChevronRight } from 'lucide-react';
-import { CamplyData, AgentAlert, ViewId } from '../types';
+import { selectActiveActionableSignals } from '../lib/operational/signalFilters';
+import { CamplyData, OperationalSignal, ViewId } from '../types';
 import { useEffect, useState } from 'react';
 
 interface StartupModalProps {
@@ -34,7 +35,7 @@ export function StartupModal({ data, setActiveView, claudeSummary, claudeLoading
 
   if (!open) return null;
 
-  const activeAlerts = data.agentAlerts?.filter(a => a.status === 'active') || [];
+  const activeAlerts = selectActiveActionableSignals(data.agentAlerts);
   const criticals = activeAlerts.filter(a => a.severity === 'critical');
   const warnings = activeAlerts.filter(a => a.severity === 'warning');
 

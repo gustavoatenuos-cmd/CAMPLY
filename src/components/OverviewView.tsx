@@ -10,7 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CamplyData, ClientStatus, Insight, ViewId } from '../types';
+import type { CamplyData, ClientStatus, ViewId } from '../types';
 import { createActivityLog } from '../data/camplyStore';
 import {
   loadGlobalPerformanceDashboard,
@@ -45,11 +45,13 @@ import { getCamplyBuildInfo } from '../lib/diagnostics/buildInfo';
 import { getSupabaseSessionDiagnostics } from '../lib/supabase';
 import { publishOperationalSyncLedger } from '../lib/operational/operationalSyncLedger';
 import { resolveDashboardPeriod, writeDashboardPeriodToUrl } from '../lib/performance/dashboardPeriodUrl';
+import { countActiveActionableSignals } from '../lib/operational/signalFilters';
+import { OperationalDashboardSection } from './dashboard/OperationalDashboardSection';
 
 
 interface OverviewViewProps {
   data: CamplyData;
-  insights: Insight[];
+
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView: (view: ViewId) => void;
 }
@@ -457,49 +459,44 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   const pendingReceivables = data.receivables
     .filter((receivable) => receivable.status !== 'paid')
     .reduce((total, receivable) => total + receivable.amount, 0);
-  const activeAlerts = data.agentAlerts.filter((alert) => alert.status === 'active').length;
+  const activeAlerts = countActiveActionableSignals(data.agentAlerts);
 
-  if (capabilitiesLoading || !capabilityState) {
-    return (
-      <div className="h-full overflow-y-auto bg-brand-ink">
-        <div className="grid min-h-full place-items-center text-brand-muted p-6">
-          <div className="text-center">
-            <RefreshCw className="mx-auto animate-spin text-brand-green" size={26} />
-            <p className="mt-3">Verificando o contrato analítico seguro...</p>
+  const renderAnalytics = () => {
+    if (capabilitiesLoading || !capabilityState) {
+      return (
+        <div className="h-full overflow-y-auto bg-brand-ink">
+          <div className="grid min-h-full place-items-center text-brand-muted p-6">
+            <div className="text-center">
+              <RefreshCw className="mx-auto animate-spin text-brand-green" size={26} />
+              <p className="mt-3">Verificando o contrato analítico seguro...</p>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (capabilityState.mode === 'compatibility') {
+    if (capabilityState.mode === 'compatibility') {
+      return (
+        <DashboardUnavailable
+          message={compatibilityReasonMessage(capabilityState.reason)}
+          retrying={capabilitiesLoading}
+          onRetry={() => void loadCapabilities()}
+        />
+      );
+    }
+
+    if (error && clients.length === 0 && !loading) {
+      return (
+        <DashboardUnavailable
+          message="A capacidade foi confirmada, mas o dashboard analítico ficou temporariamente indisponível."
+          retrying={loading}
+          onRetry={() => void loadDashboard()}
+        />
+      );
+    }
+
     return (
-      <DashboardUnavailable
-        message={compatibilityReasonMessage(capabilityState.reason)}
-        retrying={capabilitiesLoading}
-        onRetry={() => void loadCapabilities()}
-      />
-    );
-  }
-
-  if (error && clients.length === 0 && !loading) {
-    return (
-      <DashboardUnavailable
-        message="A capacidade foi confirmada, mas o dashboard analítico ficou temporariamente indisponível."
-        retrying={loading}
-        onRetry={() => void loadDashboard()}
-      />
-    );
-  }
-
-  return (
-    <motion.section 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8"
-    >
-      <div className="mx-auto max-w-[1700px] space-y-6">
+      <>
         <header className="glass-card rounded-2xl p-5 lg:p-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -585,44 +582,40 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
           </div>
         ) : (
           <>
-            {!periodHasAnySync ? (
-              <div data-testid="period-not-synced-panel" className="rounded-2xl border border-dashed border-brand-line bg-brand-surface p-10 text-center">
-                <RefreshCw className="mx-auto text-brand-muted" size={28} />
-                <p className="mt-4 text-lg font-black text-white">Base Meta Ads não sincronizada.</p>
-                <p className="mt-2 text-sm text-brand-muted">Vá em Integração Meta Ads e sincronize os últimos 90 dias.</p>
+            {!periodHasAnySync && (
+              <div data-testid="period-not-synced-panel" className="mb-8 rounded-2xl border border-dashed border-brand-line bg-brand-surface p-6 text-center">
+                <RefreshCw className="mx-auto text-brand-muted" size={24} />
+                <p className="mt-2 text-md font-black text-white">Base Meta Ads não sincronizada.</p>
+                <p className="mt-1 text-xs text-brand-muted">As funções analíticas dependem de sincronização, mas sua operação continua disponível abaixo.</p>
                 <button
                   type="button"
                   onClick={() => setActiveView('metaIntegration')}
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-5 py-2.5 text-sm font-black text-brand-ink transition hover:brightness-110"
+                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2 text-xs font-black text-brand-ink transition hover:brightness-110"
                 >
-                  Ir para Integração Meta Ads
+                  Sincronizar Meta Ads
                 </button>
               </div>
-            ) : (
-              <>
-                <ExecutiveSummary
-                  clients={operationalClients}
-                  period={period}
-                  statusFilter={statusFilter}
-                  onStatusFilterChange={setStatusFilter}
-                />
-
-                <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
-
-                <ClientPerformanceCardGrid
-                  entries={priorityEntries}
-                  period={period}
-                  onViewAnalytics={handleViewClientAnalytics}
-                  onEditClient={handleEditClient}
-                  onDeactivateClient={setDeactivatingClientId}
-                  onReactivateClient={reactivateClient}
-                  isClientOperationallyActive={isEntryOperationallyActive}
-                  registerCardRef={registerCardRef}
-                />
-              </>
             )}
 
-            <CollapsibleSection
+            <ExecutiveSummary
+              clients={operationalClients}
+              period={period}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+            />
+
+            <ClientPriorityBoard entries={priorityEntries} onSelectClient={handleSelectPriorityClient} />
+
+            <ClientPerformanceCardGrid
+              entries={priorityEntries}
+              period={period}
+              onViewAnalytics={handleViewClientAnalytics}
+              onEditClient={handleEditClient}
+              onDeactivateClient={setDeactivatingClientId}
+              onReactivateClient={reactivateClient}
+              isClientOperationallyActive={isEntryOperationallyActive}
+              registerCardRef={registerCardRef}
+            />            <CollapsibleSection
               title="Tabela detalhada"
               subtitle="Visão de auditoria e comparação por conta — clique em uma linha para abrir as campanhas."
               defaultOpen={isMetaE2EMode}
@@ -691,21 +684,31 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
                 </div>
               </article>
 
-              <article className="glass-card rounded-2xl p-5">
-                <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Operação de hoje</p>
-                <h2 className="mt-1 text-xl font-black text-white">Visibilidade rápida do sistema</h2>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <QuickMetric icon={Users} label="Clientes ativos" value={activeClients} onClick={() => setActiveView('clients')} />
-                  <QuickMetric icon={Megaphone} label="Campanhas ativas" value={activeCampaigns} onClick={() => setActiveView('campaigns')} />
-                  <QuickMetric icon={CheckSquare2} label="Tarefas abertas" value={openTasks} onClick={() => setActiveView('projects')} />
-                  <QuickMetric icon={BriefcaseBusiness} label="Projetos abertos" value={openProjects} onClick={() => setActiveView('projects')} />
-                  <QuickMetric icon={AlertTriangle} label="Alertas ativos" value={activeAlerts} onClick={() => setActiveView('intelligence')} />
-                  <QuickMetric icon={Banknote} label="A receber" value={formatCurrency(pendingReceivables)} onClick={() => setActiveView('personalFinance')} />
-                </div>
-              </article>
             </div>
           </>
         )}
+      </>
+    );
+  };
+
+  return (
+    <motion.section 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8"
+    >
+      <div className="mx-auto max-w-[1700px] space-y-6">
+        <OperationalDashboardSection
+          activeClients={activeClients}
+          activeCampaigns={activeCampaigns}
+          openTasks={openTasks}
+          openProjects={openProjects}
+          activeAlerts={activeAlerts}
+          pendingReceivablesFormat={formatCurrency(pendingReceivables)}
+          setActiveView={setActiveView}
+        />
+        {renderAnalytics()}
       </div>
 
       <ConfirmDialog
@@ -721,21 +724,4 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   );
 }
 
-function QuickMetric({ icon: Icon, label, value, onClick }: { icon: any; label: string; value: number | string; onClick: () => void }) {
-  return (
-    <motion.button
-      whileHover={{ scale: 1.03, y: -2 }}
-      whileTap={{ scale: 0.97 }}
-      onClick={onClick}
-      className="flex flex-col items-start gap-2 rounded-xl border border-white/[0.04] bg-brand-surface2/30 p-3 text-left transition hover:border-brand-green/30 hover:shadow-[0_0_15px_rgba(0,229,153,0.1)]"
-    >
-      <div className="flex w-full items-center justify-between">
-        <Icon size={16} className="text-brand-green drop-shadow-[0_0_4px_rgba(0,229,153,0.6)]" />
-      </div>
-      <div>
-        <p className="text-[11px] uppercase tracking-wider text-brand-muted">{label}</p>
-        <p className="mt-0.5 text-lg font-bold text-white drop-shadow-md">{value}</p>
-      </div>
-    </motion.button>
-  );
-}
+

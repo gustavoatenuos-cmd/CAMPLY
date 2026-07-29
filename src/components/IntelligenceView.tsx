@@ -1,22 +1,23 @@
 import { AlertTriangle, CheckCircle2, ShieldAlert, Bell, TrendingUp, Sparkles, Users, Megaphone, BriefcaseBusiness, ListChecks } from 'lucide-react';
-import { CamplyData, Insight, AgentAlert } from '../types';
+import { CamplyData, OperationalSignal } from '../types';
+import { selectActiveActionableSignals } from '../lib/operational/signalFilters';
 import { useState } from 'react';
 
 interface IntelligenceViewProps {
   data: CamplyData;
-  insights: Insight[];
+
 }
 
 type FilterType = 'all' | 'critical' | 'warning' | 'client' | 'campaign' | 'project' | 'task';
 
-export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
+export function IntelligenceView({ data }: IntelligenceViewProps) {
   const [filter, setFilter] = useState<FilterType>('all');
 
   const openTasks = data.tasks.filter((task) => !task.done).length;
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
 
   const allAlerts = data.agentAlerts || [];
-  const activeAlerts = allAlerts.filter(a => a.status === 'active');
+  const activeAlerts = selectActiveActionableSignals(allAlerts);
 
   // Filter logic
   const filteredAlerts = allAlerts.filter(a => {
@@ -31,7 +32,7 @@ export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
   });
 
   // Group by client
-  const alertsByClient = new Map<string, AgentAlert[]>();
+  const alertsByClient = new Map<string, OperationalSignal[]>();
   activeAlerts.forEach(a => {
     const key = a.clientId || 'sem-cliente';
     if (!alertsByClient.has(key)) alertsByClient.set(key, []);
@@ -166,28 +167,6 @@ export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
           </article>
         ))}
       </div>
-
-      {/* Legacy Insights (dimmed) */}
-      {insights.length > 0 && (
-        <div className="space-y-4 mt-8 opacity-40">
-          <h2 className="text-sm font-bold text-brand-muted uppercase border-b border-brand-line pb-2">Insights Gerais (Legado)</h2>
-          {insights.map((insight) => (
-            <article key={insight.id} className={`rounded-xl border bg-brand-ink p-5 ${borderFor(insight.level)}`}>
-              <div className="flex gap-4">
-                <div className={`mt-1 rounded-lg p-2 ${iconFor(insight.level)}`}>
-                  <AlertTriangle size={20} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-muted">Recomendação</p>
-                  <h2 className="mt-1 text-lg font-bold text-white">{insight.title}</h2>
-                  <p className="mt-2 leading-relaxed text-brand-muted">{insight.description}</p>
-                  <p className="mt-4 rounded-lg bg-brand-surface p-3 text-sm font-semibold text-brand-green">{insight.recommendation}</p>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -204,28 +183,14 @@ function Signal({ icon: Icon, label, value, color }: { icon: typeof Sparkles; la
   );
 }
 
-const borderFor = (level: Insight['level']) => {
-  if (level === 'critical') return 'border-rose-500/40';
-  if (level === 'warning') return 'border-amber-400/40';
-  if (level === 'good') return 'border-brand-green/40';
-  return 'border-sky-400/40';
-};
-
-const iconFor = (level: Insight['level']) => {
-  if (level === 'critical') return 'bg-rose-500/10 text-rose-400';
-  if (level === 'warning') return 'bg-amber-400/10 text-amber-300';
-  if (level === 'good') return 'bg-brand-green/10 text-brand-green';
-  return 'bg-sky-400/10 text-sky-300';
-};
-
-const alertBorderFor = (severity: AgentAlert['severity']) => {
+const alertBorderFor = (severity: OperationalSignal['severity']) => {
   if (severity === 'critical') return 'border-rose-500/40';
   if (severity === 'warning') return 'border-amber-400/40';
   if (severity === 'good') return 'border-brand-green/40';
   return 'border-sky-400/40';
 };
 
-const alertIconFor = (severity: AgentAlert['severity']) => {
+const alertIconFor = (severity: OperationalSignal['severity']) => {
   if (severity === 'critical') return 'bg-rose-500/10 text-rose-400';
   if (severity === 'warning') return 'bg-amber-400/10 text-amber-300';
   if (severity === 'good') return 'bg-brand-green/10 text-brand-green';

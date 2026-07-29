@@ -1,4 +1,4 @@
-import { ActivityLog, CamplyData, Campaign, CampaignStatus, Insight, PaymentStatus, ProjectStatus } from '../types';
+import { ActivityLog, CamplyData, Campaign, CampaignStatus, PaymentStatus, ProjectStatus } from '../types';
 
 const STORAGE_KEY = 'camply-data-v3';
 const LEGACY_STORAGE_KEY = 'camply-data-v2';
@@ -214,73 +214,10 @@ export const daysUntil = (value: string) => {
   return Math.ceil((target.getTime() - base.getTime()) / 86400000);
 };
 
-export const buildInsights = (data: CamplyData): Insight[] => {
-  const insights: Insight[] = [];
-
-  data.campaigns.forEach((campaign) => {
-    const client = data.clients.find((item) => item.id === campaign.clientId);
-    const daysWithoutOptimization = campaign.lastOptimizedAt
-      ? Math.abs(daysUntil(campaign.lastOptimizedAt))
-      : 0;
-    const spentRate = campaign.budget ? campaign.spent / campaign.budget : 0;
-
-    if (['live', 'optimize'].includes(campaign.status) && daysWithoutOptimization >= 4) {
-      insights.push({
-        id: `campaign-${campaign.id}`,
-        level: 'warning',
-        title: `${campaign.name} precisa de revisão`,
-        description: `${client?.name ?? 'Cliente'} está há ${daysWithoutOptimization} dias sem otimização registrada.`,
-        recommendation: campaign.nextAction,
-      });
-    }
-
-    if (spentRate >= 0.8) {
-      insights.push({
-        id: `budget-${campaign.id}`,
-        level: 'critical',
-        title: `${campaign.name} está perto do limite de verba`,
-        description: `${client?.name ?? 'Cliente'} já consumiu ${Math.round(spentRate * 100)}% da verba cadastrada.`,
-        recommendation: 'Conferir performance antes de manter ou aumentar orçamento.',
-      });
-    }
-  });
-
-  data.receivables.forEach((item) => {
-    const client = data.clients.find((clientItem) => clientItem.id === item.clientId);
-    const distance = daysUntil(item.dueDate);
-
-    if (item.status === 'overdue' || (item.status === 'pending' && distance <= 3)) {
-      insights.push({
-        id: `recv-${item.id}`,
-        level: item.status === 'overdue' ? 'critical' : 'warning',
-        title: item.status === 'overdue' ? `Pagamento atrasado: ${client?.name}` : `Pagamento próximo: ${client?.name}`,
-        description: `${item.description} de ${money(item.amount)} vence${distance < 0 ? 'u' : ''} em ${formatDate(item.dueDate)}.`,
-        recommendation: item.status === 'overdue' ? 'Enviar cobrança e registrar retorno.' : 'Preparar lembrete de mensalidade.',
-      });
-    }
-  });
-
-  data.projects.forEach((project) => {
-    if (project.status !== 'done' && daysUntil(project.dueDate) <= 7) {
-      insights.push({
-        id: `project-${project.id}`,
-        level: 'info',
-        title: `Projeto em foco: ${project.name}`,
-        description: `Prazo em ${formatDate(project.dueDate)} com ${project.progress}% de progresso.`,
-        recommendation: project.nextAction,
-      });
-    }
-  });
-
-  if (!insights.length) {
-    insights.push({
-      id: 'all-clear',
-      level: 'good',
-      title: 'Operação sem alertas críticos',
-      description: 'Nenhum pagamento, campanha ou projeto exige atenção imediata agora.',
-      recommendation: 'Aproveite para revisar criativos, métricas e próximos testes.',
-    });
-  }
-
-  return insights;
+export const daysSince = (value: string) => {
+  const target = new Date(`${value}T12:00:00`);
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  return Math.floor((base.getTime() - target.getTime()) / 86400000);
 };
+

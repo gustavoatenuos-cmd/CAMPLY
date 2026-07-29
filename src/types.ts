@@ -10,20 +10,16 @@ export type ViewId =
   | 'today'
   | 'campaigns'
   | 'clients'
-  | 'mediaFinance'
   | 'projects'
-  | 'personalFinance'
   | 'activity'
   | 'intelligence'
   | 'agentSettings'
-  | 'agentChat'
   | 'metaIntegration'
-  | 'creativeCritic'
-  // Analytical views (Phase 1+)
   | 'clientAnalytics'
-  | 'budgetTracker'
   | 'alertCenter'
-  | 'campaignDrilldown';
+  | 'mediaFinance'
+  | 'personalFinance'
+  | 'creativeCritic';
 
 // ===================== CLIENT CATEGORY =====================
 
@@ -304,6 +300,7 @@ export type ActivityAction =
   | 'client_updated'
   | 'client_status_changed'
   | 'campaign_created'
+  | 'campaign_edited'
   | 'campaign_status_changed'
   | 'task_created'
   | 'task_completed'
@@ -330,7 +327,7 @@ export interface ActivityLog {
 
 // ===================== AGENT TYPES =====================
 
-export type EntityType = 'client' | 'campaign' | 'project' | 'task';
+export type EntityType = 'client' | 'campaign' | 'project' | 'task' | 'receivable' | 'system';
 export type SeverityLevel = 'critical' | 'warning' | 'info' | 'good';
 
 export interface AgentRule {
@@ -347,17 +344,38 @@ export interface AgentRule {
   updatedAt: string;
 }
 
-export interface AgentAlert {
-  id: string;
-  relatedEntityId: string;
-  relatedEntityType: EntityType;
-  clientId?: string;
-  title: string;
-  message: string;
-  severity: SeverityLevel;
-  status: 'active' | 'dismissed' | 'resolved';
-  suggestedAction?: string;
-  triggeredAt: string;
+export type SignalSourceDomain = 'tasks' | 'projects' | 'receivables' | 'campaigns' | 'system' | 'meta';
+export type SignalType = string; // Define the kind of rule that generated it
+
+export interface OperationalEvidence {
+  key: string;
+  label: string;
+  value: string | number | boolean;
+  source: string;
+  quality: 'manual' | 'computed' | 'system' | 'api';
+  observedAt: string;
+  period?: string;
+}
+
+export interface OperationalSignal {
+  id: string; // identificação
+  signalType: SignalType; // tipo
+  sourceDomain: SignalSourceDomain; // domínio de origem
+  relatedEntityId: string; // entidade relacionada
+  relatedEntityType: EntityType; // (legado/complementar)
+  clientId?: string; 
+  title: string; // título
+  message: string; // explicação
+  evidence: OperationalEvidence[]; // evidências adicionais (agora obrigatório, array)
+  severity: SeverityLevel; // severidade
+  status: 'active' | 'dismissed' | 'resolved'; // status
+  suggestedAction?: string; // ação recomendada
+  deduplicationKey: string; // chave de deduplicação (workspaceId+signalType+clientId...)
+  triggeredAt: string; // data de detecção
+  lastDetectedAt?: string;
+  resolvedAt?: string; // data de resolução
+  dismissedAt?: string;
+  occurrenceCount?: number;
   readAt?: string;
 }
 
@@ -381,7 +399,7 @@ export interface CamplyData {
   tasks: Task[];
   activityLogs: ActivityLog[];
   agentRules: AgentRule[];
-  agentAlerts: AgentAlert[];
+  agentAlerts: OperationalSignal[];
   agentLogs: AgentActivityLog[];
 }
 
@@ -455,13 +473,7 @@ export interface MetricSnapshot {
   syncedAt?: string;
 }
 
-export interface Insight {
-  id: string;
-  level: 'critical' | 'warning' | 'good' | 'info';
-  title: string;
-  description: string;
-  recommendation: string;
-}
+
 
 // ===================== CREATIVE CRITIC =====================
 

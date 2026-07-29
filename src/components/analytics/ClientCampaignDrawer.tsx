@@ -173,9 +173,15 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
-              {readiness && (readiness.campaigns.status === 'partial' || readiness.campaigns.status === 'stale') && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-                  {readiness.campaigns.warnings.join(' ') || 'Dados da campanha podem estar incompletos.'}
+              {(decision?.dataQuality.status === 'partial' || (readiness && (readiness.campaigns.status === 'partial' || readiness.campaigns.status === 'stale'))) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <p className="font-semibold mb-1">⚠️ Cobertura Parcial de Dados</p>
+                  <p>As métricas de campanha exibidas abaixo refletem dados parciais ou em processamento (modo fallback). Não utilize esses valores isolados para faturamento ou comprovação financeira final.</p>
+                  {readiness?.campaigns.warnings.length ? (
+                    <ul className="mt-2 ml-4 list-disc text-xs text-amber-700 opacity-90">
+                      {readiness.campaigns.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                  ) : null}
                 </div>
               )}
               {state.items.map((campaign) => (
