@@ -37,6 +37,7 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
 
 let validateReturnedPeriodRange: any;
 let groupAccountInsightsByDateRange: any;
+let insightPeriodParams: any;
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: () => '' } });
@@ -44,6 +45,7 @@ beforeAll(async () => {
   const module = await import(indexStr);
   validateReturnedPeriodRange = module.validateReturnedPeriodRange;
   groupAccountInsightsByDateRange = module.groupAccountInsightsByDateRange;
+  insightPeriodParams = module.insightPeriodParams;
 });
 
 describe('Meta sync returned period range validation', () => {
@@ -111,6 +113,38 @@ describe('Meta sync returned period range validation', () => {
     expect(result.errors).toEqual([]);
     expect(result.metadata.expectedDateStart).toBe('2026-07-13');
     expect(result.metadata.expectedDateStop).toBe('2026-07-15');
+  });
+
+  it('preserves the requested last_90d coverage when Meta returns only delivery days', () => {
+    const result = validateReturnedPeriodRange(
+      'last_90d',
+      { date_start: '2026-05-19', date_stop: '2026-07-22' },
+      'America/Sao_Paulo',
+      new Date('2026-07-31T15:00:00Z')
+    );
+
+    expect(result.status).toBe('complete');
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.join(' ')).toContain('preserving requested run coverage');
+    expect(result.metadata.expectedDateStart).toBe('2026-05-03');
+    expect(result.metadata.expectedDateStop).toBe('2026-07-31');
+    expect(result.metadata.returnedDateStart).toBe('2026-05-19');
+    expect(result.metadata.returnedDateStop).toBe('2026-07-22');
+  });
+});
+
+describe('Meta insight period parameters', () => {
+  it('requests the official last_90d range explicitly with daily increments', () => {
+    const params = insightPeriodParams(
+      'last_90d',
+      'America/Sao_Paulo',
+      new Date('2026-07-31T15:00:00Z')
+    );
+
+    expect(params).toEqual({
+      time_range: JSON.stringify({ since: '2026-05-03', until: '2026-07-31' }),
+      time_increment: '1',
+    });
   });
 });
 

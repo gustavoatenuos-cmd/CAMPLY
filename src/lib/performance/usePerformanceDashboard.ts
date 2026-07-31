@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { loadGlobalPerformanceDashboard, type GlobalClientPerformance } from './globalPerformanceDashboard';
 import { loadAnalyticsCapabilities, type DashboardPeriod } from './analyticsCapabilities';
-import type { CamplyData } from '../../types';
+import { isClientOperationallyActive } from '../../data/receivablesForecast';
+import type { CamplyData, Client } from '../../types';
 
 export interface EnrichedGlobalClientPerformance extends GlobalClientPerformance {
-  client?: any; // Replace with proper Client type if available
+  client?: Client;
 }
 
 export interface UsePerformanceDashboardResult {
@@ -38,11 +39,19 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
         dashboardRpc: (capabilities.mode === 'analytics' ? capabilities.capabilities.dashboardRpc : '') as any,
       });
 
-      const enrichedResult = result.map(c => {
+      const enrichedResult = result.flatMap(c => {
         const workspaceClient = workspaceData.clients.find(w => w.id === c.clientId);
-        return workspaceClient 
+        const workspaceProject = workspaceClient?.projectId
+          ? workspaceData.projects.find(project => project.id === workspaceClient.projectId)
+          : undefined;
+
+        if (workspaceClient && !isClientOperationallyActive(workspaceClient, workspaceProject)) {
+          return [];
+        }
+
+        return [workspaceClient
           ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName, client: workspaceClient }
-          : { ...c, client: undefined };
+          : { ...c, client: undefined }];
       });
 
       setClients(enrichedResult);
@@ -52,7 +61,7 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
     } finally {
       setLoading(false);
     }
-  }, [period, workspaceData.clients]);
+  }, [period, workspaceData.clients, workspaceData.projects]);
 
   useEffect(() => {
     loadDashboard();

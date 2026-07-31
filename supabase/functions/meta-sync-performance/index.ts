@@ -145,10 +145,21 @@ const weekMondayIsoDate = (value: string): string => {
   return date.toISOString().slice(0, 10);
 };
 
-const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
-  if (period !== 'this_week') return { date_preset: period, time_increment: '1' };
-  if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today' };
+export const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
+  if (timezone === 'UNKNOWN') {
+    return {
+      date_preset: period === 'this_week' ? 'this_week_mon_today' : period,
+      time_increment: '1',
+    };
+  }
   const until = localIsoDate(now, timezone);
+
+  if (period === 'last_90d') {
+    const since = shiftIsoDate(until, -89);
+    return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
+  }
+
+  if (period !== 'this_week') return { date_preset: period, time_increment: '1' };
   const since = weekMondayIsoDate(until);
   return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
 };
@@ -299,6 +310,18 @@ export const validateReturnedPeriodRange = (
         warnings.push('Meta last_30d range differs from local expectation; using returned range.');
       } else {
         errors.push('Meta last_30d range is not related to the requested period.');
+      }
+    }
+  } else if (period === 'last_90d') {
+    const expectedStart = today ? shiftIsoDate(today, -89) : null;
+    metadata.expectedDateStart = expectedStart;
+    metadata.expectedDateStop = today;
+    if (expectedStart && today && (validDateStart !== expectedStart || validDateStop !== today)) {
+      const validRelatedRange = validDateStart >= expectedStart && validDateStart <= validDateStop && validDateStop <= today;
+      if (validRelatedRange) {
+        warnings.push('Meta last_90d range differs from local expectation; preserving requested run coverage.');
+      } else {
+        errors.push('Meta last_90d range is not related to the requested period.');
       }
     }
   }
@@ -1617,8 +1640,15 @@ export async function handleRequest(req: Request) {
     const collectedRanges = p_normalized_metrics
       .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop)
       .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
-    const dateStart = collectedRanges[0]?.date_start || null;
-    const dateStop = collectedRanges[collectedRanges.length - 1]?.date_stop || null;
+    const officialRangeDiagnostics = rangeDiagnosticsByPeriod[OFFICIAL_SYNC_PERIOD] || {};
+    const officialDateStart = typeof officialRangeDiagnostics.expectedDateStart === 'string'
+      ? officialRangeDiagnostics.expectedDateStart
+      : null;
+    const officialDateStop = typeof officialRangeDiagnostics.expectedDateStop === 'string'
+      ? officialRangeDiagnostics.expectedDateStop
+      : null;
+    const dateStart = officialDateStart || collectedRanges[0]?.date_start || null;
+    const dateStop = officialDateStop || collectedRanges[collectedRanges.length - 1]?.date_stop || null;
     const { error: contextError } = await supabaseClient.from('meta_sync_runs').update({
       date_start: dateStart,
       date_stop: dateStop,
