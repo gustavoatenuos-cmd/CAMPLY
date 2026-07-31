@@ -76,7 +76,13 @@ export function ClientAnalyticsStatusPanel({ decision }: { decision: ClientAnaly
           {tone.label}
         </span>
         {decision.dataQuality.status === 'partial' && (
-          <span className="text-[11px] font-medium text-amber-600">Dados parciais — leitura limitada</span>
+          <span className="text-[11px] font-medium text-amber-600">
+            {decision.dataQuality.reason === 'mixed_currency'
+              ? 'Moedas misturadas — totais podem estar incorretos'
+              : decision.dataQuality.reason === 'unmapped_action_type'
+              ? 'Métricas ignoradas — tipo de conversão desconhecido'
+              : 'Dados parciais — leitura limitada'}
+          </span>
         )}
       </div>
 

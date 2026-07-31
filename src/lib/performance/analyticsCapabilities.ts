@@ -5,24 +5,17 @@ import { invokeFunction } from '../invokeFunction';
 
 export const ANALYTICS_CONTRACT_VERSION = 6;
 
-export const dashboardPeriods = ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'] as const;
-const legacyDashboardPeriods = ['this_month', 'this_week'] as const;
-const allDashboardPeriods = [...dashboardPeriods, ...legacyDashboardPeriods] as const;
-export type DashboardPeriod = typeof allDashboardPeriods[number];
+import {
+  ANALYTICS_PERIODS,
+  legacyPeriods,
+  type DashboardPeriod,
+  type AnalyticsPeriod,
+  periodLabels,
+} from '../contracts/analyticsPeriods';
 
-// Rótulo humano único por período - reutilizado por qualquer tela que
-// precise exibir o período selecionado (Dashboard, Analytics), para não ter
-// duas listas de rótulos que podem divergir.
-export const periodLabels: Record<DashboardPeriod, string> = {
-  this_month: 'Mês atual',
-  this_week: 'Semana atual',
-  today: 'Hoje',
-  yesterday: 'Ontem',
-  today_and_yesterday: 'Hoje e ontem',
-  last_7d: 'Últimos 7 dias',
-  last_30d: 'Últimos 30 dias',
-  last_90d: 'Últimos 90 dias',
-};
+export { periodLabels, type DashboardPeriod, type AnalyticsPeriod };
+export const dashboardPeriods = ANALYTICS_PERIODS;
+const allDashboardPeriods = [...ANALYTICS_PERIODS, ...legacyPeriods] as const;
 
 export const analyticsLevels = ['campaign', 'adset', 'ad'] as const;
 export type AnalyticsLevel = typeof analyticsLevels[number];

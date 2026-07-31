@@ -29,6 +29,28 @@ describe('metaNormalizer', () => {
     }];
     const res = normalizeMetaMetrics(raw, 'WHATSAPP', 'test-2');
     expect(res.whatsapp_conversations_started?.value).toBe(5);
+  });
     
+  it('returns unmapped_action_type for unrecognized actions', () => {
+    const raw = [{
+      spend: '50',
+      actions: [
+        { action_type: 'some_unknown_action', value: '1' }
+      ]
+    }];
+    const res = normalizeMetaMetrics(raw, 'LEADS', 'test-3');
+    expect(res.leads?.completenessStatus).toBe('unmapped_action_type');
+  });
+  
+  it('deduplicates standard events prioritizing custom action types', () => {
+    const raw = [{
+      spend: '100',
+      actions: [
+        { action_type: 'offsite_conversion.custom.1234', value: '10' },
+        { action_type: 'lead', value: '5' } 
+      ]
+    }];
+    const res = normalizeMetaMetrics(raw, 'LEADS', 'test-4');
+    expect(res.leads?.value).toBe(5);
   });
 });

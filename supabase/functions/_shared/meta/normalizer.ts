@@ -23,6 +23,7 @@ export interface NormalizedMetricMetadata {
 export interface NormalizedMetricResult {
   value: number;
   metadata: NormalizedMetricMetadata;
+  completenessStatus?: string;
 }
 
 export function normalizeMetaMetrics(
@@ -34,8 +35,24 @@ export function normalizeMetaMetrics(
   const normalized: Record<string, NormalizedMetricResult> = {};
   const flatValues: Record<string, number> = {};
 
+  const returnedActionTypes = new Set<string>();
+  rawInsights.forEach(row => {
+    if (Array.isArray(row.actions)) {
+      row.actions.forEach(a => { if (a.action_type) returnedActionTypes.add(String(a.action_type)); });
+    }
+    if (Array.isArray(row.action_values)) {
+      row.action_values.forEach(a => { if (a.action_type) returnedActionTypes.add(String(a.action_type)); });
+    }
+  });
+
+  const mappedActionTypes = new Set<string>();
+
   for (const [key, metricDef] of Object.entries(METRIC_REGISTRY)) {
-    if (metricDef.compatibleObjectives !== 'ALL' && !metricDef.compatibleObjectives.includes(classifiedObjective)) {
+    if (
+      classifiedObjective !== 'ALL_OBJECTIVES' as any &&
+      metricDef.compatibleObjectives !== 'ALL' &&
+      !metricDef.compatibleObjectives.includes(classifiedObjective)
+    ) {
       continue; 
     }
 
@@ -90,9 +107,18 @@ export function normalizeMetaMetrics(
         rawValue = value;
         sourceField = metricDef.id === 'purchase_value' ? 'action_values' : 'actions';
         actionTypes = Array.from(new Set(matchedActions.map(a => String(a.action_type))));
+        actionTypes.forEach(a => mappedActionTypes.add(a));
       }
     } else if (metricDef.source === 'calculated') {
       continue;
+    }
+
+    let completenessStatus: string | undefined;
+    if (metricDef.source === 'actions') {
+      const hasUnmapped = returnedActionTypes.size > 0 && Array.from(returnedActionTypes).some(a => !mappedActionTypes.has(a));
+      if (!found && hasUnmapped && metricDef.missingDataRule === 'zero') {
+        completenessStatus = 'unmapped_action_type';
+      }
     }
 
     if (found || metricDef.missingDataRule === 'zero') {
@@ -103,7 +129,8 @@ export function normalizeMetaMetrics(
           raw_value: rawValue,
           source_field: sourceField,
           action_types: actionTypes,
-        }
+        },
+        completenessStatus
       };
     }
   }
@@ -111,7 +138,11 @@ export function normalizeMetaMetrics(
   // Second pass for calculated metrics
   for (const [key, metricDef] of Object.entries(METRIC_REGISTRY)) {
     if (metricDef.source === 'calculated' && metricDef.calculate) {
-      if (metricDef.compatibleObjectives === 'ALL' || metricDef.compatibleObjectives.includes(classifiedObjective)) {
+      if (
+        classifiedObjective === 'ALL_OBJECTIVES' as any ||
+        metricDef.compatibleObjectives === 'ALL' ||
+        metricDef.compatibleObjectives.includes(classifiedObjective)
+      ) {
         const calcValue = metricDef.calculate(flatValues);
         if (calcValue !== null) {
           flatValues[key] = calcValue;

@@ -1295,20 +1295,11 @@ export async function handleRequest(req: Request) {
       if (accountInsights.length === 0) continue;
       for (const accountInsightGroup of groupAccountInsightsByDateRange(accountInsights)) {
         const accountInsight = accountInsightGroup[0];
-        const accountNormalized = [
-          'UNCLASSIFIED',
-          'WHATSAPP',
-          'SALES',
-          'LEADS',
-          'TRAFFIC',
-        ].reduce<Record<string, ReturnType<typeof normalizeMetaMetrics>[string]>>((metrics, objective) => ({
-          ...metrics,
-          ...normalizeMetaMetrics(
-            accountInsightGroup,
-            objective as Parameters<typeof normalizeMetaMetrics>[1],
-            'account'
-          ),
-        }), {});
+        const accountNormalized = normalizeMetaMetrics(
+          accountInsightGroup,
+          'ALL_OBJECTIVES' as any,
+          'account'
+        );
 
         Object.entries(accountNormalized).forEach(([metricId, result]) => {
           p_normalized_metrics.push({
@@ -1323,7 +1314,7 @@ export async function handleRequest(req: Request) {
             timezone: timezone === 'UNKNOWN' ? null : timezone,
             attribution_setting: null,
             source_level: 'account',
-            completeness_status: collectionStatusByPeriod[period].account,
+            completeness_status: result.completenessStatus || collectionStatusByPeriod[period].account,
             calculation_metadata: result.metadata,
           });
         });
@@ -1397,7 +1388,7 @@ export async function handleRequest(req: Request) {
                 timezone: timezone === 'UNKNOWN' ? null : timezone,
                 attribution_setting: campaignAdsets[0]?.attribution_setting || null,
                 source_level: 'campaign', // explicitly global
-                completeness_status: analytics.completeness.status,
+                completeness_status: result.completenessStatus || analytics.completeness.status,
                 calculation_metadata: result.metadata,
               });
             });
@@ -1432,7 +1423,7 @@ export async function handleRequest(req: Request) {
                 timezone: timezone === 'UNKNOWN' ? null : timezone,
                 attribution_setting: adset.attribution_setting || null,
                 source_level: 'adset', // explicitly adset
-                completeness_status: collectionStatusByPeriod[period].adset, // strictly the adset completion status
+                completeness_status: result.completenessStatus || collectionStatusByPeriod[period].adset, // strictly the adset completion status
                 calculation_metadata: result.metadata,
               });
             });
@@ -1468,7 +1459,7 @@ export async function handleRequest(req: Request) {
                 timezone: timezone === 'UNKNOWN' ? null : timezone,
                 attribution_setting: adset?.attribution_setting || null,
                 source_level: 'ad',
-                completeness_status: collectionStatusByPeriod[period].ad,
+                completeness_status: result.completenessStatus || collectionStatusByPeriod[period].ad,
                 calculation_metadata: result.metadata,
               });
             });

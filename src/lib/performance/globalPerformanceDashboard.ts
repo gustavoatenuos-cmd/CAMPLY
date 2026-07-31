@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabaseData } from '../supabase';
 import type { AnalyticsCapabilities, DashboardPeriod } from './analyticsCapabilities';
+import { normalizeLegacyPeriod } from '../contracts/analyticsPeriods';
 import { calculateBudgetPacing, combineBudgetPacingByCurrency } from './budgetPacing';
 import { evaluatePerformanceTarget } from './evaluatePerformance';
 import { calculatePerformanceScore, type PerformanceScore } from './performanceScore';
@@ -478,6 +479,8 @@ export async function loadGlobalPerformanceDashboard(options: {
   assetIds?: string[];
   dashboardRpc: AnalyticsCapabilities['dashboardRpc'];
 }): Promise<GlobalClientPerformance[]> {
+  const canonicalPeriod = normalizeLegacyPeriod(options.period);
+
   if (isMetaE2EMode) {
     type E2EFixture = {
       clientId: string;
@@ -716,7 +719,7 @@ export async function loadGlobalPerformanceDashboard(options: {
         ],
       }),
     ];
-    return enrichGlobalPerformanceDashboard(rows, options.period, new Date('2026-07-01T18:00:00Z'));
+    return enrichGlobalPerformanceDashboard(rows, canonicalPeriod, new Date('2026-07-01T18:00:00Z'));
   }
   if (!isSupabaseConfigured || !supabaseData) return [];
 
@@ -724,7 +727,7 @@ export async function loadGlobalPerformanceDashboard(options: {
     'analytics-dashboard',
     {
       action: 'dashboard',
-      period: options.period,
+      period: canonicalPeriod,
       clientIds: options.clientIds?.length ? options.clientIds : null,
       assetIds: options.assetIds?.length ? options.assetIds : null,
     },
@@ -779,5 +782,5 @@ export async function loadGlobalPerformanceDashboard(options: {
     });
   });
 
-  return enrichGlobalPerformanceDashboard(rows, options.period);
+  return enrichGlobalPerformanceDashboard(rows, canonicalPeriod);
 }

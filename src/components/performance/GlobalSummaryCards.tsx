@@ -38,6 +38,14 @@ function formatDecimal(value: number | null): string {
 function completenessLabel(metrics: Array<MetricContract | undefined>): string {
   const available = metrics.filter((metric) => metric?.available);
   if (available.length === 0) return 'Período não sincronizado';
+  if (available.some(m => m?.completenessStatus === 'mixed_currency')) {
+    return 'Moedas misturadas';
+  }
+  
+  if (available.some(m => m?.completenessStatus === 'unmapped_action_type')) {
+    return 'Tipos de conversão desconhecidos';
+  }
+
   return available.some((metric) => !['complete', 'zero_delivery'].includes(metric?.completenessStatus || ''))
     ? 'Dados parciais'
     : 'Dados completos';

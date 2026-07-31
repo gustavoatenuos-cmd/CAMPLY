@@ -8,6 +8,7 @@ export type TraceableMetricCompleteness =
   | 'rate_limit_exhausted'
   | 'validation_error'
   | 'mixed_currency'
+  | 'unmapped_action_type'
   | 'unavailable';
 
 export type TraceableMetricSourceLevel = 'account' | 'campaign' | 'adset' | 'ad' | 'aggregated';
@@ -46,6 +47,7 @@ const completenessStatuses = new Set<TraceableMetricCompleteness>([
   'rate_limit_exhausted',
   'validation_error',
   'mixed_currency',
+  'unmapped_action_type',
   'unavailable',
 ]);
 
