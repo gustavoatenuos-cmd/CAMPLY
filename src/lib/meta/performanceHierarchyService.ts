@@ -1,6 +1,7 @@
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { normalizeTraceableMetric, type TraceableMetric } from '../performance/traceableMetrics';
 import { invokeFunction } from '../invokeFunction';
+import { supabaseData } from '../supabase';
 import { e2eMetric, isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 import type { MetaRunSummary } from './clientMetaAssetService';
 
@@ -113,6 +114,34 @@ function normalizePage(value: unknown): MetaHierarchyPage {
   };
 }
 
+async function loadMetaHierarchyFromRpc(input: {
+  clientMetaAssetId: string;
+  period: DashboardPeriod;
+  level: MetaHierarchyLevel;
+  parentId?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<MetaHierarchyPage> {
+  if (!supabaseData) {
+    throw new Error('Supabase não está configurado.');
+  }
+
+  const { data, error } = await supabaseData.rpc('get_meta_performance_hierarchy', {
+    p_client_meta_asset_id: input.clientMetaAssetId,
+    p_period: input.period,
+    p_level: input.level,
+    p_parent_id: input.parentId || null,
+    p_page: input.page || 1,
+    p_page_size: input.pageSize || 25,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Não foi possível carregar a hierarquia salva.');
+  }
+
+  return normalizePage(data);
+}
+
 export async function loadMetaHierarchy(input: {
   clientMetaAssetId: string;
   period: DashboardPeriod;
@@ -135,13 +164,18 @@ export async function loadMetaHierarchy(input: {
       dateStart: '2026-07-01', dateStop: '2026-07-01',
     };
   }
-  const data = await invokeFunction<MetaHierarchyPage>('meta-hierarchy', {
-    clientMetaAssetId: input.clientMetaAssetId,
-    period: input.period,
-    level: input.level,
-    parentId: input.parentId || null,
-    page: input.page || 1,
-    pageSize: input.pageSize || 25,
-  }, 20_000);
-  return normalizePage(data);
+  try {
+    const data = await invokeFunction<MetaHierarchyPage>('meta-hierarchy', {
+      clientMetaAssetId: input.clientMetaAssetId,
+      period: input.period,
+      level: input.level,
+      parentId: input.parentId || null,
+      page: input.page || 1,
+      pageSize: input.pageSize || 25,
+    }, 20_000);
+    return normalizePage(data);
+  } catch (edgeError) {
+    console.warn('[performanceHierarchyService] meta-hierarchy Edge Function failed; falling back to authenticated RPC.', edgeError);
+    return loadMetaHierarchyFromRpc(input);
+  }
 }
