@@ -427,5 +427,32 @@ describe('enrichGlobalPerformanceDashboard', () => {
       totalDays: 30,
       elapsedDays: 30,
     });
+
+    const [trailingThirtyDayPacing] = enrichGlobalPerformanceDashboard(
+      [{
+        ...raw,
+        accounts: raw.accounts.map((account) => ({
+          ...account,
+          metrics: { ...account.metrics, spend: traceMetric('spend', 2700) },
+        })),
+        metrics: { ...raw.metrics, spend: traceMetric('spend', 2700) },
+        resolvedTargets: [],
+        analysisProfile: {
+          ...raw.analysisProfile!,
+          budgetPeriod: 'monthly',
+          plannedBudget: 3100,
+          minimumEvaluationSpend: 0,
+        },
+      }],
+      'last_30d',
+      new Date('2026-07-30T15:00:00Z')
+    );
+    expect(trailingThirtyDayPacing.accounts[0].budgetPacing).toMatchObject({
+      actualSpend: 2700,
+      expectedSpendUntilNow: 3000,
+      targetDailyBudget: 100,
+      totalDays: 30,
+      elapsedDays: 30,
+    });
   });
 });

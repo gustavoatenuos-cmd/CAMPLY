@@ -57,6 +57,7 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
+      budgetPacing: performance.budgetPacing,
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
@@ -246,4 +247,3 @@ function MetricCell({ label, value, metric }: { label: string; value: string; me
     </div>
   );
 }
-

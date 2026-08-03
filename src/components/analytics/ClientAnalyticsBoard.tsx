@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { readPendingClientSelection } from '../../lib/performance/pendingClientSelection';
-import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
+import { dashboardPeriods, periodLabels, type DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { ClientAnalyticsCard } from './ClientAnalyticsCard';
 import { ClientCampaignDrawer } from './ClientCampaignDrawer';
 import { ClientAnalyticsDetailDrawer } from './ClientAnalyticsDetailDrawer';
@@ -12,11 +12,12 @@ interface ClientAnalyticsBoardProps {
   period: DashboardPeriod;
   loading: boolean;
   onEditClient?: (clientId: string) => void;
+  onPeriodChange?: (period: DashboardPeriod) => void;
 }
 
 type FilterStatus = 'ALL' | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NO_DATA' | 'NO_ACCOUNT';
 
-export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }: ClientAnalyticsBoardProps) {
+export function ClientAnalyticsBoard({ clients, period, loading, onEditClient, onPeriodChange }: ClientAnalyticsBoardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
 
@@ -80,12 +81,24 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }:
     <div className="flex flex-col h-full bg-gray-50/30">
       {/* Header section with filters */}
       <div className="bg-white border-b px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-gray-800">Analytics por Cliente</h2>
-          <p className="text-sm text-gray-500">Acompanhamento de orçamento e performance</p>
+          <p className="text-sm text-gray-500">Realizado da Meta x metas do cliente · {periodLabels[period]}</p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <label className="min-w-[170px] text-xs font-medium text-gray-600">
+            Período analisado
+            <select
+              aria-label="Período analisado"
+              className="mt-1 flex h-10 w-full rounded-md border border-input bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              value={period}
+              onChange={(event) => onPeriodChange?.(event.target.value as DashboardPeriod)}
+              disabled={!onPeriodChange}
+            >
+              {dashboardPeriods.map((item) => <option key={item} value={item}>{periodLabels[item]}</option>)}
+            </select>
+          </label>
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
             <input 
