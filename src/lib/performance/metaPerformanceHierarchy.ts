@@ -1,4 +1,7 @@
-import { supabase } from '../supabase';
+import {
+  loadMetaHierarchy,
+  type MetaHierarchyItem,
+} from '../meta/performanceHierarchyService';
 import type { DashboardPeriod } from './analyticsCapabilities';
 import type { MetricContract } from './globalPerformanceDashboard';
 
@@ -23,6 +26,21 @@ export interface HierarchyResponse {
   total: number;
 }
 
+function mapHierarchyItem(item: MetaHierarchyItem): HierarchicalMetricNode {
+  return {
+    id: item.id,
+    name: item.name || item.id,
+    status: item.status || '',
+    effectiveStatus: item.effectiveStatus || item.status || '',
+    objective: item.objective || null,
+    classifiedObjective: item.classifiedObjective || null,
+    destinationType: item.destinationType || null,
+    attributionSetting: item.attributionSetting || null,
+    creativeId: item.creativeId || null,
+    metrics: item.metrics,
+  };
+}
+
 export async function fetchMetaPerformanceHierarchy(
   clientMetaAssetId: string,
   period: DashboardPeriod,
@@ -31,24 +49,18 @@ export async function fetchMetaPerformanceHierarchy(
   page: number = 1,
   pageSize: number = 50
 ): Promise<HierarchyResponse> {
-  if (!supabase) {
-    throw new Error('Supabase client not initialized');
-  }
-
-  const { data, error } = await supabase.rpc('get_meta_performance_hierarchy', {
-    p_client_meta_asset_id: clientMetaAssetId,
-    p_period: period,
-    p_level: level,
-    p_parent_id: parentId,
-    p_page: page,
-    p_page_size: pageSize,
+  const response = await loadMetaHierarchy({
+    clientMetaAssetId,
+    period,
+    level,
+    parentId: parentId || undefined,
+    page,
+    pageSize,
   });
 
-  if (error) {
-    console.error('Error fetching meta performance hierarchy:', error);
-    throw new Error(`Falha ao buscar a hierarquia de métricas (${level}): ${error.message}`);
-  }
-
-  // The RPC returns a complex object with items, total, and state
-  return (data as unknown as HierarchyResponse) || { state: 'empty', items: [], total: 0 };
+  return {
+    state: response.state,
+    total: response.total,
+    items: response.items.map(mapHierarchyItem),
+  };
 }

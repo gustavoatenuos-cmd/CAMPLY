@@ -7,12 +7,14 @@ import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { buildInsights, clearUserData, initialData, loadData, saveData, setActivityActor } from './data/camplyStore';
 import { hasNewerRemoteVersion, loadRemoteData, resetRemoteWorkspaceState, saveRemoteData, saveRemoteDataAndConfirmClient } from './data/supabaseStore';
-import { setSupabaseSession, supabase } from './lib/supabase';
+import { getSupabaseSessionDiagnostics, setSupabaseSession, supabase } from './lib/supabase';
 import { CamplyData, ViewId } from './types';
 import { runAgentEngine } from './lib/agentEngine';
 import { generateAgentSummary } from './lib/claudeService';
 import { E2E_USER_ID, isMetaE2EMode, metaE2EWorkspace, resetMetaE2EState, restoreMetaE2EState } from './lib/meta/metaE2ERuntime';
 import { resetE2EAnalysisProfiles } from './lib/analysis/clientAnalysisProfile';
+import { getCamplyBuildInfo } from './lib/diagnostics/buildInfo';
+import { canMutateWorkspace, WORKSPACE_READ_ONLY_MESSAGE } from './lib/operational/workspaceMutationPolicy';
 
 const ActivityView = React.lazy(() => import('./components/ActivityView').then(m => ({ default: m.ActivityView })));
 const AgentSettingsView = React.lazy(() => import('./components/AgentSettingsView').then(m => ({ default: m.AgentSettingsView })));
@@ -150,6 +152,26 @@ export default function App() {
   }, []);
 
   const authenticated = Boolean(session);
+  const workspaceReadOnly = !canMutateWorkspace(remoteLoadError);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedFilters = window.sessionStorage.getItem('camply:performance-dashboard-filters');
+    let selectedPeriod = new URLSearchParams(window.location.search).get('period') || 'last_90d';
+    if (storedFilters) {
+      try {
+        const parsed = JSON.parse(storedFilters) as { period?: unknown };
+        if (typeof parsed.period === 'string' && parsed.period) selectedPeriod = parsed.period;
+      } catch {
+        // Diagnostics must never interfere with application startup.
+      }
+    }
+    window.CAMPLY_DIAGNOSTICS = {
+      build: getCamplyBuildInfo(),
+      session: getSupabaseSessionDiagnostics(),
+      selectedPeriod,
+    };
+  }, [session, activeView]);
 
   useEffect(() => {
     if (isMetaE2EMode) {
@@ -317,6 +339,10 @@ export default function App() {
   const insights = useMemo(() => buildInsights(data), [data]);
 
   const updateData = (updater: (data: CamplyData) => CamplyData) => {
+    if (workspaceReadOnly) {
+      setSyncError(WORKSPACE_READ_ONLY_MESSAGE);
+      return;
+    }
     setData((current) => {
       const next = updater(current);
       const { newAlerts, newLogs } = runAgentEngine(next);
@@ -332,6 +358,10 @@ export default function App() {
   };
 
   const persistClientData = async (nextData: CamplyData, clientId: string) => {
+    if (workspaceReadOnly) {
+      setSyncError(WORKSPACE_READ_ONLY_MESSAGE);
+      throw new Error(WORKSPACE_READ_ONLY_MESSAGE);
+    }
     if (!authenticated || isMetaE2EMode) {
       skipNextRemoteSaveRef.current = true;
       setData(nextData);
@@ -384,7 +414,7 @@ export default function App() {
       <main className="min-w-0 flex-1">
         {remoteLoadError && (
           <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
-            <span className="flex-1">{remoteLoadError}</span>
+            <span className="flex-1"><strong>Modo somente leitura.</strong> {remoteLoadError}</span>
             <button
               type="button"
               onClick={() => setRemoteLoadAttempt(a => a + 1)}
