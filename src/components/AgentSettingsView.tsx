@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CamplyData, AgentRule } from '../types';
 import { makeId } from '../data/camplyStore';
 import { Settings, Plus, Trash2, ToggleLeft, ToggleRight, ShieldAlert, Save } from 'lucide-react';
+import { getCamplyBuildInfo } from '../lib/diagnostics/buildInfo';
 
 interface AgentSettingsViewProps {
   data: CamplyData;
@@ -139,6 +140,10 @@ export function AgentSettingsView({ data, updateData }: AgentSettingsViewProps) 
   const activeAlerts = data.agentAlerts?.filter((a) => a.status === 'active').length || 0;
   const totalAlerts = data.agentAlerts?.length || 0;
   const totalLogs = data.agentLogs?.length || 0;
+  const buildInfo = getCamplyBuildInfo();
+  const shortCommit = buildInfo.commitSha === 'unknown'
+    ? buildInfo.commitSha
+    : buildInfo.commitSha.slice(0, 12);
 
   return (
     <section className="h-full overflow-y-auto p-4 sm:p-5 lg:p-8">
@@ -169,6 +174,23 @@ export function AgentSettingsView({ data, updateData }: AgentSettingsViewProps) 
           <p className="text-sm text-brand-muted">Total de análises registradas</p>
           <p className="mt-2 text-2xl font-black text-white">{totalLogs}</p>
         </div>
+      </div>
+
+      <div className="mb-8 rounded-xl border border-brand-line bg-brand-ink p-5" data-testid="camply-build-info">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-white">Versão em execução</p>
+            <p className="mt-1 text-xs text-brand-muted">Use estes dados ao reportar um erro para confirmar o ambiente e o código publicados.</p>
+          </div>
+          <span className="rounded-full bg-brand-green/10 px-3 py-1 text-xs font-bold uppercase text-brand-green">
+            {buildInfo.deployEnv}
+          </span>
+        </div>
+        <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-3">
+          <div><dt className="text-brand-muted">Commit</dt><dd className="mt-1 font-mono text-white">{shortCommit}</dd></div>
+          <div><dt className="text-brand-muted">Aplicação</dt><dd className="mt-1 font-mono text-white">v{buildInfo.appVersion}</dd></div>
+          <div><dt className="text-brand-muted">Build</dt><dd className="mt-1 font-mono text-white">{buildInfo.buildTime === 'unknown' ? 'unknown' : new Date(buildInfo.buildTime).toLocaleString('pt-BR')}</dd></div>
+        </dl>
       </div>
 
       {/* Rules */}

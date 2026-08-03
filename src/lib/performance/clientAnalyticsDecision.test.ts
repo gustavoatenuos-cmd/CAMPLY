@@ -254,6 +254,33 @@ describe('buildClientAnalyticsDecision', () => {
     expect(decision.actual.costPerResult).toBe(15);
   });
 
+  it('preserves an Instagram Direct primary metric instead of replacing it with total conversations', () => {
+    const decision = buildClientAnalyticsDecision(baseInput({
+      analysisProfile: defaultAnalysisProfile('client-1', { primaryConversionMetric: 'instagram_direct_conversations_started' }),
+      accountMetrics: {
+        spend: metric(150),
+        messaging_conversations_started_total: metric(20),
+        instagram_direct_conversations_started: metric(6),
+      },
+      metricGroups: [group({ instagram_direct_conversations_started: metric(6), spend: metric(150) })],
+    }));
+    expect(decision.primaryMetric.resultMetricId).toBe('instagram_direct_conversations_started');
+    expect(decision.primaryMetric.label).toBe('Conversas no Instagram');
+    expect(decision.actual.resultCount).toBe(6);
+    expect(decision.actual.costPerResult).toBe(25);
+  });
+
+  it('maps a landing-page-view profile to the synchronized landing-page-view metric', () => {
+    const view = getClientPrimaryMetricView(
+      defaultAnalysisProfile('client-1', { primaryConversionMetric: 'landing_page_views' }),
+      { landing_page_views: metric(42), link_clicks: metric(70) },
+      []
+    );
+    expect(view.status).toBe('ok');
+    expect(view.label).toBe('Visualizações da página');
+    expect(view.actual).toBe(42);
+  });
+
   it('resolves the leads family to leads/CPL', () => {
     const decision = buildClientAnalyticsDecision(baseInput({
       analysisProfile: defaultAnalysisProfile('client-1', { primaryConversionMetric: 'leads' }),

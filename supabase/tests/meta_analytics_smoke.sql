@@ -143,6 +143,93 @@ BEGIN
 
 END $$;
 
+-- Durable multi-account synchronization batch contract
+DO $$
+DECLARE
+  v_user_id UUID := gen_random_uuid();
+  v_integration_id UUID := gen_random_uuid();
+  v_meta_asset_id UUID := gen_random_uuid();
+  v_client_meta_asset_id UUID := gen_random_uuid();
+  v_batch JSONB;
+  v_resumed_batch JSONB;
+  v_item_id UUID;
+BEGIN
+  INSERT INTO auth.users (id, email, raw_user_meta_data)
+  VALUES (v_user_id, 'meta-batch@camply.test', '{}');
+
+  INSERT INTO public.meta_integrations (id, user_id, access_token_encrypted, status)
+  VALUES (v_integration_id, v_user_id, 'encrypted-token', 'active');
+
+  INSERT INTO public.meta_assets (
+    id, integration_id, asset_type, asset_id, asset_name, asset_status
+  ) VALUES (
+    v_meta_asset_id, v_integration_id, 'adaccount', 'act_batch_smoke', 'Conta Batch Smoke', 'ACTIVE'
+  );
+
+  INSERT INTO public.client_identity (user_id, client_id, display_name)
+  VALUES (v_user_id, 'client-batch-smoke', 'Cliente Batch Smoke');
+
+  INSERT INTO public.client_meta_assets (id, user_id, client_id, meta_asset_id)
+  VALUES (v_client_meta_asset_id, v_user_id, 'client-batch-smoke', v_meta_asset_id);
+
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', v_user_id::text, 'role', 'authenticated')::text,
+    true
+  );
+
+  v_batch := public.start_meta_sync_batch(ARRAY[v_client_meta_asset_id], 'last_90d');
+  IF v_batch->>'status' <> 'running'
+     OR (v_batch->>'total')::integer <> 1
+     OR jsonb_array_length(v_batch->'items') <> 1 THEN
+    RAISE EXCEPTION 'Meta sync batch did not start correctly: %', v_batch;
+  END IF;
+
+  -- A repeated start while the first batch is active must return the same
+  -- resumable batch, never create a competing collection.
+  v_resumed_batch := public.start_meta_sync_batch(ARRAY[v_client_meta_asset_id], 'last_90d');
+  IF v_resumed_batch->>'id' <> v_batch->>'id' THEN
+    RAISE EXCEPTION 'Meta sync batch was not resumed idempotently: %, %', v_batch, v_resumed_batch;
+  END IF;
+
+  v_item_id := (v_batch->'items'->0->>'id')::uuid;
+  v_batch := public.mark_meta_sync_batch_item_running((v_batch->>'id')::uuid, v_item_id);
+  IF v_batch->'items'->0->>'status' <> 'running' THEN
+    RAISE EXCEPTION 'Meta sync batch item was not marked running: %', v_batch;
+  END IF;
+
+  v_batch := public.finish_meta_sync_batch_item(
+    (v_batch->>'id')::uuid,
+    v_item_id,
+    'success',
+    NULL,
+    'Sincronização concluída',
+    NULL,
+    NULL
+  );
+  IF v_batch->>'status' <> 'success'
+     OR (v_batch->>'completed')::integer <> 1
+     OR (v_batch->>'success')::integer <> 1
+     OR v_batch->>'finishedAt' IS NULL THEN
+    RAISE EXCEPTION 'Meta sync batch did not finish correctly: %', v_batch;
+  END IF;
+
+  v_resumed_batch := public.get_latest_meta_sync_batch();
+  IF v_resumed_batch->>'id' <> v_batch->>'id'
+     OR v_resumed_batch->'items'->0->>'status' <> 'success' THEN
+    RAISE EXCEPTION 'Meta sync batch did not survive a reload query: %', v_resumed_batch;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.start_meta_sync_batch(UUID[], TEXT)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_latest_meta_sync_batch()', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.finish_meta_sync_batch_item(UUID, UUID, TEXT, UUID, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon must not execute Meta sync batch mutations';
+  END IF;
+
+  DELETE FROM auth.users WHERE id = v_user_id;
+END $$;
+
 -- Analytics capability negotiation and traceable metric contract
 DO $$
 DECLARE
@@ -899,6 +986,56 @@ BEGIN
     RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
   END IF;
 
+  -- A successful last_90d run is a data coverage source, not a requirement
+  -- that every reader request the same preset name. The exact last_30d range
+  -- must be aggregated from its persisted daily rows without a new sync.
+  v_hierarchy := public.get_meta_performance_hierarchy_v2(
+    v_link_id,
+    'last_30d',
+    v_local_today - 29,
+    v_local_today,
+    'campaign',
+    NULL,
+    1,
+    25,
+    TRUE
+  );
+  IF v_hierarchy->>'state' <> 'ready'
+     OR v_hierarchy->'coverage'->>'status' <> 'covered'
+     OR v_hierarchy->'coverage'->>'missingDays' <> '0'
+     OR (v_hierarchy->>'total')::integer <> 2
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_paused'
+         AND (item->'metrics'->'spend'->>'value')::numeric = 999
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_active'
+         AND (item->'metrics'->'spend'->>'value')::numeric = 300
+         AND round((item->'metrics'->'cpm'->>'value')::numeric, 4) = 60
+         AND COALESCE((item->'metrics'->'reach'->>'available')::boolean, false) IS FALSE
+         AND COALESCE((item->'metrics'->'frequency'->>'available')::boolean, false) IS FALSE
+     ) THEN
+    RAISE EXCEPTION 'Historical hierarchy did not reuse date coverage and aggregate the selected range: %', v_hierarchy;
+  END IF;
+
+  v_hierarchy := public.get_meta_performance_hierarchy_v2(
+    v_link_id,
+    'last_30d',
+    v_local_today - 29,
+    v_local_today,
+    'campaign',
+    NULL,
+    1,
+    25,
+    FALSE
+  );
+  IF (v_hierarchy->>'total')::integer <> 1
+     OR v_hierarchy->'items'->0->>'id' <> 'campaign_active' THEN
+    RAISE EXCEPTION 'Operational hierarchy v2 must remain active-only: %', v_hierarchy;
+  END IF;
+
   v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
   IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 300 THEN
     RAISE EXCEPTION 'Dashboard multi-day spend must be additive: %', v_dashboard->0->'accounts'->0->'metrics'->'spend';
@@ -953,6 +1090,8 @@ BEGIN
 
   IF has_function_privilege('anon', 'public.get_client_meta_asset_catalog(TEXT)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy_v2(UUID, TEXT, DATE, DATE, TEXT, TEXT, INTEGER, INTEGER, BOOLEAN)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics_for_range(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Operational hierarchy RPC privilege boundary is unsafe';
   END IF;
