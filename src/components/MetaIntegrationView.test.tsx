@@ -6,10 +6,22 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 
-const { invokeFunctionMock, loadClientMetaAssetCatalogMock, syncMetaAssetMock } = vi.hoisted(() => ({
+const {
+  invokeFunctionMock,
+  loadClientMetaAssetCatalogMock,
+  syncMetaAssetMock,
+  loadLatestMetaSyncBatchMock,
+  startMetaSyncBatchMock,
+  markMetaSyncBatchItemRunningMock,
+  finishMetaSyncBatchItemMock,
+} = vi.hoisted(() => ({
   invokeFunctionMock: vi.fn(),
   loadClientMetaAssetCatalogMock: vi.fn(),
   syncMetaAssetMock: vi.fn(),
+  loadLatestMetaSyncBatchMock: vi.fn(),
+  startMetaSyncBatchMock: vi.fn(),
+  markMetaSyncBatchItemRunningMock: vi.fn(),
+  finishMetaSyncBatchItemMock: vi.fn(),
 }));
 
 vi.mock('../lib/invokeFunction', async (importOriginal) => {
@@ -28,6 +40,17 @@ vi.mock('../lib/meta/metaSyncService', () => ({
   OFFICIAL_META_SYNC_PERIOD: 'last_90d',
   syncMetaAsset: syncMetaAssetMock,
 }));
+
+vi.mock('../lib/meta/metaSyncBatchService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/meta/metaSyncBatchService')>();
+  return {
+    ...actual,
+    loadLatestMetaSyncBatch: loadLatestMetaSyncBatchMock,
+    startMetaSyncBatch: startMetaSyncBatchMock,
+    markMetaSyncBatchItemRunning: markMetaSyncBatchItemRunningMock,
+    finishMetaSyncBatchItem: finishMetaSyncBatchItemMock,
+  };
+});
 
 vi.mock('./meta/MetaOperationalWorkspace', () => ({
   MetaOperationalWorkspace: () => <div data-testid="mock-operational-workspace" />,
@@ -53,6 +76,17 @@ const linkedAccount = {
 };
 
 const baseData = { clients: [], projects: [] } as unknown as CamplyData;
+
+beforeEach(() => {
+  loadLatestMetaSyncBatchMock.mockReset();
+  startMetaSyncBatchMock.mockReset();
+  markMetaSyncBatchItemRunningMock.mockReset();
+  finishMetaSyncBatchItemMock.mockReset();
+  loadLatestMetaSyncBatchMock.mockResolvedValue(null);
+  startMetaSyncBatchMock.mockResolvedValue(null);
+  markMetaSyncBatchItemRunningMock.mockResolvedValue(null);
+  finishMetaSyncBatchItemMock.mockResolvedValue(null);
+});
 
 function catalogWithOneLinkedAndOneAvailable() {
   return {
@@ -245,6 +279,60 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('3 sucesso'));
     expect(screen.getByRole('status')).toHaveTextContent('Sincronização concluída: 3 sucesso.');
+  });
+
+  it('restores an interrupted server batch and resumes only its pending account', async () => {
+    const runningBatch = {
+      id: '11111111-1111-4111-8111-111111111111',
+      status: 'running' as const,
+      period: 'last_90d',
+      total: 1,
+      completed: 0,
+      success: 0,
+      partial: 0,
+      failed: 0,
+      startedAt: '2026-08-03T12:00:00.000Z',
+      finishedAt: null,
+      items: [{
+        id: '22222222-2222-4222-8222-222222222222',
+        clientId: 'client-1',
+        clientName: 'Cliente 1',
+        clientMetaAssetId: 'link-1',
+        accountName: 'Conta 1',
+        adAccountId: 'act_1',
+        status: 'pending' as const,
+      }],
+    };
+    const finishedBatch = {
+      ...runningBatch,
+      status: 'success' as const,
+      completed: 1,
+      success: 1,
+      finishedAt: '2026-08-03T12:01:00.000Z',
+      items: [{ ...runningBatch.items[0], status: 'success' as const }],
+    };
+    loadClientMetaAssetCatalogMock.mockResolvedValue(catalogWithAccounts(1));
+    loadLatestMetaSyncBatchMock
+      .mockResolvedValueOnce(runningBatch)
+      .mockResolvedValueOnce(finishedBatch);
+    startMetaSyncBatchMock.mockResolvedValue(runningBatch);
+    syncMetaAssetMock.mockResolvedValue({ success: true, status: 'success', runId: null });
+
+    render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('meta-sync-linked-clients')).toHaveTextContent('Retomar sincronização'));
+    expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('Lote 11111111');
+
+    fireEvent.click(screen.getByTestId('meta-sync-linked-clients'));
+
+    await waitFor(() => expect(syncMetaAssetMock).toHaveBeenCalledWith(expect.objectContaining({
+      clientMetaAssetId: 'link-1',
+    })));
+    expect(markMetaSyncBatchItemRunningMock).toHaveBeenCalledWith(runningBatch.id, runningBatch.items[0].id);
+    await waitFor(() => expect(finishMetaSyncBatchItemMock).toHaveBeenCalledWith(
+      runningBatch.id,
+      runningBatch.items[0].id,
+      expect.objectContaining({ status: 'success' })
+    ));
   });
 
   it('counts a partial result as partial, never as failed', async () => {

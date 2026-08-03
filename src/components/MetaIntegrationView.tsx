@@ -15,9 +15,18 @@ import {
   initializeBulkSyncProgress,
   isBulkSyncAllFailed,
   outcomeFromThrownError,
+  runWithConcurrency,
   type BulkSyncAccountResult,
   type BulkSyncProgress,
 } from '../lib/meta/bulkSyncDiagnostics';
+import {
+  finishMetaSyncBatchItem,
+  loadLatestMetaSyncBatch,
+  markMetaSyncBatchItemRunning,
+  persistedBatchToProgress,
+  startMetaSyncBatch,
+  type PersistedMetaSyncBatch,
+} from '../lib/meta/metaSyncBatchService';
 import { OFFICIAL_META_SYNC_PERIOD, syncMetaAsset } from '../lib/meta/metaSyncService';
 import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
@@ -115,6 +124,8 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [showInactiveAccounts, setShowInactiveAccounts] = useState(false);
   const bulkPeriod: DashboardPeriod = OFFICIAL_META_SYNC_PERIOD;
   const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
+  const [persistedBatch, setPersistedBatch] = useState<PersistedMetaSyncBatch | null>(null);
+  const [batchPersistenceError, setBatchPersistenceError] = useState<string | null>(null);
   const [retryingAccountId, setRetryingAccountId] = useState<string | null>(null);
   // Uma sincronização em massa e um "tentar novamente" individual não podem
   // rodar ao mesmo tempo - as duas mexem nos mesmos contadores agregados de
@@ -139,6 +150,24 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   useEffect(() => {
     void loadCatalog();
   }, [loadCatalog]);
+
+  const loadPersistedBatch = useCallback(async () => {
+    setBatchPersistenceError(null);
+    try {
+      const savedBatch = await loadLatestMetaSyncBatch();
+      if (!savedBatch) return;
+      setPersistedBatch(savedBatch);
+      setBulkSync(persistedBatchToProgress(savedBatch));
+    } catch (batchError) {
+      setBatchPersistenceError(batchError instanceof Error
+        ? batchError.message
+        : 'Não foi possível carregar o progresso salvo da sincronização.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPersistedBatch();
+  }, [loadPersistedBatch]);
 
   const linkedAccounts = useMemo(() => (catalog?.clients || []).flatMap((client) => (
     client.accounts.map((account) => ({ clientId: client.clientId, clientName: client.clientName, account }))
@@ -210,21 +239,62 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     if (activeLinkedAccounts.length === 0 || bulkSyncBusy) return;
     setError(null);
     setNotice(null);
+    setBatchPersistenceError(null);
 
-    setBulkSync(initializeBulkSyncProgress(activeLinkedAccounts.map(({ clientId, clientName, account }) => ({
+    const accountInputs = activeLinkedAccounts.map(({ clientId, clientName, account }) => ({
       clientId,
       clientName,
       clientMetaAssetId: account.clientMetaAssetId,
       accountName: account.accountName,
       adAccountId: account.adAccountId,
-    }))));
+    }));
 
-    for (const { account } of activeLinkedAccounts) {
+    let batch: PersistedMetaSyncBatch | null = null;
+    try {
+      batch = await startMetaSyncBatch(accountInputs.map((account) => account.clientMetaAssetId));
+      if (batch) setPersistedBatch(batch);
+    } catch (batchError) {
+      setBatchPersistenceError(batchError instanceof Error
+        ? `${batchError.message} A coleta continuará, mas esta tentativa não poderá ser retomada após recarregar.`
+        : 'O lote não pôde ser persistido; a coleta continuará nesta tela.');
+    }
+
+    const initialProgress = batch
+      ? { ...persistedBatchToProgress(batch), running: true }
+      : initializeBulkSyncProgress(accountInputs);
+    setBulkSync(initialProgress);
+
+    const runnableAccounts = activeLinkedAccounts.flatMap(({ account }) => {
+      if (!batch) return [{ account, batchItemId: null as string | null }];
+      const savedItem = batch.items.find((item) => item.clientMetaAssetId === account.clientMetaAssetId);
+      if (!savedItem || (savedItem.status !== 'pending' && savedItem.status !== 'running')) return [];
+      return [{ account, batchItemId: savedItem.id }];
+    });
+
+    let persistenceFailed = false;
+
+    await runWithConcurrency(runnableAccounts, 2, async ({ account, batchItemId }) => {
       setBulkSync((current) => current && applyAccountOutcome(current, account.clientMetaAssetId, { status: 'running' }));
+
+      if (batch && batchItemId) {
+        try {
+          await markMetaSyncBatchItemRunning(batch.id, batchItemId);
+        } catch {
+          persistenceFailed = true;
+        }
+      }
 
       const outcome = await runAccountSync(account);
       setBulkSync((current) => current && applyAccountOutcome(current, account.clientMetaAssetId, outcome, 'running'));
-    }
+
+      if (batch && batchItemId) {
+        try {
+          await finishMetaSyncBatchItem(batch.id, batchItemId, outcome);
+        } catch {
+          persistenceFailed = true;
+        }
+      }
+    });
 
     setBulkSync((current) => {
       if (!current) return current;
@@ -237,6 +307,18 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       }
       return finished;
     });
+
+    if (batch && !persistenceFailed) {
+      try {
+        const savedBatch = await loadLatestMetaSyncBatch();
+        if (savedBatch) setPersistedBatch(savedBatch);
+      } catch {
+        persistenceFailed = true;
+      }
+    }
+    if (persistenceFailed) {
+      setBatchPersistenceError('A coleta terminou, mas o progresso do lote não foi totalmente persistido. Os resultados desta tela foram preservados; recarregue antes de iniciar outro lote.');
+    }
     await loadCatalog();
   };
 
@@ -437,7 +519,8 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                   disabled={activeLinkedAccounts.length === 0 || bulkSyncBusy}
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
                 >
-                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar últimos 90 dias
+                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} />
+                  {persistedBatch?.status === 'running' ? 'Retomar sincronização' : 'Sincronizar últimos 90 dias'}
                 </button>
               </div>
             </div>
@@ -448,7 +531,14 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                 {' · '}{bulkSync.success} sucesso
                 {bulkSync.partial > 0 ? `, ${bulkSync.partial} parcial` : ''}
                 {bulkSync.failed > 0 ? `, ${bulkSync.failed} falha` : ''}
+                {persistedBatch?.id ? ` · Lote ${persistedBatch.id.slice(0, 8)}` : ''}
               </p>
+            )}
+
+            {batchPersistenceError && (
+              <div role="alert" className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-200">
+                {batchPersistenceError}
+              </div>
             )}
 
             {bulkSync && <BulkSyncResultsPanel results={bulkSync.results} onRetry={(target) => void retryAccountSync(target)} retryDisabled={bulkSyncBusy} />}

@@ -42,6 +42,11 @@ const singleLast90dContractMigration = readFileSync(
   'utf8'
 );
 
+const persistedMetaSyncBatchesMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260803000000_persist_meta_sync_batches.sql', import.meta.url),
+  'utf8'
+);
+
 const metaSyncPerformanceFunction = readFileSync(
   new URL('../../../supabase/functions/meta-sync-performance/index.ts', import.meta.url),
   'utf8'
@@ -210,5 +215,20 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
     expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
     expect(metaIntegrationView).toContain('syncMetaAsset');
+  });
+});
+
+describe('persisted Meta sync batch migration safety', () => {
+  it('keeps batch mutations authenticated, resumable and server-side', () => {
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE TABLE IF NOT EXISTS public.meta_sync_batches');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE TABLE IF NOT EXISTS public.meta_sync_batch_items');
+    expect(persistedMetaSyncBatchesMigration).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.start_meta_sync_batch');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.get_latest_meta_sync_batch');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.finish_meta_sync_batch_item');
+    expect(persistedMetaSyncBatchesMigration).toContain("b.status = 'running'");
+    expect(persistedMetaSyncBatchesMigration).toContain('auth.uid()');
+    expect(persistedMetaSyncBatchesMigration).toContain('pg_advisory_xact_lock');
+    expect(persistedMetaSyncBatchesMigration).not.toMatch(/\bDELETE\s+FROM\s+public\.meta_sync_/i);
   });
 });
