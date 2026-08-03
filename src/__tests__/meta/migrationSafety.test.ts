@@ -47,6 +47,11 @@ const persistedMetaSyncBatchesMigration = readFileSync(
   'utf8'
 );
 
+const hierarchyDateCoverageMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260804000000_meta_hierarchy_date_coverage_contract.sql', import.meta.url),
+  'utf8'
+);
+
 const metaSyncPerformanceFunction = readFileSync(
   new URL('../../../supabase/functions/meta-sync-performance/index.ts', import.meta.url),
   'utf8'
@@ -230,5 +235,29 @@ describe('persisted Meta sync batch migration safety', () => {
     expect(persistedMetaSyncBatchesMigration).toContain('auth.uid()');
     expect(persistedMetaSyncBatchesMigration).toContain('pg_advisory_xact_lock');
     expect(persistedMetaSyncBatchesMigration).not.toMatch(/\bDELETE\s+FROM\s+public\.meta_sync_/i);
+  });
+});
+
+describe('hierarchy date coverage contract safety', () => {
+  it('reads an explicit date range from a covering successful run', () => {
+    expect(hierarchyDateCoverageMigration).toContain('CREATE OR REPLACE FUNCTION public.get_meta_performance_hierarchy_v2');
+    expect(hierarchyDateCoverageMigration).toContain('r.date_start <= p_date_start');
+    expect(hierarchyDateCoverageMigration).toContain('r.date_stop >= p_date_stop');
+    expect(hierarchyDateCoverageMigration).toContain("r.status = 'success'");
+    expect(hierarchyDateCoverageMigration).not.toMatch(/pg_get_functiondef/i);
+  });
+
+  it('aggregates daily metrics within the selected range and preserves unavailable values', () => {
+    expect(hierarchyDateCoverageMigration).toContain('get_traceable_entity_metrics_for_range');
+    expect(hierarchyDateCoverageMigration).toContain('SUM(m.metric_value)');
+    expect(hierarchyDateCoverageMigration).toContain('m.date_start >= p_date_start');
+    expect(hierarchyDateCoverageMigration).toContain('m.date_stop <= p_date_stop');
+    expect(hierarchyDateCoverageMigration).toContain('ELSE NULL');
+  });
+
+  it('includes paused historical campaigns only when they delivered in the requested range', () => {
+    expect(hierarchyDateCoverageMigration).toContain('p_include_historical');
+    expect(hierarchyDateCoverageMigration).toContain("m.metric_id = 'spend'");
+    expect(hierarchyDateCoverageMigration).toContain('m.metric_value > 0');
   });
 });

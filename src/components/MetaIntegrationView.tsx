@@ -28,6 +28,7 @@ import {
   type PersistedMetaSyncBatch,
 } from '../lib/meta/metaSyncBatchService';
 import { OFFICIAL_META_SYNC_PERIOD, syncMetaAsset } from '../lib/meta/metaSyncService';
+import { buildMetaSyncCoverageView } from '../lib/meta/metaSyncCoverage';
 import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
 import { evaluateClientOperationalReadiness, summarizeMetaReadinessAcrossClients } from '../lib/operational/clientOperationalReadiness';
@@ -65,6 +66,38 @@ function accountSyncEvidence(account: ClientMetaAccount): string {
   const period = bulkPeriodLabels[run.period as DashboardPeriod] ?? run.period;
   const reason = run.terminationReason ? ` - Motivo: ${run.terminationReason}` : '';
   return `\u00daltima sync: ${status} - Per\u00edodo: ${period}${reason} - Run: ${run.id}`;
+}
+
+function formatCoverageDate(value: string | null): string {
+  if (!value) return 'não validada';
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatSyncTimestamp(value: string | null): string {
+  if (!value) return 'sem sincronismo bem-sucedido';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR') : value;
+}
+
+function AccountCoverageEvidence({ account }: { account: ClientMetaAccount }) {
+  const coverage = buildMetaSyncCoverageView(account.lastSuccess, account.lastAttempt);
+  if (!account.lastAttempt && !account.lastSuccess) {
+    return <p className="mt-0.5 text-[10px] text-brand-muted">Última sync: sem tentativa · cobertura ainda não validada.</p>;
+  }
+
+  return (
+    <div data-testid="meta-account-coverage" className="mt-1 space-y-0.5 text-[10px] text-brand-muted">
+      <p>
+        Dados disponíveis: <strong className="text-brand-soft">{formatCoverageDate(coverage.dateStart)} até {formatCoverageDate(coverage.dateStop)}</strong>
+        {coverage.coveredDays !== null ? ` · ${coverage.coveredDays} dia(s)` : ''}
+      </p>
+      <p>Último sincronismo bem-sucedido: <strong className="text-brand-soft">{formatSyncTimestamp(coverage.lastSuccessfulAt)}</strong></p>
+      <p>Qualidade: <strong className={coverage.status === 'complete' ? 'text-emerald-200' : 'text-amber-200'}>{coverage.qualityLabel}</strong></p>
+      {coverage.limitationReason && <p className="text-amber-200">Limitação: {coverage.limitationReason}</p>}
+      <p className="opacity-70">{accountSyncEvidence(account)}</p>
+    </div>
+  );
 }
 
 interface MetaIntegrationViewProps {
@@ -564,7 +597,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                       <div>
                         <p className="font-bold text-white">{clientName}</p>
                         <p className="text-xs text-brand-muted">{account.accountName} - {account.adAccountId}</p>
-                        <p className="mt-0.5 text-[10px] text-brand-muted">{accountSyncEvidence(account)}</p>
+                        <AccountCoverageEvidence account={account} />
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

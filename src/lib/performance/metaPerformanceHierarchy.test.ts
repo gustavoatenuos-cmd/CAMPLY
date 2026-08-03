@@ -52,6 +52,7 @@ describe('fetchMetaPerformanceHierarchy', () => {
       parentId: undefined,
       page: 1,
       pageSize: 50,
+      includeHistorical: false,
     });
     expect(result.state).toBe('ready');
     expect(result.items[0]).toMatchObject({

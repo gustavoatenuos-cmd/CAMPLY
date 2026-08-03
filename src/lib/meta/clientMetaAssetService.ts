@@ -21,6 +21,10 @@ export interface MetaRunSummary {
   terminationReason?: string | null;
   pagesFetched?: number;
   recordsFetched?: number;
+  dateStart?: string | null;
+  dateStop?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
 }
 
 export interface ClientMetaAccount {
@@ -110,6 +114,12 @@ export function loadCachedClientMetaAssetCatalog(clientId?: string): ClientMetaA
   return readCachedCatalog(clientId);
 }
 
+function catalogNeedsCoverageEnrichment(catalog: ClientMetaAssetCatalog): boolean {
+  return catalog.clients.some((client) => client.accounts.some((account) => (
+    Boolean(account.lastSuccess) && (!account.lastSuccess?.dateStart || !account.lastSuccess?.dateStop)
+  )));
+}
+
 const mockAccount = (): ClientMetaAccount => ({
   clientMetaAssetId: E2E_LINK_ID,
   metaAssetId: E2E_ASSET_ID,
@@ -126,11 +136,13 @@ const mockAccount = (): ClientMetaAccount => ({
     scope: 'full_account', startedAt: '2026-06-30T17:59:00.000Z',
     finishedAt: '2026-06-30T18:00:00.000Z', terminationReason: 'completed',
     pagesFetched: 4, recordsFetched: 12,
+    dateStart: '2026-04-02', dateStop: '2026-06-30', timezone: 'America/Sao_Paulo', currency: 'BRL',
   },
   lastSuccess: {
     id: 'run-e2e', period: 'last_90d', level: 'creative', scope: 'full_account',
     startedAt: '2026-06-30T17:59:00.000Z', finishedAt: '2026-06-30T18:00:00.000Z',
     pagesFetched: 4, recordsFetched: 12,
+    dateStart: '2026-04-02', dateStop: '2026-06-30', timezone: 'America/Sao_Paulo', currency: 'BRL',
   },
 });
 
@@ -162,6 +174,16 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       clientId: clientId || null,
     }, 8_000);
     const edgeCatalog = { ...catalog, source: 'edge' as const };
+    if (catalogNeedsCoverageEnrichment(edgeCatalog)) {
+      try {
+        const directCatalog = await loadClientMetaAssetCatalogDirect(clientId);
+        writeCachedCatalog(clientId, directCatalog);
+        return directCatalog;
+      } catch {
+        // An older deployed Edge may omit coverage dates. Keep its otherwise
+        // valid catalog when the authenticated direct enrichment is unavailable.
+      }
+    }
     writeCachedCatalog(clientId, edgeCatalog);
     return edgeCatalog;
   } catch {
@@ -180,6 +202,11 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     );
     if (error) throw new Error('Não foi possível carregar os vínculos Meta.');
     const catalog = { ...(data as ClientMetaAssetCatalog), source: 'rpc' as const };
+    if (catalogNeedsCoverageEnrichment(catalog)) {
+      const directCatalog = await loadClientMetaAssetCatalogDirect(clientId);
+      writeCachedCatalog(clientId, directCatalog);
+      return directCatalog;
+    }
     writeCachedCatalog(clientId, catalog);
     return catalog;
   } catch (rpcError) {
@@ -227,6 +254,10 @@ type DirectRunRow = {
   records_fetched?: number | null;
   integration_id: string;
   ad_account_id: string;
+  date_start: string | null;
+  date_stop: string | null;
+  timezone: string | null;
+  currency: string | null;
 };
 
 function runSummary(run?: DirectRunRow): MetaRunSummary | null {
@@ -242,6 +273,10 @@ function runSummary(run?: DirectRunRow): MetaRunSummary | null {
     terminationReason: run.termination_reason ?? run.error_message ?? null,
     pagesFetched: run.pages_fetched ?? undefined,
     recordsFetched: run.records_fetched ?? undefined,
+    dateStart: run.date_start ?? null,
+    dateStop: run.date_stop ?? null,
+    timezone: run.timezone ?? null,
+    currency: run.currency ?? null,
   };
 }
 
@@ -327,7 +362,7 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
     : await withTimeout(
       supabaseData
         .from('meta_sync_runs')
-        .select('id,status,requested_period,requested_level,run_scope,started_at,finished_at,termination_reason,error_message,pages_fetched,records_fetched,integration_id,ad_account_id')
+        .select('id,status,requested_period,requested_level,run_scope,started_at,finished_at,termination_reason,error_message,pages_fetched,records_fetched,integration_id,ad_account_id,date_start,date_stop,timezone,currency')
         .in('integration_id', integrationIds)
         .in('ad_account_id', adAccountIds)
         .order('started_at', { ascending: false })

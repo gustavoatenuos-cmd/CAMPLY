@@ -21,9 +21,12 @@ export interface HierarchicalMetricNode {
 }
 
 export interface HierarchyResponse {
-  state: 'empty' | 'ready' | 'period_not_synced' | 'unauthorized';
+  state: 'empty' | 'ready' | 'period_not_synced' | 'partial_coverage' | 'unauthorized';
   items: HierarchicalMetricNode[];
   total: number;
+  dateStart?: string | null;
+  dateStop?: string | null;
+  coverage?: import('../meta/performanceHierarchyService').MetaHierarchyPage['coverage'];
 }
 
 function mapHierarchyItem(item: MetaHierarchyItem): HierarchicalMetricNode {
@@ -47,7 +50,8 @@ export async function fetchMetaPerformanceHierarchy(
   level: HierarchyLevel,
   parentId: string | null = null,
   page: number = 1,
-  pageSize: number = 50
+  pageSize: number = 50,
+  includeHistorical: boolean = false
 ): Promise<HierarchyResponse> {
   const response = await loadMetaHierarchy({
     clientMetaAssetId,
@@ -56,11 +60,15 @@ export async function fetchMetaPerformanceHierarchy(
     parentId: parentId || undefined,
     page,
     pageSize,
+    includeHistorical,
   });
 
   return {
     state: response.state,
     total: response.total,
     items: response.items.map(mapHierarchyItem),
+    dateStart: response.dateStart,
+    dateStop: response.dateStop,
+    coverage: response.coverage,
   };
 }

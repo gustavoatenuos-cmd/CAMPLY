@@ -168,6 +168,10 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
       scope: 'full_account',
       startedAt: new Date().toISOString(),
       finishedAt: new Date().toISOString(),
+      dateStart: '2026-05-06',
+      dateStop: '2026-08-03',
+      timezone: 'America/Sao_Paulo',
+      currency: 'BRL',
     };
     loadClientMetaAssetCatalogMock.mockResolvedValue({
       clients: [{ clientId: 'client-1', clientName: 'Cliente Vinculado', accounts: [{ ...linkedAccount, lastSuccess: freshSuccess }] }],
@@ -181,6 +185,8 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: success');
     expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
     expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Dados disponíveis: 06/05/2026 até 03/08/2026 · 90 dia(s)');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Cobertura completa do run');
     expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sync pronto');
   });
 });

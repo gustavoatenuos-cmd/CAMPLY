@@ -986,6 +986,56 @@ BEGIN
     RAISE EXCEPTION 'Operational hierarchy did not return active-only campaigns with traceability: %', v_hierarchy;
   END IF;
 
+  -- A successful last_90d run is a data coverage source, not a requirement
+  -- that every reader request the same preset name. The exact last_30d range
+  -- must be aggregated from its persisted daily rows without a new sync.
+  v_hierarchy := public.get_meta_performance_hierarchy_v2(
+    v_link_id,
+    'last_30d',
+    v_local_today - 29,
+    v_local_today,
+    'campaign',
+    NULL,
+    1,
+    25,
+    TRUE
+  );
+  IF v_hierarchy->>'state' <> 'ready'
+     OR v_hierarchy->'coverage'->>'status' <> 'covered'
+     OR v_hierarchy->'coverage'->>'missingDays' <> '0'
+     OR (v_hierarchy->>'total')::integer <> 2
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_paused'
+         AND (item->'metrics'->'spend'->>'value')::numeric = 999
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM jsonb_array_elements(v_hierarchy->'items') item
+       WHERE item->>'id' = 'campaign_active'
+         AND (item->'metrics'->'spend'->>'value')::numeric = 300
+         AND round((item->'metrics'->'cpm'->>'value')::numeric, 4) = 60
+         AND COALESCE((item->'metrics'->'reach'->>'available')::boolean, false) IS FALSE
+         AND COALESCE((item->'metrics'->'frequency'->>'available')::boolean, false) IS FALSE
+     ) THEN
+    RAISE EXCEPTION 'Historical hierarchy did not reuse date coverage and aggregate the selected range: %', v_hierarchy;
+  END IF;
+
+  v_hierarchy := public.get_meta_performance_hierarchy_v2(
+    v_link_id,
+    'last_30d',
+    v_local_today - 29,
+    v_local_today,
+    'campaign',
+    NULL,
+    1,
+    25,
+    FALSE
+  );
+  IF (v_hierarchy->>'total')::integer <> 1
+     OR v_hierarchy->'items'->0->>'id' <> 'campaign_active' THEN
+    RAISE EXCEPTION 'Operational hierarchy v2 must remain active-only: %', v_hierarchy;
+  END IF;
+
   v_dashboard := public.get_global_performance_dashboard_v2('last_7d', NULL, NULL);
   IF (v_dashboard->0->'accounts'->0->'metrics'->'spend'->>'value')::numeric <> 300 THEN
     RAISE EXCEPTION 'Dashboard multi-day spend must be additive: %', v_dashboard->0->'accounts'->0->'metrics'->'spend';
@@ -1040,6 +1090,8 @@ BEGIN
 
   IF has_function_privilege('anon', 'public.get_client_meta_asset_catalog(TEXT)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_meta_performance_hierarchy_v2(UUID, TEXT, DATE, DATE, TEXT, TEXT, INTEGER, INTEGER, BOOLEAN)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics_for_range(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.get_traceable_entity_metrics(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Operational hierarchy RPC privilege boundary is unsafe';
   END IF;
