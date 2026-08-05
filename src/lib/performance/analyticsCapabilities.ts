@@ -3,7 +3,7 @@ import { isMetaE2EMode } from '../meta/metaE2ERuntime';
 import { withTimeout } from '../withTimeout';
 import { invokeFunction } from '../invokeFunction';
 
-export const ANALYTICS_CONTRACT_VERSION = 6;
+export const ANALYTICS_CONTRACT_VERSION = 7;
 
 export const dashboardPeriods = ['today', 'yesterday', 'today_and_yesterday', 'last_7d', 'last_30d', 'last_90d'] as const;
 const legacyDashboardPeriods = ['this_month', 'this_week'] as const;

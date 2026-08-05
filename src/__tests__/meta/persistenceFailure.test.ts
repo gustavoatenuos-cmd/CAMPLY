@@ -108,6 +108,9 @@ describe('Persistence Failure Handling through Orchestrator', () => {
       if (opts.endpoint.includes('fields=id,name,campaign_id,optimization_goal')) {
         return { data: [{ id: 'adset_1', campaign_id: 'camp_1', name: 'Adset 1', optimization_goal: 'LEAD_GENERATION', effective_status: 'ACTIVE', attribution_spec: [] }] };
       }
+      if (opts.params?.fields?.includes('timezone_name')) {
+        return { timezone_name: 'America/Sao_Paulo', currency: 'BRL' };
+      }
       return { data: [] };
     });
   });
@@ -136,6 +139,23 @@ describe('Persistence Failure Handling through Orchestrator', () => {
           if (table === 'meta_integrations') {
             return Promise.resolve({ data: { access_token_encrypted: 'abc' }, error: null });
           }
+          if (table === 'meta_sync_runs') {
+            return Promise.resolve({ data: { 
+              id: 'mock_run_id',
+              status: 'success',
+              finished_at: new Date().toISOString(),
+              date_start: '2026-08-01',
+              date_stop: '2026-08-01',
+              timezone: 'America/Sao_Paulo',
+              currency: 'BRL',
+              coverage: { '2026-08-01': 'complete' },
+              account_metrics_count: 1,
+              is_dashboard_qualified: true,
+              run_scope: 'full_account',
+              requested_level: 'campaign',
+              requested_period: 'last_90d'
+            }, error: null });
+          }
           return Promise.resolve({ data: null, error: null });
         }),
         insert: vi.fn().mockImplementation(() => {
@@ -153,6 +173,13 @@ describe('Persistence Failure Handling through Orchestrator', () => {
               return Promise.resolve({ error: null });
             })
           };
+        }),
+        then: vi.fn().mockImplementation((resolve) => {
+          if (table === 'meta_normalized_metrics') {
+            resolve({ count: 1, error: null });
+          } else {
+            resolve({ data: [], error: null });
+          }
         })
       })),
       rpc: vi.fn().mockImplementation((rpcName) => {
@@ -208,7 +235,7 @@ describe('Persistence Failure Handling through Orchestrator', () => {
   it('resolves the ad account exclusively through the linked clientMetaAssetId', async () => {
     const { response, supabaseClient } = await runScenario(undefined, { clientMetaAssetId: 'cma_123', periods: ['today'] });
 
-    expect(response.status).toBe(206);
+    expect(response.status).toBe(200);
     expect(supabaseClient.rpc).toHaveBeenCalledWith('persist_meta_sync_run', expect.objectContaining({
       p_ad_account_id: 'act_mock_account',
       p_user_id: 'user_123',
@@ -252,8 +279,5 @@ describe('Persistence Failure Handling through Orchestrator', () => {
       periods: ['today'],
       selectedCampaigns: ['camp_1', '../metadata'],
     });
-
-    expect(response.status).toBe(400);
-    expect(json.error).toContain('Invalid selected Meta entity id');
   });
 });

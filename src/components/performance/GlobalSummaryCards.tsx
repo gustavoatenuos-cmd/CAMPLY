@@ -228,7 +228,7 @@ export function GlobalSummaryCards({ clients }: { clients: GlobalClientPerforman
       if (signal.kind === 'performance' || signal.kind === 'pacing') return true;
       if (signal.kind !== 'data_quality') return false;
       return client.dataQuality.status === 'partial'
-        && client.accounts.some((account) => account.dataQuality.status !== 'unavailable');
+        && client.accounts.some((account) => (account.dataQualityByScope?.account?.status || account.dataQuality.status) !== 'unavailable');
     })
     .sort((a, b) => signalWeight[b.signal.severity] - signalWeight[a.signal.severity]
       || b.signal.confidence - a.signal.confidence

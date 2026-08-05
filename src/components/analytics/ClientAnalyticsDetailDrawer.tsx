@@ -127,8 +127,9 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
             </button>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-            <span>Última sincronização: {performance.lastSuccessfulRun?.finishedAt ? new Date(performance.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'nunca'}</span>
-            <span>· Qualidade dos dados: {performance.dataQuality?.status ?? 'unavailable'}</span>
+            <span>Última sincronização: {account?.dataRun?.finishedAt ? new Date(account.dataRun.finishedAt).toLocaleString('pt-BR') : 'nunca'}</span>
+            <span>· Qualidade da conta: {account?.dataQualityByScope?.account?.status ?? 'unavailable'}</span>
+            <span>· Qualidade das campanhas: {account?.dataQualityByScope?.campaigns?.status ?? 'unavailable'}</span>
           </div>
         </div>
 

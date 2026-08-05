@@ -16,6 +16,8 @@ import {
   buildCampaignPeriodAnalytics,
   buildTrendAvailabilityByPeriod,
   mergeCompletenessStatuses,
+  insightRangeSummary,
+  groupAccountInsightsByDateRange,
   type MetaAdSetDefinition,
   type MetaInsightRow,
   type PeriodCompleteness,
@@ -23,6 +25,35 @@ import {
   type TrendPeriodSignature,
 } from '../_shared/meta/aggregation.ts';
 import { insightHasDelivery } from '../_shared/meta/mixedAttributionDetector.ts';
+import {
+  getRequestedPeriodRange,
+  buildVerifiedScopeCoverage,
+  localIsoDate,
+  weekMondayIsoDate,
+  shiftIsoDate,
+  isIsoDate,
+  type VerifiedScopeCoverage,
+} from '../_shared/meta/syncCoverage.ts';
+
+const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
+  if (period === 'last_90d') {
+    if (timezone === 'UNKNOWN') {
+      throw new HttpError('Timezone is required for exact last_90d synchronization.', 400);
+    }
+    const until = localIsoDate(now, timezone);
+    const since = shiftIsoDate(until, -89);
+    
+  return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
+  }
+  if (period !== 'this_week') 
+  return { date_preset: period, time_increment: '1' };
+  if (timezone === 'UNKNOWN') 
+  return { date_preset: 'this_week_mon_today' };
+  const until = localIsoDate(now, timezone);
+  const since = weekMondayIsoDate(until);
+  
+  return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
+};
 
 interface SyncRequestBody {
   clientMetaAssetId?: string;
@@ -106,6 +137,12 @@ const COLLECTION_CONTRACT_VERSION = '2026-07-20.1';
 const OFFICIAL_SYNC_PERIOD = 'last_90d';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
+function assertSafeMetaId(id: string, label: string, status = 400): void {
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new HttpError(`Invalid ${label}`, status);
+  }
+}
+
 type RequestedLevel = typeof VALID_REQUESTED_LEVELS[number];
 
 interface EntitySelection {
@@ -121,195 +158,7 @@ const collectionStatus = <T>(result: PaginatedResult<T>): PeriodCompletenessStat
 const isIncomplete = (status: PeriodCompletenessStatus) =>
   status !== 'complete' && status !== 'zero_delivery';
 
-const localIsoDate = (date: Date, timezone: string): string => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-};
 
-const shiftIsoDate = (value: string, days: number): string => {
-  const date = new Date(`${value}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-};
-
-const weekMondayIsoDate = (value: string): string => {
-  const date = new Date(`${value}T12:00:00Z`);
-  const daysFromMonday = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - daysFromMonday);
-  return date.toISOString().slice(0, 10);
-};
-
-const insightPeriodParams = (period: string, timezone: string, now = new Date()): Record<string, string> => {
-  if (period !== 'this_week') return { date_preset: period, time_increment: '1' };
-  if (timezone === 'UNKNOWN') return { date_preset: 'this_week_mon_today' };
-  const until = localIsoDate(now, timezone);
-  const since = weekMondayIsoDate(until);
-  return { time_range: JSON.stringify({ since, until }), time_increment: '1' };
-};
-
-const isIsoDate = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-const insightRangeSummary = (rows: MetaInsightRow[]): MetaInsightRow | undefined => {
-  const ranges = rows
-    .filter((row) => isIsoDate(row.date_start) && isIsoDate(row.date_stop))
-    .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
-  if (ranges.length === 0) return rows[0];
-  return {
-    ...ranges[0],
-    date_start: ranges[0].date_start,
-    date_stop: ranges[ranges.length - 1].date_stop,
-  };
-};
-
-export const groupAccountInsightsByDateRange = (
-  rows: MetaInsightRow[]
-): MetaInsightRow[][] => {
-  const groups = new Map<string, MetaInsightRow[]>();
-
-  for (const row of rows) {
-    const dateStart = isIsoDate(row.date_start) ? row.date_start : null;
-    const dateStop = isIsoDate(row.date_stop) ? row.date_stop : null;
-    const key = JSON.stringify([dateStart, dateStop]);
-    const group = groups.get(key);
-
-    if (group) {
-      group.push(row);
-    } else {
-      groups.set(key, [row]);
-    }
-  }
-
-  return Array.from(groups.values());
-};
-
-const SAFE_META_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
-const assertSafeMetaId = (value: string, label: string, status = 400) => {
-  if (!SAFE_META_ID_PATTERN.test(value)) {
-    throw new HttpError(`Invalid ${label}`, status);
-  }
-};
-
-export interface PeriodRangeValidation {
-  status: PeriodCompletenessStatus;
-  warnings: string[];
-  errors: string[];
-  metadata: Record<string, unknown>;
-}
-
-export const validateReturnedPeriodRange = (
-  period: string,
-  row: MetaInsightRow | undefined,
-  timezone: string,
-  now = new Date()
-): PeriodRangeValidation => {
-  const warnings: string[] = [];
-  const errors: string[] = [];
-  const dateStart = row?.date_start ?? null;
-  const dateStop = row?.date_stop ?? null;
-  const today = timezone !== 'UNKNOWN' ? localIsoDate(now, timezone) : null;
-  const expectedThisMonthStart = today ? `${today.slice(0, 8)}01` : null;
-  const expectedThisWeekStart = today ? weekMondayIsoDate(today) : null;
-
-  const metadata: Record<string, unknown> = {
-    period,
-    timezone,
-    returnedDateStart: dateStart,
-    returnedDateStop: dateStop,
-    expectedLocalToday: today,
-    expectedThisMonthStart,
-    expectedThisWeekStart,
-  };
-
-  if (timezone === 'UNKNOWN') {
-    errors.push('Timezone unavailable for account period validation.');
-  }
-  if (!isIsoDate(dateStart)) {
-    errors.push('Meta returned no valid date_start for the requested period.');
-  }
-  if (!isIsoDate(dateStop)) {
-    errors.push('Meta returned no valid date_stop for the requested period.');
-  }
-  if (errors.length > 0) {
-    return { status: 'validation_error', warnings, errors, metadata };
-  }
-
-  const validDateStart = dateStart as string;
-  const validDateStop = dateStop as string;
-
-  if (validDateStart > validDateStop) {
-    errors.push('Meta returned date_start after date_stop.');
-  }
-  if (today && validDateStop > today) {
-    errors.push('Meta returned a future date_stop for the account timezone.');
-  }
-
-  if (period === 'this_month') {
-    metadata.expectedDateStart = expectedThisMonthStart;
-    metadata.expectedDateStop = today;
-    if (validDateStart !== expectedThisMonthStart) {
-      errors.push('Meta this_month date_start does not match the account month start.');
-    }
-    if (today && validDateStop !== today) {
-      warnings.push('Meta this_month date_stop differs from the local expectation; using returned range.');
-    }
-  } else if (period === 'today') {
-    metadata.expectedDateStart = today;
-    metadata.expectedDateStop = today;
-    if (today && (validDateStart !== today || validDateStop !== today)) {
-      errors.push('Meta today range does not match the account local date.');
-    }
-  } else if (period === 'this_week') {
-    metadata.expectedDateStart = expectedThisWeekStart;
-    metadata.expectedDateStop = today;
-    if (expectedThisWeekStart && today && (validDateStart !== expectedThisWeekStart || validDateStop !== today)) {
-      const validRelatedRange = validDateStart >= expectedThisWeekStart && validDateStart <= validDateStop && validDateStop <= today;
-      if (validRelatedRange) {
-        warnings.push('Meta this_week range differs from local expectation; using returned range.');
-      } else {
-        errors.push('Meta this_week range is not related to the requested calendar week.');
-      }
-    }
-  } else if (period === 'last_7d') {
-    const expectedStart = today ? shiftIsoDate(today, -6) : null;
-    metadata.expectedDateStart = expectedStart;
-    metadata.expectedDateStop = today;
-    if (expectedStart && today && (validDateStart !== expectedStart || validDateStop !== today)) {
-      const validRelatedRange = validDateStart >= expectedStart && validDateStart <= validDateStop && validDateStop <= today;
-      if (validRelatedRange) {
-        warnings.push('Meta last_7d range differs from local expectation; using returned range.');
-      } else {
-        errors.push('Meta last_7d range is not related to the requested period.');
-      }
-    }
-  } else if (period === 'last_30d') {
-    const expectedStart = today ? shiftIsoDate(today, -29) : null;
-    metadata.expectedDateStart = expectedStart;
-    metadata.expectedDateStop = today;
-    if (expectedStart && today && (validDateStart !== expectedStart || validDateStop !== today)) {
-      const validRelatedRange = validDateStart >= expectedStart && validDateStart <= validDateStop && validDateStop <= today;
-      if (validRelatedRange) {
-        warnings.push('Meta last_30d range differs from local expectation; using returned range.');
-      } else {
-        errors.push('Meta last_30d range is not related to the requested period.');
-      }
-    }
-  }
-
-  return {
-    status: errors.length > 0 ? 'validation_error' : 'complete',
-    warnings,
-    errors,
-    metadata,
-  };
-};
 
 const normalizeIdArray = (...values: unknown[]): string[] => {
   const ids = values.flatMap((value) => Array.isArray(value) ? value : [])
@@ -511,6 +360,7 @@ async function resolveOwnedClientMetaAsset(
   const row = rows[0];
   if (!row) return null;
 
+  
   return {
     client_meta_asset_id: String(row.client_meta_asset_id),
     client_id: String(row.client_id),
@@ -578,6 +428,7 @@ const verifyPersistedSyncRun = async (
   const accountMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'account');
   const campaignMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'campaign');
 
+  
   return {
     runId,
     status: run.status ?? null,
@@ -1150,7 +1001,8 @@ export async function handleRequest(req: Request) {
               }),
         ]);
 
-      return { period, accountInsightsResult, campaignInsightsResult, adsetInsightsResult, adInsightsResult };
+      
+  return { period, accountInsightsResult, campaignInsightsResult, adsetInsightsResult, adInsightsResult };
     }));
 
     // Reassemble results from the parallel execution into the existing data structures
@@ -1178,24 +1030,9 @@ export async function handleRequest(req: Request) {
       }
 
       accountInsightsByPeriod[period] = accountInsightsResult.data;
-      const accountRangeValidation = validateReturnedPeriodRange(
-        period,
-        insightRangeSummary(accountInsightsResult.data),
-        timezone
-      );
-      rangeDiagnosticsByPeriod[period] = accountRangeValidation.metadata;
-      for (const warning of accountRangeValidation.warnings) {
-        const message = `Account insights ${period}: ${warning}`;
-        collectionWarnings.push(message);
-        collectionMessages.push(message);
-        console.warn(message, accountRangeValidation.metadata);
-      }
-      for (const validationError of accountRangeValidation.errors) {
-        const message = `Account insights ${period}: ${validationError}`;
-        collectionErrors.push(message);
-        collectionMessages.push(message);
-        console.warn(message, accountRangeValidation.metadata);
-      }
+      
+      const requestedRange = getRequestedPeriodRange(period, timezone);
+      rangeDiagnosticsByPeriod[period] = requestedRange;
 
       const filteredCampaignInsights = campaignInsightsResult.data.filter((row) =>
         Boolean(row.campaign_id) && activeCampaignIds.has(row.campaign_id as string)
@@ -1219,7 +1056,6 @@ export async function handleRequest(req: Request) {
       const accountCollectionStatus = mergeCompletenessStatuses([
         collectionStatus(accountInsightsResult),
         accountContextStatus,
-        accountRangeValidation.status,
       ]);
 
       collectionStatusByPeriod[period] = {
@@ -1582,6 +1418,26 @@ export async function handleRequest(req: Request) {
       || (shouldCollectAds && adsResult.completionStatus === 'rate_limit_exhausted')
       || Object.values(overallCompletenessByPeriod).some((status) => status === 'rate_limit_exhausted');
 
+    const accountCoverage = buildVerifiedScopeCoverage({
+      requestedDateStart: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStart as string || '',
+      requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
+      returnedRows: accountInsightsByPeriod[periods[0]] || [],
+      completionStatus: collectionStatusByPeriod[periods[0]]?.account as any || 'validation_error',
+      hasCollectionErrors: collectionErrors.length > 0 || accountContextStatus !== 'complete'
+    });
+
+    const campaignCoverage = buildVerifiedScopeCoverage({
+      requestedDateStart: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStart as string || '',
+      requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
+      returnedRows: campaignInsightsByPeriod[periods[0]] || [],
+      completionStatus: collectionStatusByPeriod[periods[0]]?.campaign as any || 'validation_error',
+      hasCollectionErrors: collectionErrors.length > 0 || campaignsResult.completionStatus !== 'complete'
+    });
+
+    const dateStart = accountCoverage.coveredDateStart;
+    const dateStop = accountCoverage.coveredDateStop;
+    
+    // Add coverage to metadata
     const p_metadata = {
       error_message: errorMessage || null,
       completeness_by_period: overallCompletenessByPeriod,
@@ -1593,6 +1449,10 @@ export async function handleRequest(req: Request) {
       collection_warnings: collectionWarnings,
       collection_errors: collectionErrors,
       range_diagnostics_by_period: rangeDiagnosticsByPeriod,
+      coverage: {
+        account: accountCoverage,
+        campaigns: campaignCoverage
+      },
       // Traceability fields to compare this run against the Ads Manager, per the
       // linked-client sync contract: which client/account this run actually
       // covered, and exactly how each period was requested from the Graph API.
@@ -1610,15 +1470,11 @@ export async function handleRequest(req: Request) {
         periodParamsByPeriod: Object.fromEntries(periods.map((period) => [period, insightPeriodParams(period, timezone)])),
       },
     };
+    
     const terminationReason = syncStatus === 'success'
       ? 'completed'
       : wasRateLimited ? 'rate_limit_exhausted' : 'partial_collection';
 
-    const collectedRanges = p_normalized_metrics
-      .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop)
-      .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
-    const dateStart = collectedRanges[0]?.date_start || null;
-    const dateStop = collectedRanges[collectedRanges.length - 1]?.date_stop || null;
     const { error: contextError } = await supabaseClient.from('meta_sync_runs').update({
       date_start: dateStart,
       date_stop: dateStop,
@@ -1653,7 +1509,7 @@ export async function handleRequest(req: Request) {
        throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
     }
 
-    const dashboardQualificationRequired = runScope === 'full_account'
+    console.error({requestedLevel, length: accountMetricRows.length}); const dashboardQualificationRequired = runScope === 'full_account'
       && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(requestedLevel)
       && accountMetricRows.length > 0;
 

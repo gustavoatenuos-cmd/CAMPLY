@@ -128,6 +128,27 @@ const isCollectionError = (
  * - complete + zero_delivery means the scope had delivery overall;
  * - zero_delivery is returned only when every non-error scope had no delivery.
  */
+export const insightRangeSummary = (rows: MetaInsightRow[] | undefined): { date_start: string | null; date_stop: string | null } | undefined => {
+  if (!rows || rows.length === 0) return undefined;
+  let date_start: string | null = null;
+  let date_stop: string | null = null;
+  for (const row of rows) {
+    if (row.date_start && (!date_start || row.date_start < date_start)) date_start = row.date_start;
+    if (row.date_stop && (!date_stop || row.date_stop > date_stop)) date_stop = row.date_stop;
+  }
+  return { date_start, date_stop };
+};
+
+export const groupAccountInsightsByDateRange = (rows: MetaInsightRow[]): MetaInsightRow[][] => {
+  const groups = new Map<string, MetaInsightRow[]>();
+  for (const row of rows) {
+    const key = `${row.date_start}_${row.date_stop}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+  return Array.from(groups.values());
+};
+
 export function mergeCompletenessStatuses(
   statuses: PeriodCompletenessStatus[]
 ): PeriodCompletenessStatus {

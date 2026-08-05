@@ -218,8 +218,8 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
 
               <p className="mt-3 text-xs text-brand-muted">
                 {statusLabel(client.clientStatus)} · {
-                  account?.lastSuccessfulRun?.finishedAt
-                    ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
+                  account?.dataRun?.finishedAt
+                    ? new Date(account.dataRun.finishedAt).toLocaleString('pt-BR')
                     : 'Sem sync confiável'
                 }
               </p>
@@ -264,7 +264,7 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                     )}
                   </div>
                   <p className="text-xs text-brand-muted">
-                    Qualidade: {account?.dataQuality.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}
+                    Qualidade: {account?.dataQualityByScope?.account?.status || client.dataQuality.status} · Moeda: {account?.currency || 'não informada'} · Fuso: {account?.timezone || 'não informado'}
                   </p>
                 </div>
               )}
@@ -402,8 +402,8 @@ export function ClientPerformanceTable({ clients, period }: { clients: GlobalCli
                         <p className="font-semibold text-white">{statusLabel(client.clientStatus)}</p>
                         <p className="mt-1 flex items-center gap-1 text-[10px] text-brand-muted">
                           <Clock3 size={11} />
-                          {account?.lastSuccessfulRun?.finishedAt
-                            ? new Date(account.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR')
+                          {account?.dataRun?.finishedAt
+                            ? new Date(account.dataRun.finishedAt).toLocaleString('pt-BR')
                             : 'Sem sync confiável'}
                         </p>
                         {/* Botão fantasma — aparece no hover da linha */}

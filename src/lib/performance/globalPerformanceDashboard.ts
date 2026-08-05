@@ -76,6 +76,16 @@ export interface GlobalMetricGroup {
   metrics: Record<string, MetricContract>;
 }
 
+export interface DataQualityScopeContract {
+  status: 'complete' | 'unavailable';
+  reason: string | null;
+}
+
+export interface DataQualityByScopeContract {
+  account: DataQualityScopeContract;
+  campaigns: DataQualityScopeContract;
+}
+
 export interface GlobalPerformanceAccount {
   clientMetaAssetId: string;
   metaAssetId: string;
@@ -90,6 +100,8 @@ export interface GlobalPerformanceAccount {
   budgetPacing: BudgetPacingResult | null;
   score?: PerformanceScore;
   dataQuality: DataQualityContract;
+  dataQualityByScope: DataQualityByScopeContract;
+  dataRun: RunSummary | null;
   lastSuccessfulRun: RunSummary | null;
   lastAttempt: RunSummary | null;
 }
@@ -581,6 +593,11 @@ export async function loadGlobalPerformanceDashboard(options: {
           metrics: accountMetrics,
           budgetPacing: null,
           dataQuality: { status: 'complete', reason: null },
+          dataQualityByScope: {
+            account: { status: 'complete', reason: null },
+            campaigns: { status: 'complete', reason: null },
+          },
+          dataRun: run,
           lastSuccessfulRun: run,
           lastAttempt: run,
         }] : [],
