@@ -206,13 +206,16 @@ export const validateReturnedPeriodRange = (
 
   if (errors.length > 0) {
     status = 'validation_error';
-  } else if (!validDateStart || !validDateStop) {
+  } else if (!row) {
     if (collectionStatus === 'complete' && requestedDateStart && requestedDateStop) {
       status = 'zero_delivery';
     } else {
       status = 'validation_error';
-      errors.push('No valid returned dates and collection was not confirmed complete.');
+      errors.push('No insight row returned and collection was not confirmed complete.');
     }
+  } else if (!validDateStart || !validDateStop) {
+    status = 'validation_error';
+    errors.push('Insight row is missing valid date_start or date_stop.');
   } else if (rangeMatchesRequest) {
     status = 'complete';
   } else if (missingStartDays > 0 || missingEndDays > 0) {

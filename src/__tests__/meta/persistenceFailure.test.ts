@@ -284,5 +284,8 @@ describe('Persistence Failure Handling through Orchestrator', () => {
       periods: ['today'],
       selectedCampaigns: ['camp_1', '../metadata'],
     });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('Invalid selected Meta entity id');
   });
 });

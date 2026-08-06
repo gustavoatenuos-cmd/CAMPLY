@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { MetaInsightRow } from '../../../supabase/functions/_shared/meta/aggregation.ts';
 
 vi.mock('https://deno.land/std@0.177.0/http/server.ts', () => ({
   serve: vi.fn(),
@@ -35,8 +35,15 @@ vi.mock('../../../supabase/functions/_shared/meta-api.ts', () => ({
   META_GRAPH_VERSION: 'v25.0',
 }));
 
-let validateReturnedPeriodRange: any;
-let groupAccountInsightsByDateRange: any;
+let validateReturnedPeriodRange: (
+  period: string,
+  row: MetaInsightRow | undefined,
+  timezone: string,
+  collectionStatus: 'complete' | 'partial' | 'error',
+  now?: Date
+) => any;
+
+let groupAccountInsightsByDateRange: (rows: MetaInsightRow[]) => MetaInsightRow[][];
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { env: { get: () => '' } });
@@ -54,7 +61,7 @@ describe('Meta sync returned period range validation', () => {
   it('accepts this_month when Meta returns the account month start and local today', () => {
     const result = validateReturnedPeriodRange(
       'this_month',
-      { date_start: '2026-07-01', date_stop: '2026-07-15' },
+      { date_start: '2026-07-01', date_stop: '2026-07-15' } as unknown as MetaInsightRow,
       'America/Sao_Paulo',
       'complete',
       now
@@ -68,7 +75,7 @@ describe('Meta sync returned period range validation', () => {
   it('marks this_month partial when date_stop differs, indicating missing end days', () => {
     const result = validateReturnedPeriodRange(
       'this_month',
-      { date_start: '2026-07-01', date_stop: '2026-07-14' },
+      { date_start: '2026-07-01', date_stop: '2026-07-14' } as unknown as MetaInsightRow,
       'America/Sao_Paulo',
       'complete',
       now
@@ -81,20 +88,33 @@ describe('Meta sync returned period range validation', () => {
   it('rejects missing returned dates instead of fabricating a successful sync', () => {
     const result = validateReturnedPeriodRange(
       'this_month',
-      { date_start: '2026-07-01' },
+      { date_start: '2026-07-01' } as unknown as MetaInsightRow,
+      'America/Sao_Paulo',
+      'complete',
+      now
+    );
+
+    expect(result.status).toBe('validation_error');
+    expect(result.errors.join(' ')).toContain('missing valid date_start or date_stop');
+  });
+
+  it('reports zero_delivery when the response is truly empty and collection is complete', () => {
+    const result = validateReturnedPeriodRange(
+      'this_month',
+      undefined,
       'America/Sao_Paulo',
       'complete',
       now
     );
 
     expect(result.status).toBe('zero_delivery');
-    expect(result.errors.join(' ')).not.toContain('date_stop');
+    expect(result.errors).toEqual([]);
   });
 
   it('rejects validation when the account timezone is unavailable', () => {
     const result = validateReturnedPeriodRange(
       'this_month',
-      { date_start: '2026-07-01', date_stop: '2026-07-15' },
+      { date_start: '2026-07-01', date_stop: '2026-07-15' } as unknown as MetaInsightRow,
       'UNKNOWN',
       'complete',
       now
@@ -107,7 +127,7 @@ describe('Meta sync returned period range validation', () => {
   it('accepts this_week when Meta returns Monday through local today', () => {
     const result = validateReturnedPeriodRange(
       'this_week',
-      { date_start: '2026-07-13', date_stop: '2026-07-15' },
+      { date_start: '2026-07-13', date_stop: '2026-07-15' } as unknown as MetaInsightRow,
       'America/Sao_Paulo',
       'complete',
       now
@@ -123,9 +143,9 @@ describe('Meta sync returned period range validation', () => {
 describe('Meta account insight grouping', () => {
   it('groups duplicate account rows by exact daily range before normalization', () => {
     const groups = groupAccountInsightsByDateRange([
-      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '10' },
-      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '20' },
-      { date_start: '2026-07-15', date_stop: '2026-07-15', spend: '30' },
+      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '10' } as unknown as MetaInsightRow,
+      { date_start: '2026-07-14', date_stop: '2026-07-14', spend: '20' } as unknown as MetaInsightRow,
+      { date_start: '2026-07-15', date_stop: '2026-07-15', spend: '30' } as unknown as MetaInsightRow,
     ]);
 
     expect(groups).toHaveLength(2);
@@ -135,8 +155,8 @@ describe('Meta account insight grouping', () => {
 
   it('separates rows without valid dates into their own validation buckets', () => {
     const groups = groupAccountInsightsByDateRange([
-      { spend: '10' },
-      { date_start: 'invalid', date_stop: null, spend: '20' },
+      { spend: '10' } as unknown as MetaInsightRow,
+      { date_start: 'invalid', date_stop: null, spend: '20' } as unknown as MetaInsightRow,
     ]);
 
     expect(groups).toHaveLength(2);

@@ -1180,5 +1180,34 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.get_analytics_capabilities()
+RETURNS JSONB
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'contractVersion', 7,
+    'dashboardAvailable', true,
+    'dashboardRpc', 'get_global_performance_dashboard_v2',
+    'supportedPeriods', jsonb_build_array(
+      'today',
+      'yesterday',
+      'today_and_yesterday',
+      'last_7d',
+      'last_30d',
+      'last_90d'
+    ),
+    'supportedLevels', jsonb_build_array(
+      'campaign',
+      'adset',
+      'ad'
+    ),
+    'targetsAvailable', true,
+    'reconciliationAvailable', true,
+    'traceableMetrics', true
+  );
+$$;
 
-
+GRANT EXECUTE ON FUNCTION public.get_analytics_capabilities() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_analytics_capabilities() TO service_role;
