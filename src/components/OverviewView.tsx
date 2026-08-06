@@ -443,7 +443,7 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   const priorities = useMemo(() => filteredClients
     .flatMap((client) => client.evaluations.map((evaluation) => ({ client, evaluation })))
     .filter(({ evaluation }) => ['critical', 'attention', 'partial_data'].includes(evaluation.status))
-    .sort((a, b) => evaluationSeverity[b.evaluation.status] - evaluationSeverity[a.evaluation.status]
+    .sort((a, b) => evaluationSeverity[b.evaluation.status as PerformanceStatus] - evaluationSeverity[a.evaluation.status as PerformanceStatus]
       || b.evaluation.confidence - a.evaluation.confidence
       || (b.evaluation.priorityWeight ?? 1) - (a.evaluation.priorityWeight ?? 1)
       || financialImpact(b.client, b.evaluation) - financialImpact(a.client, a.evaluation)

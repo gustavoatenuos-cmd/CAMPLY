@@ -29,8 +29,7 @@ function account(overrides: Partial<GlobalPerformanceAccount> = {}): GlobalPerfo
     dateStop: null,
     metrics: { spend: { value: 100, available: true } as any },
     budgetPacing: null,
-    dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
+    dataQuality: { status: 'complete', reason: null }, dataQualityByScope: { account: { status: 'unavailable', reason: 'legacy' }, campaigns: { status: 'unavailable', reason: 'legacy' } }, dataRun: null, lastSuccessfulRun: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
     lastAttempt: { id: '1', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '', finishedAt: '2026-01-01', terminationReason: null } as any,
     ...overrides,
   };
@@ -48,12 +47,12 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
     evaluations: [],
     budgetPacing: null,
     score: { value: 80, status: 'healthy' } as any,
-    dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: null,
+    dataQuality: { status: 'complete', reason: null }, lastSuccessfulRun: null,
     lastAttempt: null,
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
     ...overrides,
   };
 }

@@ -1,5 +1,56 @@
 -- Fix dashboard zero delivery by allowing runs without metrics in the period to yield no_delivery
 
+CREATE OR REPLACE FUNCTION public.decorate_analytics_metric(
+  p_metric_id TEXT,
+  p_metric JSONB,
+  p_context JSONB
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'metricId', p_metric_id,
+    'value', CASE
+      WHEN p_metric IS NULL
+        OR jsonb_typeof(p_metric) <> 'object'
+        OR COALESCE((p_metric->>'available')::boolean, false) IS NOT TRUE
+        OR COALESCE(jsonb_typeof(p_metric->'value') = 'number', false) IS NOT TRUE
+        THEN NULL
+      ELSE p_metric->'value'
+    END,
+    'available', CASE
+      WHEN p_metric IS NULL OR jsonb_typeof(p_metric) <> 'object' THEN false
+      ELSE COALESCE((p_metric->>'available')::boolean, false)
+        AND COALESCE(jsonb_typeof(p_metric->'value') = 'number', false)
+    END,
+    'completenessStatus', CASE
+      WHEN p_metric IS NULL OR jsonb_typeof(p_metric) <> 'object' THEN 'unavailable'
+      ELSE COALESCE(NULLIF(p_metric->>'completenessStatus', ''), 'unavailable')
+    END,
+    'currency', p_context->'currency',
+    'dateStart', p_context->'dateStart',
+    'dateStop', p_context->'dateStop',
+    'timezone', p_context->'timezone',
+    'sourceLevel', COALESCE(p_context->'sourceLevel', '"account"'::jsonb),
+    'attributionSetting', p_context->'attributionSetting',
+    'classifiedObjective', p_context->'classifiedObjective',
+    'destinationType', p_context->'destinationType',
+    'syncRunId', p_context->'syncRunId',
+    'sourceRunIds', p_context->'sourceRunIds',
+    'sourceAccountIds', p_context->'sourceAccountIds',
+    'sourceClientMetaAssetIds', p_context->'sourceClientMetaAssetIds',
+    'collectedAt', p_context->'collectedAt',
+    'clientMetaAssetId', p_context->'clientMetaAssetId',
+    'accountId', p_context->'accountId',
+    'accountName', p_context->'accountName',
+    'campaignId', p_context->'campaignId',
+    'adsetId', p_context->'adsetId',
+    'adId', p_context->'adId'
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION public.get_global_performance_dashboard_v2(p_period text DEFAULT 'this_month'::text, p_client_ids text[] DEFAULT NULL::text[], p_asset_ids uuid[] DEFAULT NULL::uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -154,15 +205,24 @@ BEGIN
   latest_success AS (
     SELECT DISTINCT ON (a.client_meta_asset_id)
       a.client_meta_asset_id,
+      a.client_id,
+      a.meta_asset_id,
+      a.integration_id,
+      a.ad_account_id,
       r.id,
       r.status,
       r.requested_period,
+      r.requested_level,
       r.run_scope,
       r.started_at,
       r.finished_at,
+      r.created_at,
       r.termination_reason,
       r.date_start,
-      r.date_stop
+      r.date_stop,
+      coalesce(r.timezone, a.timezone) AS timezone,
+      coalesce(r.currency, a.currency) AS currency,
+      r.metadata
     FROM accounts a
     JOIN public.meta_sync_runs r
       ON r.user_id = v_user_id
@@ -189,25 +249,40 @@ BEGIN
       r.date_stop,
       COALESCE(r.timezone, a.timezone) AS timezone,
       COALESCE(r.currency, a.currency) AS currency,
-      r.metadata->'coverage'->'account'->>'status' AS account_coverage_status,
-      r.metadata->'coverage'->'campaigns'->>'status' AS campaigns_coverage_status
+      CASE 
+        WHEN r.metadata ? 'coverage' THEN r.metadata->'coverage'->'account'->>'status'
+        ELSE 'legacy_unverified_coverage'
+      END AS account_coverage_status,
+      CASE 
+        WHEN r.metadata ? 'coverage' THEN r.metadata->'coverage'->'campaigns'->>'status'
+        ELSE 'legacy_unverified_coverage'
+      END AS campaigns_coverage_status
     FROM accounts a
     JOIN selected_ranges sr ON sr.client_meta_asset_id = a.client_meta_asset_id
     JOIN public.meta_sync_runs r
       ON r.user_id = v_user_id
      AND r.integration_id = a.integration_id
      AND r.ad_account_id = a.ad_account_id
-     AND r.date_start <= sr.date_start
-     AND r.date_stop >= sr.date_stop
      AND r.requested_period = 'last_90d'
      AND r.run_scope = 'full_account'
      AND (
-       r.status = 'success' OR 
-       r.metadata->'coverage'->'account'->>'status' IN ('complete', 'zero_delivery')
+       ( -- v7 strict coverage
+         r.metadata ? 'coverage' AND
+         r.metadata->'coverage'->'account'->>'status' IN ('complete', 'zero_delivery') AND
+         jsonb_array_length(COALESCE(r.metadata->'coverage'->'account'->'missingDates', '[]'::jsonb)) = 0 AND
+         (r.metadata->'coverage'->'account'->>'coveredDateStart') <= sr.date_start::text AND
+         (r.metadata->'coverage'->'account'->>'coveredDateStop') >= sr.date_stop::text
+       )
+       OR
+       ( -- legacy fallback
+         NOT (r.metadata ? 'coverage') AND
+         r.status = 'success' AND
+         r.date_start <= sr.date_start AND
+         r.date_stop >= sr.date_stop
+       )
      )
     ORDER BY 
       a.client_meta_asset_id, 
-      CASE WHEN r.status = 'success' THEN 1 ELSE 2 END ASC,
       r.finished_at DESC NULLS LAST, 
       r.started_at DESC, 
       r.created_at DESC
@@ -230,25 +305,40 @@ BEGIN
       r.date_stop,
       COALESCE(r.timezone, a.timezone) AS timezone,
       COALESCE(r.currency, a.currency) AS currency,
-      r.metadata->'coverage'->'account'->>'status' AS account_coverage_status,
-      r.metadata->'coverage'->'campaigns'->>'status' AS campaigns_coverage_status
+      CASE 
+        WHEN r.metadata ? 'coverage' THEN r.metadata->'coverage'->'account'->>'status'
+        ELSE 'legacy_unverified_coverage'
+      END AS account_coverage_status,
+      CASE 
+        WHEN r.metadata ? 'coverage' THEN r.metadata->'coverage'->'campaigns'->>'status'
+        ELSE 'legacy_unverified_coverage'
+      END AS campaigns_coverage_status
     FROM accounts a
     JOIN selected_ranges sr ON sr.client_meta_asset_id = a.client_meta_asset_id
     JOIN public.meta_sync_runs r
       ON r.user_id = v_user_id
      AND r.integration_id = a.integration_id
      AND r.ad_account_id = a.ad_account_id
-     AND r.date_start <= sr.date_start
-     AND r.date_stop >= sr.date_stop
      AND r.requested_period = 'last_90d'
      AND r.run_scope = 'full_account'
      AND (
-       r.status = 'success' OR 
-       r.metadata->'coverage'->'campaigns'->>'status' IN ('complete', 'zero_delivery')
+       ( -- v7 strict coverage
+         r.metadata ? 'coverage' AND
+         r.metadata->'coverage'->'campaigns'->>'status' IN ('complete', 'zero_delivery') AND
+         jsonb_array_length(COALESCE(r.metadata->'coverage'->'campaigns'->'missingDates', '[]'::jsonb)) = 0 AND
+         (r.metadata->'coverage'->'campaigns'->>'coveredDateStart') <= sr.date_start::text AND
+         (r.metadata->'coverage'->'campaigns'->>'coveredDateStop') >= sr.date_stop::text
+       )
+       OR
+       ( -- legacy fallback
+         NOT (r.metadata ? 'coverage') AND
+         r.status = 'success' AND
+         r.date_start <= sr.date_start AND
+         r.date_stop >= sr.date_stop
+       )
      )
     ORDER BY 
       a.client_meta_asset_id, 
-      CASE WHEN r.status = 'success' THEN 1 ELSE 2 END ASC,
       r.finished_at DESC NULLS LAST, 
       r.started_at DESC, 
       r.created_at DESC
@@ -530,14 +620,17 @@ BEGIN
       min(a.timezone) FILTER (WHERE a.timezone IS NOT NULL) AS single_timezone,
       min(sr.date_start) AS date_start,
       max(sr.date_stop) AS date_stop,
-      (min(ls.id::text) FILTER (WHERE ls.id IS NOT NULL))::uuid AS sync_run_id,
-      max(ls.finished_at) AS collected_at,
+      (min(uar.id::text) FILTER (WHERE uar.id IS NOT NULL))::uuid AS sync_run_id,
+      max(uar.finished_at) AS collected_at,
       min(a.client_meta_asset_id::text)::uuid AS single_client_meta_asset_id,
       min(a.ad_account_id) AS single_ad_account_id,
-      min(a.account_name) AS single_account_name
+      min(a.account_name) AS single_account_name,
+      array_agg(DISTINCT uar.id::text) FILTER (WHERE uar.id IS NOT NULL) AS source_run_ids,
+      array_agg(DISTINCT a.ad_account_id) FILTER (WHERE a.ad_account_id IS NOT NULL) AS source_account_ids,
+      array_agg(DISTINCT a.client_meta_asset_id::text) FILTER (WHERE a.client_meta_asset_id IS NOT NULL) AS source_client_meta_asset_ids
     FROM active_clients ac
     LEFT JOIN accounts a ON a.client_id = ac.client_id
-    LEFT JOIN latest_success ls ON ls.client_meta_asset_id = a.client_meta_asset_id
+    LEFT JOIN usable_account_run uar ON uar.client_meta_asset_id = a.client_meta_asset_id
     LEFT JOIN selected_ranges sr ON sr.client_meta_asset_id = a.client_meta_asset_id
     GROUP BY ac.client_id
   ),
@@ -563,6 +656,9 @@ BEGIN
             'classifiedObjective', NULL,
             'destinationType', NULL,
             'syncRunId', CASE WHEN cc.account_count = 1 THEN cc.sync_run_id ELSE NULL END,
+            'sourceRunIds', to_jsonb(cc.source_run_ids),
+            'sourceAccountIds', to_jsonb(cc.source_account_ids),
+            'sourceClientMetaAssetIds', to_jsonb(cc.source_client_meta_asset_ids),
             'collectedAt', CASE WHEN cc.account_count = 1 THEN cc.collected_at ELSE NULL END,
             'clientMetaAssetId', CASE WHEN cc.account_count = 1 THEN cc.single_client_meta_asset_id ELSE NULL END,
             'accountId', CASE WHEN cc.account_count = 1 THEN cc.single_ad_account_id ELSE NULL END,
@@ -587,16 +683,16 @@ BEGIN
   ),
   group_metric_sums AS (
     SELECT
-      ls.client_id,
-      ls.client_meta_asset_id,
-      ls.meta_asset_id,
-      ls.ad_account_id,
-      ls.currency,
-      ls.timezone,
+      ucr.client_id,
+      ucr.client_meta_asset_id,
+      ucr.meta_asset_id,
+      ucr.ad_account_id,
+      ucr.currency,
+      ucr.timezone,
       sr.date_start,
       sr.date_stop,
-      ls.id AS sync_run_id,
-      ls.finished_at,
+      ucr.id AS sync_run_id,
+      ucr.finished_at,
       m.campaign_id,
       COALESCE(cs.campaign_name, m.campaign_id, 'Campanha sem nome') AS campaign_name,
       cs.classified_objective::text AS classified_objective,
@@ -614,13 +710,13 @@ BEGIN
           THEN 'zero_delivery'
         ELSE 'complete'
       END AS completeness_status
-    FROM usable_account_run ls
-    JOIN selected_ranges sr ON sr.client_meta_asset_id = ls.client_meta_asset_id
+    FROM usable_campaign_run ucr
+    JOIN selected_ranges sr ON sr.client_meta_asset_id = ucr.client_meta_asset_id
     JOIN public.meta_normalized_metrics m
-      ON m.sync_run_id = ls.id
+      ON m.sync_run_id = ucr.id
      AND m.user_id = v_user_id
-     AND m.integration_id = ls.integration_id
-     AND m.ad_account_id = ls.ad_account_id
+     AND m.integration_id = ucr.integration_id
+     AND m.ad_account_id = ucr.ad_account_id
      AND m.source_level = 'campaign'
      AND m.date_start >= sr.date_start
      AND m.date_stop <= sr.date_stop
@@ -635,16 +731,16 @@ BEGIN
     WHERE EXISTS (SELECT 1 FROM supported_metric_ids sm WHERE sm.metric_id = m.metric_id)
       AND COALESCE(NULLIF(upper(cs.effective_status), ''), NULLIF(upper(cs.meta_status), ''), '') = 'ACTIVE'
     GROUP BY
-      ls.client_id,
-      ls.client_meta_asset_id,
-      ls.meta_asset_id,
-      ls.ad_account_id,
-      ls.currency,
-      ls.timezone,
+      ucr.client_id,
+      ucr.client_meta_asset_id,
+      ucr.meta_asset_id,
+      ucr.ad_account_id,
+      ucr.currency,
+      ucr.timezone,
       sr.date_start,
       sr.date_stop,
-      ls.id,
-      ls.finished_at,
+      ucr.id,
+      ucr.finished_at,
       m.campaign_id,
       COALESCE(cs.campaign_name, m.campaign_id, 'Campanha sem nome'),
       cs.classified_objective::text,
@@ -1070,7 +1166,7 @@ BEGIN
             AND la.status = 'failed'
             AND la.started_at > ls.started_at
         ),
-        'analyticsContractVersion', 6
+        'analyticsContractVersion', 7
       )
       ORDER BY ac.display_name, ac.client_id
     ),

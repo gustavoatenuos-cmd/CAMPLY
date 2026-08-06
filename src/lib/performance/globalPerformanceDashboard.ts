@@ -16,6 +16,7 @@ import { traceDashboardClient } from './dashboardTrace';
 import { exactPeriodRange } from '../meta/periodRange';
 import { withTimeout } from '../withTimeout';
 import { invokeFunction } from '../invokeFunction';
+import { parseGlobalPerformanceDashboard } from './parseGlobalPerformanceDashboard';
 import type {
   BudgetPacingResult,
   MetricDatum,
@@ -58,7 +59,7 @@ export interface RunSummary {
 }
 
 export interface DataQualityContract {
-  status: 'complete' | 'partial' | 'unavailable';
+  status: 'complete' | 'partial' | 'zero_delivery' | 'unavailable';
   reason: string | null;
 }
 
@@ -106,6 +107,22 @@ export interface GlobalPerformanceAccount {
   lastAttempt: RunSummary | null;
 }
 
+export interface ClientAccountDataRun {
+  accountId: string;
+  accountName: string;
+  runId: string;
+  finishedAt: string;
+}
+
+export interface ClientDataFreshness {
+  runCount: number;
+  oldestAnchor: string | null;
+  anchorAccountId: string | null;
+  anchorAccountName: string | null;
+  reason: 'single_account' | 'oldest_of_multiple' | 'none';
+  sources: ClientAccountDataRun[];
+}
+
 export interface GlobalClientPerformance {
   clientId: string;
   clientName: string;
@@ -118,6 +135,7 @@ export interface GlobalClientPerformance {
   budgetPacing: BudgetPacingResult | null;
   score: PerformanceScore;
   dataQuality: DataQualityContract;
+  dataFreshness: ClientDataFreshness;
   lastSuccessfulRun: RunSummary | null;
   lastAttempt: RunSummary | null;
   hasNewerPartial: boolean;
@@ -580,6 +598,7 @@ export async function loadGlobalPerformanceDashboard(options: {
         clientId: fixture.clientId,
         clientName: fixture.clientName,
         clientStatus: connected ? 'available' : 'not_connected',
+        dataFreshness: { runCount: 1, oldestAnchor: '2026-07-01T18:00:00Z', reason: 'single_account', anchorAccountId: fixture.accountId, anchorAccountName: 'E2E Account', sources: [] },
         accounts: connected ? [{
           clientMetaAssetId: fixture.linkId,
           metaAssetId: fixture.assetId,
@@ -748,9 +767,7 @@ export async function loadGlobalPerformanceDashboard(options: {
     30_000
   );
 
-  const rows = Array.isArray(response.dashboard)
-    ? response.dashboard as GlobalClientPerformance[]
-    : [];
+  const rows = parseGlobalPerformanceDashboard(response.dashboard);
   const clientIds = rows.map((row) => row.clientId).filter(Boolean);
   if (clientIds.length > 0) {
     try {

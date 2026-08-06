@@ -161,7 +161,7 @@ export interface ClientAnalyticsDecision {
     status: 'no_target' | 'behind' | 'on_track' | 'ahead';
   };
   dataQuality: {
-    status: 'complete' | 'partial' | 'unavailable';
+    status: 'complete' | 'partial' | 'zero_delivery' | 'unavailable';
     reason: string | null;
     lastSyncAgeHours: number | null;
   };
@@ -324,7 +324,7 @@ function collectReasons(input: {
   resultCount: number | null;
   plannedBudget: number | null;
   budgetPacingStatus: BudgetPacingStatus;
-  dataQualityStatus: 'complete' | 'partial' | 'unavailable';
+  dataQualityStatus: 'complete' | 'partial' | 'zero_delivery' | 'unavailable';
   objectiveDataIncomplete: boolean;
 }): StatusReason[] {
   const reasons: StatusReason[] = [];

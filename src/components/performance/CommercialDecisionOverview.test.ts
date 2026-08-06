@@ -34,11 +34,11 @@ function client(
       summary: 'Operação saudável.',
       signals: [],
     },
-    dataQuality: { status: 'complete', reason: null },
-    lastSuccessfulRun: null,
+    dataQuality: { status: 'complete', reason: null }, lastSuccessfulRun: null,
     lastAttempt: null,
     hasNewerPartial: false,
     hasNewerFailure: false,
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
     ...overrides,
   };
 }
@@ -72,11 +72,12 @@ describe('buildSegmentSummaries', () => {
             elapsedDays: 4,
             totalDays: 7,
           },
-          dataQuality: { status: 'complete', reason: null },
+          dataQuality: { status: 'complete', reason: null }, dataQualityByScope: { account: { status: 'unavailable', reason: 'legacy' }, campaigns: { status: 'unavailable', reason: 'legacy' } }, dataRun: null,
           lastSuccessfulRun: null,
           lastAttempt: null,
         }],
         analysisProfile: {
+    
           clientId: 'clinica-a',
           vertical: 'saude',
           subsegment: 'clinica_odontologica',
@@ -112,11 +113,12 @@ describe('buildSegmentSummaries', () => {
           dateStop: '2026-07-02',
           metrics: { spend: spendMetric(50, 'USD') },
           budgetPacing: null,
-          dataQuality: { status: 'complete', reason: null },
+          dataQuality: { status: 'complete', reason: null }, dataQualityByScope: { account: { status: 'unavailable', reason: 'legacy' }, campaigns: { status: 'unavailable', reason: 'legacy' } }, dataRun: null,
           lastSuccessfulRun: null,
           lastAttempt: null,
         }],
         analysisProfile: {
+    
           clientId: 'clinica-b',
           vertical: 'saude',
           subsegment: 'clinica_estetica',
@@ -141,6 +143,7 @@ describe('buildSegmentSummaries', () => {
       }),
       client('sem-config', {
         analysisProfile: {
+    
           clientId: 'sem-config',
           vertical: 'varejo',
           subsegment: 'calcados',
@@ -165,6 +168,7 @@ describe('buildSegmentSummaries', () => {
       }),
       client('custom-segment', {
         analysisProfile: {
+    
           clientId: 'custom-segment',
           vertical: 'outros',
           subsegment: 'outros',

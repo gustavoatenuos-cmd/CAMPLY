@@ -235,6 +235,9 @@ export const validateReturnedPeriodRange = (
   };
 };
 
+export type CollectionCompletionStatus = 'complete' | 'partial' | 'rate_limit_exhausted' | 'validation_error';
+export type RangeValidationStatus = 'complete' | 'partial' | 'zero_delivery' | 'validation_error';
+
 export const buildVerifiedScopeCoverage = ({
   requestedDateStart,
   requestedDateStop,
@@ -245,13 +248,37 @@ export const buildVerifiedScopeCoverage = ({
   requestedDateStart: string;
   requestedDateStop: string;
   returnedRows: MetaInsightRow[];
-  completionStatus: PeriodRangeValidation['status'];
+  completionStatus: CollectionCompletionStatus;
   hasCollectionErrors: boolean;
 }): VerifiedScopeCoverage => {
   const expectedSeries = generateDateSeries(requestedDateStart, requestedDateStop);
   const expectedDays = expectedSeries.length;
 
-  if (completionStatus === 'zero_delivery' && !hasCollectionErrors) {
+  const rowDates = new Set(returnedRows.filter(r => isIsoDate(r.date_start)).map(r => r.date_start));
+  const missingDates = expectedSeries.filter(d => !rowDates.has(d));
+  const coveredDays = expectedDays - missingDates.length;
+
+  const validRows = returnedRows.filter(r => isIsoDate(r.date_start) && isIsoDate(r.date_stop));
+  const sortedRows = validRows.sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
+  
+  const coveredDateStart = sortedRows[0]?.date_start || null;
+  const coveredDateStop = sortedRows[sortedRows.length - 1]?.date_stop || null;
+
+  if (completionStatus === 'complete' && !hasCollectionErrors && missingDates.length === 0 && expectedDays > 0) {
+    return {
+      status: 'complete',
+      requestedDateStart,
+      requestedDateStop,
+      coveredDateStart: requestedDateStart,
+      coveredDateStop: requestedDateStop,
+      expectedDays,
+      coveredDays,
+      missingDates,
+      reason: null,
+    };
+  }
+
+  if (completionStatus === 'complete' && !hasCollectionErrors && returnedRows.length === 0 && expectedDays > 0) {
     return {
       status: 'zero_delivery',
       requestedDateStart,
@@ -265,32 +292,26 @@ export const buildVerifiedScopeCoverage = ({
     };
   }
 
-  const rowDates = new Set(returnedRows.filter(r => isIsoDate(r.date_start)).map(r => r.date_start));
-  const missingDates = expectedSeries.filter(d => !rowDates.has(d));
-  const coveredDays = expectedDays - missingDates.length;
+  let status: VerifiedScopeCoverage['status'] = 'partial';
+  let reason: string | null = null;
 
-  const validRows = returnedRows.filter(r => isIsoDate(r.date_start) && isIsoDate(r.date_stop));
-  const sortedRows = validRows.sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
-  
-  const coveredDateStart = sortedRows[0]?.date_start || null;
-  const coveredDateStop = sortedRows[sortedRows.length - 1]?.date_stop || null;
-
-  if (hasCollectionErrors || completionStatus === 'validation_error' || missingDates.length > 0) {
-    return {
-      status: coveredDays > 0 ? 'partial' : 'unavailable',
-      requestedDateStart,
-      requestedDateStop,
-      coveredDateStart,
-      coveredDateStop,
-      expectedDays,
-      coveredDays,
-      missingDates,
-      reason: hasCollectionErrors ? 'collection_errors' : (completionStatus === 'validation_error' ? 'validation_error' : 'missing_days'),
-    };
+  if (completionStatus === 'validation_error' || completionStatus === 'rate_limit_exhausted') {
+    status = coveredDays > 0 ? 'partial' : 'unavailable';
+    reason = completionStatus;
+  } else if (hasCollectionErrors) {
+    status = coveredDays > 0 ? 'partial' : 'unavailable';
+    reason = 'collection_errors';
+  } else if (missingDates.length > 0) {
+    status = 'partial';
+    reason = 'missing_days';
+  } else {
+    // If we reach here, it's either partial completion status without errors, etc.
+    status = 'partial';
+    reason = 'partial_collection';
   }
 
   return {
-    status: 'complete',
+    status,
     requestedDateStart,
     requestedDateStop,
     coveredDateStart,
@@ -298,6 +319,6 @@ export const buildVerifiedScopeCoverage = ({
     expectedDays,
     coveredDays,
     missingDates,
-    reason: null,
+    reason,
   };
 };

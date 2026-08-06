@@ -28,7 +28,7 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
       dateStop: '2026-07-19',
       metrics: {},
       budgetPacing: null,
-      dataQuality: { status: 'complete', reason: null },
+      dataQuality: { status: 'complete', reason: null }, dataQualityByScope: { account: { status: 'unavailable', reason: 'legacy' }, campaigns: { status: 'unavailable', reason: 'legacy' } }, dataRun: null,
       lastSuccessfulRun: null,
       lastAttempt: null,
     }],
@@ -67,6 +67,7 @@ function client(overrides: Partial<GlobalClientPerformance> = {}): GlobalClientP
     },
     hasNewerPartial: false,
     hasNewerFailure: false,
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
     analysisProfile: null,
     ...overrides,
   };

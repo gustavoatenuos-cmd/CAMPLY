@@ -43,7 +43,7 @@ export interface PerformanceScoreInput {
     | 'partial'
     | 'failed';
   dataQuality: {
-    status: 'complete' | 'partial' | 'unavailable';
+    status: 'complete' | 'partial' | 'zero_delivery' | 'unavailable';
     reason: string | null;
   };
   evaluations: PerformanceEvaluation[];
@@ -87,6 +87,7 @@ const syncPoints: Record<PerformanceScoreInput['clientStatus'], number> = {
 
 const qualityPoints: Record<PerformanceScoreInput['dataQuality']['status'], number> = {
   complete: 15,
+  zero_delivery: 10,
   partial: 7,
   unavailable: 0,
 };

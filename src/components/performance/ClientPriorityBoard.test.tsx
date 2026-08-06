@@ -26,6 +26,7 @@ function client(id: string, name: string): GlobalClientPerformance {
     hasNewerPartial: false,
     hasNewerFailure: false,
     analysisProfile: null,
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
   };
 }
 

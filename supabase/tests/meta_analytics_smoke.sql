@@ -166,7 +166,7 @@ BEGIN
   );
 
   v_capabilities := public.get_analytics_capabilities();
-  IF (v_capabilities->>'contractVersion')::integer <> 6
+  IF (v_capabilities->>'contractVersion')::integer <> 7
      OR COALESCE((v_capabilities->>'dashboardAvailable')::boolean, false) IS NOT TRUE
      OR v_capabilities->>'dashboardRpc' <> 'get_global_performance_dashboard_v2'
      OR NOT (v_capabilities->'supportedPeriods' @> '["today", "yesterday", "today_and_yesterday", "last_7d", "last_30d", "last_90d"]'::jsonb)

@@ -416,7 +416,7 @@ const verifyPersistedSyncRun = async (
 ): Promise<PersistedSyncVerification> => {
   const { data: run, error: runError } = await supabaseClient
     .from('meta_sync_runs')
-    .select('id,status,finished_at,date_start,date_stop,timezone,currency,run_scope,requested_level,requested_period')
+    .select('id,status,metadata,run_scope,requested_level,requested_period')
     .eq('id', runId)
     .eq('user_id', userId)
     .single();
@@ -428,22 +428,25 @@ const verifyPersistedSyncRun = async (
   const accountMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'account');
   const campaignMetricsCount = await countPersistedMetrics(supabaseClient, runId, userId, 'campaign');
 
-  
+  const coverage = run.metadata?.coverage || {};
+  const accountCoverage = coverage.account || { status: 'unavailable', reason: 'legacy' };
+  const campaignCoverage = coverage.campaigns || { status: 'unavailable', reason: 'legacy' };
+
   return {
     runId,
-    status: run.status ?? null,
-    finishedAt: run.finished_at ?? null,
-    dateStart: run.date_start ?? null,
-    dateStop: run.date_stop ?? null,
-    timezone: run.timezone ?? null,
-    currency: run.currency ?? null,
+    runStatus: run.status as 'success' | 'partial' | 'failed',
     accountMetricsCount,
     campaignMetricsCount,
-    dashboardQualified: run.status === 'success'
+    accountCoverage,
+    campaignCoverage,
+    dashboardAccountQualified: ['complete', 'zero_delivery'].includes(accountCoverage.status)
       && run.run_scope === 'full_account'
       && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(run.requested_level || '')
-      && run.requested_period === requestedPeriod
-      && accountMetricsCount > 0,
+      && run.requested_period === requestedPeriod,
+    dashboardCampaignQualified: ['complete', 'zero_delivery'].includes(campaignCoverage.status)
+      && run.run_scope === 'full_account'
+      && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(run.requested_level || '')
+      && run.requested_period === requestedPeriod,
   };
 };
 
@@ -592,7 +595,9 @@ export async function handleRequest(req: Request) {
     let currency = 'UNKNOWN';
     const collectionMessages: string[] = [];
     const collectionWarnings: string[] = [];
-    const collectionErrors: string[] = [];
+    const accountCollectionErrors: string[] = [];
+    const campaignCollectionErrors: string[] = [];
+    const generalCollectionErrors: string[] = [];
     const rangeDiagnosticsByPeriod: Record<string, PeriodRangeValidation['metadata']> = {};
     let accountContextStatus: PeriodCompletenessStatus = 'complete';
 
@@ -659,13 +664,15 @@ export async function handleRequest(req: Request) {
         : 'UNKNOWN';
       if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
         accountContextStatus = 'validation_error';
-        collectionErrors.push('Meta account timezone or currency is unavailable.');
+        accountCollectionErrors.push('Meta account timezone or currency is unavailable.');
+        generalCollectionErrors.push('Meta account timezone or currency is unavailable.');
         collectionMessages.push('Meta account timezone or currency is unavailable.');
       }
     } catch (error) {
       accountContextStatus = error instanceof MetaRateLimitError ? 'rate_limit_exhausted' : 'validation_error';
       const message = `Meta account context unavailable: ${error instanceof Error ? error.message : 'unknown error'}`;
-      collectionErrors.push(message);
+      accountCollectionErrors.push(message);
+      generalCollectionErrors.push(message);
       collectionMessages.push(message);
     }
 
@@ -1386,24 +1393,27 @@ export async function handleRequest(req: Request) {
     const accountDeliveryDetected = accountInsightsByPeriod[periods[0]]?.some((row) => insightHasDelivery(row)) ?? false;
     if (accountDeliveryDetected && accountMetricRows.length === 0) {
       const message = 'Account delivery was detected but no account-level metrics were prepared for persistence.';
-      collectionErrors.push(message);
+      accountCollectionErrors.push(message);
+      generalCollectionErrors.push(message);
       collectionMessages.push(message);
     }
     if (accountMetricRows.some((metric) => !metric.date_start || !metric.date_stop)) {
       const message = 'Account-level metrics contain missing date_start or date_stop.';
-      collectionErrors.push(message);
+      accountCollectionErrors.push(message);
+      generalCollectionErrors.push(message);
       collectionMessages.push(message);
     }
     if (timezone === 'UNKNOWN' || currency === 'UNKNOWN') {
       const message = 'Meta account context is incomplete after collection.';
-      if (!collectionErrors.includes(message)) collectionErrors.push(message);
+      if (!accountCollectionErrors.includes(message)) accountCollectionErrors.push(message);
+      if (!generalCollectionErrors.includes(message)) generalCollectionErrors.push(message);
     }
     const collectionIncomplete = Object.values(overallCompletenessByPeriod).some(isIncomplete)
       || campaignsResult.completionStatus !== 'complete'
       || adsetsResult.completionStatus !== 'complete'
       || adCollectionIncomplete
       || accountContextStatus !== 'complete'
-      || collectionErrors.length > 0;
+      || generalCollectionErrors.length > 0;
     
     // Using partial if collection is incomplete.
     const syncStatus = collectionIncomplete ? 'partial' : 'success';
@@ -1423,7 +1433,7 @@ export async function handleRequest(req: Request) {
       requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
       returnedRows: accountInsightsByPeriod[periods[0]] || [],
       completionStatus: collectionStatusByPeriod[periods[0]]?.account as any || 'validation_error',
-      hasCollectionErrors: collectionErrors.length > 0 || accountContextStatus !== 'complete'
+      hasCollectionErrors: accountCollectionErrors.length > 0 || accountContextStatus !== 'complete'
     });
 
     const campaignCoverage = buildVerifiedScopeCoverage({
@@ -1431,7 +1441,7 @@ export async function handleRequest(req: Request) {
       requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
       returnedRows: campaignInsightsByPeriod[periods[0]] || [],
       completionStatus: collectionStatusByPeriod[periods[0]]?.campaign as any || 'validation_error',
-      hasCollectionErrors: collectionErrors.length > 0 || campaignsResult.completionStatus !== 'complete'
+      hasCollectionErrors: campaignCollectionErrors.length > 0 || campaignsResult.completionStatus !== 'complete'
     });
 
     const dateStart = accountCoverage.coveredDateStart;
@@ -1447,7 +1457,7 @@ export async function handleRequest(req: Request) {
       requested_level: requestedLevel,
       selected_entity_ids: selectedEntityIds,
       collection_warnings: collectionWarnings,
-      collection_errors: collectionErrors,
+      collection_errors: generalCollectionErrors,
       range_diagnostics_by_period: rangeDiagnosticsByPeriod,
       coverage: {
         account: accountCoverage,
@@ -1509,29 +1519,25 @@ export async function handleRequest(req: Request) {
        throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
     }
 
-    console.error({requestedLevel, length: accountMetricRows.length}); const dashboardQualificationRequired = runScope === 'full_account'
+    const dashboardQualificationRequired = runScope === 'full_account'
       && DASHBOARD_QUALIFIED_REQUESTED_LEVELS.has(requestedLevel)
       && accountMetricRows.length > 0;
 
-    const persisted = syncStatus === 'success'
+    const persisted = syncStatus === 'success' || syncStatus === 'partial'
       ? await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0])
       : null;
     const successVerificationErrors: string[] = [];
-    if (syncStatus === 'success' && persisted) {
-      if (persisted.status !== 'success') successVerificationErrors.push(`run status is ${persisted.status || 'missing'}`);
-      if (!persisted.finishedAt) successVerificationErrors.push('finished_at was not persisted');
-      if (!persisted.dateStart) successVerificationErrors.push('date_start was not persisted');
-      if (!persisted.dateStop) successVerificationErrors.push('date_stop was not persisted');
-      if (!persisted.timezone) successVerificationErrors.push('timezone was not persisted');
-      if (!persisted.currency) successVerificationErrors.push('currency was not persisted');
+    if ((syncStatus === 'success' || syncStatus === 'partial') && persisted) {
+      if (persisted.runStatus !== syncStatus) successVerificationErrors.push(`run status in DB is ${persisted.runStatus || 'missing'}, expected ${syncStatus}`);
+      
       if (accountDeliveryDetected && persisted.accountMetricsCount === 0) {
         successVerificationErrors.push('account delivery exists but no account metrics were persisted');
       }
       if (accountMetricRows.length > 0 && persisted.accountMetricsCount === 0) {
         successVerificationErrors.push('prepared account metrics were not readable after persistence');
       }
-      if (dashboardQualificationRequired && !persisted.dashboardQualified) {
-        successVerificationErrors.push('dashboard cannot qualify this run as the latest reliable account source');
+      if (dashboardQualificationRequired && !persisted.dashboardAccountQualified) {
+        successVerificationErrors.push('dashboard cannot qualify this run as the latest reliable account source due to coverage mismatch or missing dates');
       }
     }
 

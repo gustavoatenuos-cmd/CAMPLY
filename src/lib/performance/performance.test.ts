@@ -251,7 +251,7 @@ describe('enrichGlobalPerformanceDashboard', () => {
             leads: traceMetric('leads', 10),
           },
           budgetPacing: null,
-          dataQuality: { status: 'complete', reason: null },
+          dataQuality: { status: 'complete', reason: null }, dataQualityByScope: { account: { status: 'unavailable', reason: 'legacy' }, campaigns: { status: 'unavailable', reason: 'legacy' } }, dataRun: null,
           lastSuccessfulRun: null,
           lastAttempt: null,
         },
@@ -314,6 +314,7 @@ describe('enrichGlobalPerformanceDashboard', () => {
       lastAttempt: null,
       hasNewerPartial: false,
       hasNewerFailure: false,
+      dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
       analysisProfile: {
         clientId: 'client_1',
         vertical: 'Saúde',

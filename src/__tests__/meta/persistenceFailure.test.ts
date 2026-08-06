@@ -148,7 +148,12 @@ describe('Persistence Failure Handling through Orchestrator', () => {
               date_stop: '2026-08-01',
               timezone: 'America/Sao_Paulo',
               currency: 'BRL',
-              coverage: { '2026-08-01': 'complete' },
+              metadata: {
+                coverage: {
+                  account: { status: 'complete', reason: null, coveredDateStart: '2026-08-01', coveredDateStop: '2026-08-01', missingDates: [], expectedDays: 1, coveredDays: 1 },
+                  campaign: { status: 'complete', reason: null, coveredDateStart: '2026-08-01', coveredDateStop: '2026-08-01', missingDates: [], expectedDays: 1, coveredDays: 1 }
+                }
+              },
               account_metrics_count: 1,
               is_dashboard_qualified: true,
               run_scope: 'full_account',

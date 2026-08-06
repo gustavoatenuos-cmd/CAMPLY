@@ -28,6 +28,7 @@ function baseClient(overrides: Partial<GlobalClientPerformance> = {}): GlobalCli
     clientId: 'c1',
     clientName: 'Cliente Um',
     clientStatus: 'available',
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
     accounts: [{ clientMetaAssetId: 'asset-1', accountName: 'Conta 1', dateStart: '2026-06-18', dateStop: '2026-07-17' } as any],
     metrics: {},
     metricGroups: [],
@@ -169,6 +170,7 @@ describe('buildClientPriorityEntries', () => {
   it('lets a this_month sync cover a last_7d dashboard diagnosis when dates cover the range', () => {
     const client = baseClient({
       clientStatus: 'available',
+    dataFreshness: { runCount: 1, oldestAnchor: '2026-08-01T10:00:00Z', reason: 'single_account', anchorAccountId: 'act_1', anchorAccountName: 'Test', sources: [] },
       analysisProfile: profile(),
       metrics: { spend: metric(500), leads: metric(20) },
       lastSuccessfulRun: { id: 'run-month', status: 'success', requestedPeriod: 'last_90d', dateStart: '2026-04-22', dateStop: '2026-07-20', startedAt: '2026-07-01T10:00:00.000Z', finishedAt: '2026-07-01T10:05:00.000Z', terminationReason: null } as any,
