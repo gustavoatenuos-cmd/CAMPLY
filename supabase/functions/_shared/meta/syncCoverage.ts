@@ -1,4 +1,6 @@
 import { MetaInsightRow, PeriodCompletenessStatus } from './aggregation.ts';
+import { insightHasDelivery } from './mixedAttributionDetector.ts';
+
 
 export interface PeriodRangeValidation {
   status: 'complete' | 'partial' | 'zero_delivery' | 'validation_error';
@@ -238,7 +240,7 @@ export const validateReturnedPeriodRange = (
   };
 };
 
-export type CollectionCompletionStatus = 'complete' | 'partial' | 'rate_limit_exhausted' | 'validation_error';
+export type CollectionCompletionStatus = PeriodCompletenessStatus;
 export type RangeValidationStatus = 'complete' | 'partial' | 'zero_delivery' | 'validation_error';
 
 export const buildVerifiedScopeCoverage = ({
@@ -267,21 +269,53 @@ export const buildVerifiedScopeCoverage = ({
   const coveredDateStart = sortedRows[0]?.date_start || null;
   const coveredDateStop = sortedRows[sortedRows.length - 1]?.date_stop || null;
 
-  if (completionStatus === 'complete' && !hasCollectionErrors && missingDates.length === 0 && expectedDays > 0) {
-    return {
-      status: 'complete',
-      requestedDateStart,
-      requestedDateStop,
-      coveredDateStart: requestedDateStart,
-      coveredDateStop: requestedDateStop,
-      expectedDays,
-      coveredDays,
-      missingDates,
-      reason: null,
-    };
-  }
+  if (completionStatus === 'complete' && !hasCollectionErrors) {
+    if (missingDates.length === 0) {
+      return {
+        status: 'complete',
+        requestedDateStart,
+        requestedDateStop,
+        coveredDateStart: requestedDateStart,
+        coveredDateStop: requestedDateStop,
+        expectedDays,
+        coveredDays,
+        missingDates,
+        reason: null,
+      };
+    }
 
-  if (completionStatus === 'complete' && !hasCollectionErrors && returnedRows.length === 0 && expectedDays > 0) {
+    if (returnedRows.length === 0 && expectedDays > 0) {
+      return {
+        status: 'zero_delivery',
+        requestedDateStart,
+        requestedDateStop,
+        coveredDateStart: requestedDateStart,
+        coveredDateStop: requestedDateStop,
+        expectedDays,
+        coveredDays: expectedDays,
+        missingDates: [],
+        reason: null,
+      };
+    }
+    
+    // Corrigir zero delivery com rows (complete + returned rows mas sem entrega = zero_delivery)
+    const hasDelivery = returnedRows.some(insightHasDelivery);
+    if (!hasDelivery && expectedDays > 0) {
+      return {
+        status: 'zero_delivery',
+        requestedDateStart,
+        requestedDateStop,
+        coveredDateStart: requestedDateStart,
+        coveredDateStop: requestedDateStop,
+        expectedDays,
+        coveredDays: expectedDays,
+        missingDates: [],
+        reason: null,
+      };
+    }
+  }
+  
+  if (completionStatus === 'zero_delivery' && !hasCollectionErrors) {
     return {
       status: 'zero_delivery',
       requestedDateStart,
@@ -298,7 +332,14 @@ export const buildVerifiedScopeCoverage = ({
   let status: VerifiedScopeCoverage['status'] = 'partial';
   let reason: string | null = null;
 
-  if (completionStatus === 'validation_error' || completionStatus === 'rate_limit_exhausted') {
+  if (
+    completionStatus === 'partial_page' ||
+    completionStatus === 'timeout' ||
+    completionStatus === 'api_error' ||
+    completionStatus === 'rate_limit_exhausted' ||
+    completionStatus === 'missing_insight_row' ||
+    completionStatus === 'validation_error'
+  ) {
     status = coveredDays > 0 ? 'partial' : 'unavailable';
     reason = completionStatus;
   } else if (hasCollectionErrors) {
@@ -308,8 +349,8 @@ export const buildVerifiedScopeCoverage = ({
     status = 'partial';
     reason = 'missing_days';
   } else {
-    // If we reach here, it's either partial completion status without errors, etc.
-    status = 'partial';
+    // Fallback for complete but with errors, or partial status, etc.
+    status = coveredDays > 0 ? 'partial' : 'unavailable';
     reason = 'partial_collection';
   }
 

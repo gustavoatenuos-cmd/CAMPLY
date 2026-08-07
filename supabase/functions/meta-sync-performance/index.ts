@@ -137,8 +137,10 @@ const COLLECTION_CONTRACT_VERSION = '2026-07-20.1';
 const OFFICIAL_SYNC_PERIOD = 'last_90d';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
+const SAFE_META_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
 function assertSafeMetaId(id: string, label: string, status = 400): void {
-  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+  if (!id || !SAFE_META_ID_PATTERN.test(id)) {
     throw new HttpError(`Invalid ${label}`, status);
   }
 }
@@ -1432,7 +1434,7 @@ export async function handleRequest(req: Request) {
       requestedDateStart: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStart as string || '',
       requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
       returnedRows: accountInsightsByPeriod[periods[0]] || [],
-      completionStatus: collectionStatusByPeriod[periods[0]]?.account as any || 'validation_error',
+      completionStatus: collectionStatusByPeriod[periods[0]]?.account || 'validation_error',
       hasCollectionErrors: accountCollectionErrors.length > 0 || accountContextStatus !== 'complete'
     });
 
@@ -1440,7 +1442,7 @@ export async function handleRequest(req: Request) {
       requestedDateStart: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStart as string || '',
       requestedDateStop: rangeDiagnosticsByPeriod[periods[0]]?.requestedDateStop as string || '',
       returnedRows: campaignInsightsByPeriod[periods[0]] || [],
-      completionStatus: collectionStatusByPeriod[periods[0]]?.campaign as any || 'validation_error',
+      completionStatus: collectionStatusByPeriod[periods[0]]?.campaign || 'validation_error',
       hasCollectionErrors: campaignCollectionErrors.length > 0 || campaignsResult.completionStatus !== 'complete'
     });
 

@@ -288,4 +288,16 @@ describe('Persistence Failure Handling through Orchestrator', () => {
     expect(response.status).toBe(400);
     expect(json.error).toContain('Invalid selected Meta entity id');
   });
+
+  it('rejects excessively long selected entity ids before filtering Graph API data', async () => {
+    const excessivelyLongId = 'a'.repeat(129);
+    const { response, json } = await runScenario(undefined, {
+      clientMetaAssetId: 'cma_123',
+      periods: ['today'],
+      selectedCampaigns: [excessivelyLongId],
+    });
+
+    expect(response.status).toBe(400);
+    expect(json.error).toContain('Invalid selected Meta entity id');
+  });
 });
