@@ -55,6 +55,10 @@ vi.mock('../data/supabaseStore', () => ({
   saveRemoteDataAndConfirmClient: mockState.saveRemoteDataAndConfirmClient,
 }));
 
+vi.mock('../lib/agentEngine', () => ({
+  runAgentEngine: () => ({ newAlerts: [], newLogs: [] }),
+}));
+
 vi.mock('../lib/meta/metaE2ERuntime', async (importOriginal) => {
   const original = await importOriginal<typeof import('../lib/meta/metaE2ERuntime')>();
   return { ...original, isMetaE2EMode: false };
@@ -134,13 +138,17 @@ describe('useCamplyWorkspace', () => {
     const { result } = renderHook(() => useCamplyWorkspace());
     await waitFor(() => expect(result.current.remoteLoaded).toBe(true));
 
-    mockState.saveRemoteData.mockResolvedValueOnce({
-      status: 'conflict',
-      remoteData: conflictWorkspace,
+    await act(async () => Promise.resolve());
+    mockState.saveRemoteData.mockImplementation(async (workspace) => {
+      if (workspace.notes[0]?.id === 'local-change') {
+        return { status: 'conflict', remoteData: conflictWorkspace };
+      }
+      return { status: 'saved' };
     });
 
     act(() => result.current.updateData((current) => ({ ...current, notes: [{ id: 'local-change' }] })));
 
+    await waitFor(() => expect(mockState.saveRemoteData).toHaveBeenCalled());
     await waitFor(() => expect(result.current.data).toBe(conflictWorkspace));
     expect(result.current.syncError).toContain('versão mais recente');
   });
