@@ -42,6 +42,11 @@ const singleLast90dContractMigration = readFileSync(
   'utf8'
 );
 
+const metaSyncRpcSecurityMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260814221934_consolidate_meta_sync_rpc_security.sql', import.meta.url),
+  'utf8'
+);
+
 const metaSyncPerformanceFunction = readFileSync(
   new URL('../../../supabase/functions/meta-sync-performance/index.ts', import.meta.url),
   'utf8'
@@ -208,5 +213,36 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
     expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
     expect(metaIntegrationView).toContain('syncMetaAsset');
+  });
+});
+
+describe('Meta sync RPC security contract', () => {
+  it('replaces deprecated role inspection with explicit JWT and user checks', () => {
+    expect(metaSyncRpcSecurityMigration).toContain(
+      'CREATE OR REPLACE FUNCTION public.resolve_meta_sync_client_asset'
+    );
+    expect(metaSyncRpcSecurityMigration).toContain("SECURITY DEFINER\nSET search_path = ''");
+    expect(metaSyncRpcSecurityMigration).toContain("(SELECT auth.jwt() ->> 'role') = 'service_role'");
+    expect(metaSyncRpcSecurityMigration).toContain('(SELECT auth.uid()) = p_user_id');
+    expect(metaSyncRpcSecurityMigration).not.toContain('auth.role()');
+  });
+
+  it('rebuilds function privileges from a deny-by-default baseline', () => {
+    const signature = 'public.resolve_meta_sync_client_asset(UUID, UUID)';
+
+    expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`);
+    expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM anon`);
+    expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM authenticated`);
+    expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM service_role`);
+    expect(metaSyncRpcSecurityMigration).toContain(`GRANT EXECUTE ON FUNCTION ${signature} TO authenticated`);
+    expect(metaSyncRpcSecurityMigration).toContain(`GRANT EXECUTE ON FUNCTION ${signature} TO service_role`);
+    expect(metaSyncRpcSecurityMigration).not.toMatch(/GRANT EXECUTE[^;]+ TO (?:PUBLIC|anon)/i);
+  });
+
+  it('keeps ownership validation and the active client registry join inside the RPC', () => {
+    expect(metaSyncRpcSecurityMigration).toContain('JOIN public.client_identity ci');
+    expect(metaSyncRpcSecurityMigration).toContain('ci.archived_at IS NULL');
+    expect(metaSyncRpcSecurityMigration).toContain('cma.user_id = p_user_id');
+    expect(metaSyncRpcSecurityMigration).toContain('cma.unlinked_at IS NULL');
   });
 });
