@@ -168,7 +168,7 @@ const saveRemoteDataNow = async (
   payloadStr: string,
   userId: string
 ): Promise<RemoteSaveResult> => {
-  if (getSupabaseSessionUserId() !== userId) {
+  if (!supabaseData || getSupabaseSessionUserId() !== userId) {
     if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
     return { status: 'skipped' };
   }

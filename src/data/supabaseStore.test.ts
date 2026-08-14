@@ -37,7 +37,6 @@ vi.mock('../lib/supabase', () => ({
 import { initialData } from './camplyStore';
 import { CamplyData } from '../types';
 import {
-  WorkspacePersistenceError,
   hasNewerRemoteVersion,
   loadRemoteData,
   resetRemoteWorkspaceState,
@@ -174,7 +173,7 @@ describe('saveRemoteDataAndConfirmClient', () => {
         { ...workspaceFixture, fakeData: 1 } as unknown as CamplyData,
         'client-1'
       )
-    ).rejects.toMatchObject<Partial<WorkspacePersistenceError>>({
+    ).rejects.toMatchObject({
       name: 'WorkspacePersistenceError',
       code: 'WORKSPACE_CONFLICT',
     });
@@ -189,7 +188,7 @@ describe('saveRemoteDataAndConfirmClient', () => {
         { ...workspaceFixture, fakeData: 1 } as unknown as CamplyData,
         'client-1'
       )
-    ).rejects.toMatchObject<Partial<WorkspacePersistenceError>>({
+    ).rejects.toMatchObject({
       name: 'WorkspacePersistenceError',
       code: 'CLIENT_IDENTITY_NOT_CONFIRMED',
     });
