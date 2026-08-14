@@ -113,6 +113,19 @@ describe('saveRemoteData', () => {
     expect(mockState.rpcCalls.map(c => c.p_expected_version)).toEqual([3, 4]);
   });
 
+  it('chains versions when a second save is queued before the first one finishes', async () => {
+    mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
+    await loadRemoteData();
+
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 4 }, error: null });
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 5 }, error: null });
+    const first = saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
+    const second = saveRemoteData({ ...workspaceFixture, fakeData: 2 } as unknown as CamplyData);
+    await Promise.all([first, second]);
+
+    expect(mockState.rpcCalls.map(c => c.p_expected_version)).toEqual([3, 4]);
+  });
+
   it('returns conflict with the remote workspace so the app can reload instead of overwriting', async () => {
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
     await loadRemoteData();
