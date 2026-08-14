@@ -217,14 +217,14 @@ describe('single last_90d Meta sync read contract safety', () => {
 });
 
 describe('Meta sync RPC security contract', () => {
-  it('replaces deprecated role inspection with explicit JWT and user checks', () => {
+  it('removes deprecated role inspection and executes with caller privileges', () => {
     expect(metaSyncRpcSecurityMigration).toContain(
       'CREATE OR REPLACE FUNCTION public.resolve_meta_sync_client_asset'
     );
-    expect(metaSyncRpcSecurityMigration).toContain("SECURITY DEFINER\nSET search_path = ''");
-    expect(metaSyncRpcSecurityMigration).toContain("(SELECT auth.jwt() ->> 'role') = 'service_role'");
-    expect(metaSyncRpcSecurityMigration).toContain('(SELECT auth.uid()) = p_user_id');
+    expect(metaSyncRpcSecurityMigration).toContain("SECURITY INVOKER\nSET search_path = ''");
+    expect(metaSyncRpcSecurityMigration).not.toContain('SECURITY DEFINER');
     expect(metaSyncRpcSecurityMigration).not.toContain('auth.role()');
+    expect(metaSyncRpcSecurityMigration).not.toContain('auth.jwt()');
   });
 
   it('rebuilds function privileges from a deny-by-default baseline', () => {
@@ -234,9 +234,8 @@ describe('Meta sync RPC security contract', () => {
     expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM anon`);
     expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM authenticated`);
     expect(metaSyncRpcSecurityMigration).toContain(`REVOKE ALL ON FUNCTION ${signature} FROM service_role`);
-    expect(metaSyncRpcSecurityMigration).toContain(`GRANT EXECUTE ON FUNCTION ${signature} TO authenticated`);
     expect(metaSyncRpcSecurityMigration).toContain(`GRANT EXECUTE ON FUNCTION ${signature} TO service_role`);
-    expect(metaSyncRpcSecurityMigration).not.toMatch(/GRANT EXECUTE[^;]+ TO (?:PUBLIC|anon)/i);
+    expect(metaSyncRpcSecurityMigration).not.toMatch(/GRANT EXECUTE[^;]+ TO (?:PUBLIC|anon|authenticated)/i);
   });
 
   it('keeps ownership validation and the active client registry join inside the RPC', () => {
