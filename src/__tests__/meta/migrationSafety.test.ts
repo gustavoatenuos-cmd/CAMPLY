@@ -244,4 +244,20 @@ describe('Meta sync RPC security contract', () => {
     expect(metaSyncRpcSecurityMigration).toContain('cma.user_id = p_user_id');
     expect(metaSyncRpcSecurityMigration).toContain('cma.unlinked_at IS NULL');
   });
+
+  it('grants the invoker only the table reads required by the resolver', () => {
+    for (const table of [
+      'client_meta_assets',
+      'client_identity',
+      'meta_assets',
+      'meta_integrations',
+    ]) {
+      expect(metaSyncRpcSecurityMigration).toContain(
+        `GRANT SELECT ON TABLE public.${table} TO service_role`
+      );
+    }
+    expect(metaSyncRpcSecurityMigration).not.toMatch(
+      /GRANT (?:INSERT|UPDATE|DELETE|ALL)[^;]+ TO service_role/i
+    );
+  });
 });
