@@ -1,58 +1,26 @@
 import type { Campaign, Client } from '../../types';
-import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { invokeFunction, InvokeError } from '../invokeFunction';
 import { isMetaE2EMode, metaE2EState, persistMetaE2EState } from './metaE2ERuntime';
 import type { MetaSyncResponse } from './metaSyncTypes';
+import {
+  OFFICIAL_META_SYNC_PERIOD,
+  assertMetaSyncResponse,
+  buildClientMetaSyncRequest,
+  buildOperationalMetaSyncRequest,
+  normalizeMetaSyncOptions,
+  type MetaSyncOptions,
+  type OperationalMetaSyncInput,
+  type OperationalMetaSyncResult,
+} from './metaSyncContract';
 
-export type MetaSyncPeriod = DashboardPeriod;
-export type MetaSyncLevel = 'campaign' | 'adset' | 'ad' | 'creative';
-export const OFFICIAL_META_SYNC_PERIOD: DashboardPeriod = 'last_90d';
-
-export interface MetaSyncOptions {
-  metaAssetId?: string;
-  adAccountId?: string;
-  periods?: MetaSyncPeriod[];
-  requestedLevel?: MetaSyncLevel;
-  selectedCampaigns?: string[];
-  selectedAdSets?: string[];
-  selectedAds?: string[];
-  selectedCreatives?: string[];
-}
-
-function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOptions {
-  const legacyAdAccountId = (clientOrOptions as Client).metaAdAccountId;
-  if (typeof legacyAdAccountId === 'string') {
-    return {
-      adAccountId: legacyAdAccountId || undefined,
-      periods: [OFFICIAL_META_SYNC_PERIOD],
-      requestedLevel: 'campaign',
-    };
-  }
-
-  const options = clientOrOptions as MetaSyncOptions;
-  return {
-    ...options,
-    periods: [OFFICIAL_META_SYNC_PERIOD],
-    requestedLevel: options.requestedLevel ?? 'campaign',
-  };
-}
-
-export interface OperationalMetaSyncResult {
-  success: boolean;
-  status: 'running' | 'success' | 'partial' | 'failed';
-  runId: string | null;
-  message?: string;
-}
-
-export interface OperationalMetaSyncInput {
-  clientMetaAssetId: string;
-  period: DashboardPeriod;
-  requestedLevel?: MetaSyncLevel;
-  campaignIds?: string[];
-  adsetIds?: string[];
-  adIds?: string[];
-  creativeIds?: string[];
-}
+export {
+  OFFICIAL_META_SYNC_PERIOD,
+  type MetaSyncLevel,
+  type MetaSyncOptions,
+  type MetaSyncPeriod,
+  type OperationalMetaSyncInput,
+  type OperationalMetaSyncResult,
+} from './metaSyncContract';
 
 async function syncOperationalMetaAsset(
   input: OperationalMetaSyncInput
@@ -60,6 +28,8 @@ async function syncOperationalMetaAsset(
   if (!input.clientMetaAssetId) {
     throw new Error('A sincronização operacional exige uma conta Meta vinculada a um cliente.');
   }
+
+  const request = buildOperationalMetaSyncRequest(input);
 
   if (isMetaE2EMode) {
     metaE2EState.syncedPeriods.add(OFFICIAL_META_SYNC_PERIOD);
@@ -74,16 +44,8 @@ async function syncOperationalMetaAsset(
 
   try {
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
-      clientMetaAssetId: input.clientMetaAssetId,
-      periods: [OFFICIAL_META_SYNC_PERIOD],
-      requestedLevel: input.requestedLevel || 'campaign',
-      selectedEntityIds: {
-        campaign_ids: input.campaignIds || [],
-        adset_ids: input.adsetIds || [],
-        ad_ids: input.adIds || [],
-        creative_ids: input.creativeIds || [],
-      },
-    }, input.requestedLevel === 'creative' ? 120_000 : 90_000);
+      ...request.payload,
+    }, request.timeoutMs);
 
     return {
       success: response.success,
@@ -108,32 +70,22 @@ export async function syncClientMeta(
   clientOrOptions: Client | MetaSyncOptions,
   _existingCampaigns: Campaign[] = []
 ): Promise<MetaSyncResponse> {
-  const options = normalizeOptions(clientOrOptions);
+  const options = normalizeMetaSyncOptions(clientOrOptions);
 
   if (!options.metaAssetId && !options.adAccountId) {
     throw new Error('A sincronização exige metaAssetId ou adAccountId');
   }
 
+  const request = buildClientMetaSyncRequest(options);
+
   try {
-    const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
-      metaAssetId: options.metaAssetId,
-      adAccountId: options.adAccountId,
-      periods: options.periods,
-      requestedLevel: options.requestedLevel,
-      selectedCampaigns: options.selectedCampaigns,
-      selectedAdSets: options.selectedAdSets,
-      selectedAds: options.selectedAds,
-      selectedCreatives: options.selectedCreatives,
-    }, options.requestedLevel === 'creative' ? 120_000 : 90_000);
+    const response = await invokeFunction<MetaSyncResponse>(
+      'meta-sync-performance',
+      request.payload,
+      request.timeoutMs
+    );
 
-    if (!response.runId || !Array.isArray(response.campaigns)) {
-      throw new Error('Meta sync returned an invalid response contract');
-    }
-    if (!['success', 'partial', 'failed'].includes(response.status)) {
-      throw new Error('Meta sync returned an unknown status');
-    }
-
-    return response;
+    return assertMetaSyncResponse(response);
   } catch (err) {
     if (err instanceof InvokeError && err.status === 409) {
       return {
