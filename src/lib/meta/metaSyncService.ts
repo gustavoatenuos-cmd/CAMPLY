@@ -81,7 +81,7 @@ export async function syncClientMeta(
   try {
     const response = await invokeFunction<MetaSyncResponse>(
       'meta-sync-performance',
-      request.payload,
+      { ...request.payload },
       request.timeoutMs
     );
 
