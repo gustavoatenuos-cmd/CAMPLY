@@ -37,4 +37,9 @@ describe('operational decision ownership', () => {
     expect(aiService).not.toContain('campaign.budget');
     expect(aiService).not.toContain('budget_assessment');
   });
+
+  it('keeps the asynchronous startup briefing out of deterministic Meta browser E2E', () => {
+    expect(app).toContain("import { isMetaE2EMode } from './lib/meta/metaE2ERuntime'");
+    expect(app).toContain('!isMetaE2EMode ? <StartupModal');
+  });
 });
