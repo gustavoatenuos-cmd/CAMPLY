@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { useCamplyWorkspace } from './hooks/useCamplyWorkspace';
 import { getCamplyBuildInfo } from './lib/diagnostics/buildInfo';
+import { isMetaE2EMode } from './lib/meta/metaE2ERuntime';
 import { getSupabaseSessionDiagnostics } from './lib/supabase';
 import type { ViewId } from './types';
 
@@ -141,7 +142,7 @@ export default function App() {
           <SyncErrorToast message={workspace.syncError} onDismiss={workspace.dismissSyncError} />
         ) : null}
       </AnimatePresence>
-      <StartupModal data={workspace.data} setActiveView={setActiveView} />
+      {!isMetaE2EMode ? <StartupModal data={workspace.data} setActiveView={setActiveView} /> : null}
     </div>
   );
 }
