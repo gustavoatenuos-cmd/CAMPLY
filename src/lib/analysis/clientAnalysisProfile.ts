@@ -184,6 +184,10 @@ export const subsegmentsByVertical: Record<string, ValueLabel[]> = {
 
 export const metricLabels: Record<string, string> = {
   messaging_conversations_started_total: 'Conversas iniciadas',
+  whatsapp_conversations_started: 'Conversas no WhatsApp',
+  messenger_conversations_started: 'Conversas no Messenger',
+  instagram_direct_conversations_started: 'Conversas no Instagram',
+  messaging_conversations_started_generic: 'Outras conversas',
   cost_per_messaging_conversation: 'Custo por conversa',
   leads: 'Leads',
   cost_per_lead: 'CPL',

@@ -33,6 +33,10 @@ type RunRow = {
   records_fetched?: number | null
   integration_id: string
   ad_account_id: string
+  date_start: string | null
+  date_stop: string | null
+  timezone: string | null
+  currency: string | null
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
@@ -70,6 +74,10 @@ function runSummary(run?: RunRow) {
     terminationReason: run.termination_reason ?? null,
     pagesFetched: run.pages_fetched ?? undefined,
     recordsFetched: run.records_fetched ?? undefined,
+    dateStart: run.date_start ?? null,
+    dateStop: run.date_stop ?? null,
+    timezone: run.timezone ?? null,
+    currency: run.currency ?? null,
   }
 }
 
@@ -147,7 +155,8 @@ serve(async (req) => {
         ? []
         : await sql<RunRow[]>`
           select id, status, requested_period, requested_level, run_scope, started_at, finished_at,
-                 termination_reason, pages_fetched, records_fetched, integration_id, ad_account_id
+                 termination_reason, pages_fetched, records_fetched, integration_id, ad_account_id,
+                 date_start, date_stop, timezone, currency
           from public.meta_sync_runs
           where user_id = ${user.id}::uuid
             and integration_id = any(${integrationIds}::uuid[])

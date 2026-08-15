@@ -1,12 +1,11 @@
 import React, { useMemo } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
-import { calculateClientBudgetPacing } from '../../lib/performance/budgetPacingUtils';
 import { buildClientAnalyticsDecision, periodFromDashboardPeriod } from '../../lib/performance/clientAnalyticsDecision';
 import { evaluateClientOperationalReadiness } from '../../lib/operational/clientOperationalReadiness';
 import { debugDashboardClientSync, explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
-import { ClientPrimaryMetricBlock } from './ClientPrimaryMetricBlock';
 import { ClientAnalyticsStatusPanel, STATUS_TONE } from './ClientAnalyticsStatusPanel';
+import { ClientMetricComparisonGrid } from './ClientMetricComparisonGrid';
 import { ClientLogo } from '../clients/ClientLogo';
 import { Clock, HelpCircle } from 'lucide-react';
 
@@ -18,14 +17,11 @@ interface ClientAnalyticsCardProps {
 }
 
 export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
-  const { client, metrics, analysisProfile } = performance;
+  const { client, analysisProfile } = performance;
   // client é o registro local do workspace (sem perfil analítico); o perfil
   // comercial de fato vem do nível superior, populado a partir de
   // client_analysis_profiles em globalPerformanceDashboard.ts.
   const profile = analysisProfile;
-
-  // Actual spend from Meta
-  const actualSpend = metrics?.spend?.value ?? 0;
 
   const syncExplanation = useMemo(() => explainDashboardClientSync(performance, period), [performance, period]);
   const coverageClientStatus = syncExplanation.status === 'success'
@@ -39,13 +35,6 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
           : syncExplanation.status === 'stale'
             ? 'stale'
             : performance.clientStatus;
-
-  // Budget calculations
-  const budgetPacing = calculateClientBudgetPacing(
-    profile?.plannedBudget,
-    profile?.budgetPeriod,
-    actualSpend
-  );
 
   const decision = useMemo(() => {
     const now = new Date();
@@ -61,6 +50,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
+      budgetPacing: performance.budgetPacing,
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
@@ -78,22 +68,6 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
     receivableEntries: undefined,
     analyticsDecision: decision,
   }), [client, performance.clientId, coverageClientStatus, profile, decision]);
-
-  const formatCurrency = (val: number | null | undefined) => {
-    if (val === null || val === undefined) return '-';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  };
-
-  // Determine badge color for pacing
-  const getPacingColor = (status: string) => {
-    switch (status) {
-      case 'on_track': return 'bg-green-100 text-green-800';
-      case 'under_pacing': return 'bg-blue-100 text-blue-800';
-      case 'over_pacing': return 'bg-yellow-100 text-yellow-800';
-      case 'budget_exceeded': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
 
   const hasDataIssues = readiness.analytics.status === 'blocked';
 
@@ -154,41 +128,8 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
             <ClientAnalyticsStatusPanel decision={decision} />
 
             <div className="mt-4 pt-4 border-t border-gray-100">
-              <ClientPrimaryMetricBlock performance={performance} />
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPacingColor(budgetPacing.status)}`}>
-                  {budgetPacing.statusText}
-                </span>
-              </div>
-
-              {budgetPacing.status === 'no_budget' ? (
-                <div className="text-sm text-gray-500 italic py-1">
-                  Orçamento não configurado
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Planejado</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
-                  </div>
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Gasto</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.actualSpend)}</span>
-                  </div>
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Restante</span>
-                    <span className={`font-semibold text-sm ${
-                      budgetPacing.remainingBudget !== null && budgetPacing.remainingBudget < 0 ? 'text-red-600' : 'text-gray-900'
-                    }`}>
-                      {formatCurrency(budgetPacing.remainingBudget)}
-                    </span>
-                  </div>
-                </div>
-              )}
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">Realizado x esperado</p>
+              <ClientMetricComparisonGrid performance={performance} compact />
             </div>
           </>
         )}

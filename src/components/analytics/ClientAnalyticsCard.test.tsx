@@ -18,6 +18,21 @@ describe('ClientAnalyticsCard', () => {
         spend: { value: 1000, available: true },
       },
       metricGroups: [],
+      resolvedTargets: [],
+      evaluations: [],
+      budgetPacing: {
+        actualSpend: 1000,
+        targetDailyBudget: 50,
+        expectedSpendUntilNow: 1500,
+        actualDailyAverage: 33.33,
+        projectedMonthlySpend: 1000,
+        differenceValue: -500,
+        differencePercent: -33.33,
+        status: 'critical',
+        currency: 'BRL',
+        elapsedDays: 30,
+        totalDays: 30,
+      },
       score: { value: 72 },
       dataQuality: { status: 'complete', reason: null },
       // O perfil comercial real vem daqui, populado a partir de client_analysis_profiles.
@@ -62,11 +77,11 @@ describe('ClientAnalyticsCard', () => {
     // Métrica principal: KPI de conversas (ClientPrimaryMetricBlock não deve
     // cair no fallback "Meta principal não configurada").
     expect(screen.queryByText('Meta principal não configurada')).not.toBeInTheDocument();
-    expect(screen.getAllByText('Conversas').length).toBeGreaterThan(0);
-    // Orçamento/metas: o card não pode dizer "Orçamento não configurado"
-    // quando plannedBudget e budgetPeriod existem no perfil.
-    expect(screen.queryByText('Orçamento não configurado')).not.toBeInTheDocument();
-    expect(screen.getByText('Planejado')).toBeInTheDocument();
+    expect(screen.getAllByText('Conversas iniciadas').length).toBeGreaterThan(0);
+    // Orçamento/metas: o card compara o gasto do mesmo período com o pacing
+    // canônico, sem recalcular um mês diferente no componente.
+    expect(screen.getByText('Investimento vs. ritmo')).toBeInTheDocument();
+    expect(screen.getByText(/Ritmo esperado: R\$\s*1\.500,00/)).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*1\.500,00/)).toBeInTheDocument();
   });
 

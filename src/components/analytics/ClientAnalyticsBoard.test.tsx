@@ -51,6 +51,22 @@ describe('ClientAnalyticsBoard', () => {
   });
   afterEach(() => cleanup());
 
+  it('exposes the exact analytics period and requests a reload when it changes', () => {
+    const onPeriodChange = vi.fn();
+    render(
+      <ClientAnalyticsBoard
+        clients={[makePerformance()]}
+        period="last_30d"
+        loading={false}
+        onPeriodChange={onPeriodChange}
+      />
+    );
+
+    expect(screen.getByText(/Realizado da Meta x metas do cliente · Últimos 30 dias/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Período analisado'), { target: { value: 'last_7d' } });
+    expect(onPeriodChange).toHaveBeenCalledWith('last_7d');
+  });
+
   it('"Ver detalhes" opens the analytics detail drawer, not the campaign drawer', () => {
     const performance = makePerformance();
     render(<ClientAnalyticsBoard clients={[performance]} period="last_30d" loading={false} />);

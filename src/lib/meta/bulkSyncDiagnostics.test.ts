@@ -8,6 +8,7 @@ import {
   initializeBulkSyncProgress,
   isBulkSyncAllFailed,
   outcomeFromThrownError,
+  runWithConcurrency,
   type BulkSyncAccountInput,
   type BulkSyncProgress,
 } from './bulkSyncDiagnostics';
@@ -226,5 +227,24 @@ describe('isBulkSyncAllFailed', () => {
     progress = applyAccountOutcome(progress, 'b', { status: 'failed', error: 'Erro B' });
     progress = { ...progress, running: false };
     expect(isBulkSyncAllFailed(progress)).toBe(true);
+  });
+});
+
+describe('runWithConcurrency', () => {
+  it('processes every item without exceeding the configured parallel limit', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const processed: number[] = [];
+
+    await runWithConcurrency([1, 2, 3, 4, 5], 2, async (item) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      processed.push(item);
+      active -= 1;
+    });
+
+    expect(maxActive).toBe(2);
+    expect(processed.sort()).toEqual([1, 2, 3, 4, 5]);
   });
 });

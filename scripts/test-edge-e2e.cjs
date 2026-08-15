@@ -150,8 +150,10 @@ async function run() {
     assertEqual(json.success, true, 'JSON Success');
     const runContract = q(`SELECT requested_period || ':' || requested_level || ':' || run_scope FROM meta_sync_runs WHERE id='${json.runId}'`);
     assertEqual(runContract, 'last_90d:campaign:full_account', 'Official last_90d run contract');
-    const exactRange = q(`SELECT date_start = '2026-06-27'::date AND date_stop = '2026-06-27'::date FROM meta_sync_runs WHERE id='${json.runId}'`);
-    assertEqual(exactRange, 't', 'Run persisted the exact range returned by the mock Meta API');
+    const officialRange = q(`SELECT date_start = ((timezone('America/Sao_Paulo', now()))::date - interval '89 days')::date AND date_stop = (timezone('America/Sao_Paulo', now()))::date FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(officialRange, 't', 'Run persisted the requested official last_90d coverage');
+    const returnedRangeStored = q(`SELECT date_start = '2026-06-27'::date AND date_stop = '2026-06-27'::date FROM meta_sync_runs WHERE id='${json.runId}'`);
+    assertEqual(returnedRangeStored, 'f', 'Run did not shrink coverage to the exact mock Meta delivery range');
     const accountSource = q(`SELECT count(*) > 0 FROM meta_normalized_metrics WHERE sync_run_id='${json.runId}' AND source_level='account'`);
     assertEqual(accountSource, 't', 'Official run persisted account-level metrics');
     const pausedCampaign = q(`SELECT count(*) FROM meta_campaign_snapshots WHERE sync_run_id='${json.runId}' AND effective_status='PAUSED'`);

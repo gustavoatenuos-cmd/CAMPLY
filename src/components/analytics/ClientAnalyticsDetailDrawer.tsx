@@ -8,6 +8,7 @@ import { buildClientAnalyticsDecision, periodFromDashboardPeriod, type ClientAna
 import { explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { resolveClientPrimaryName } from '../../data/clientDisplay';
+import { ClientMetricComparisonGrid } from './ClientMetricComparisonGrid';
 
 interface ClientAnalyticsDetailDrawerProps {
   isOpen: boolean;
@@ -67,6 +68,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
+      budgetPacing: performance.budgetPacing,
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
@@ -179,24 +181,9 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
             </div>
           </Section>
 
-          {/* Comparação */}
-          {decision && decision.status !== 'no_profile' && decision.status !== 'no_data' && (
-            <Section title="Comparação: esperado vs. realizado">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <Field label={`${decision.primaryMetric.label} realizado`} value={formatNumber(decision.actual.resultCount)} />
-                <Field label="Custo atual" value={decision.actual.costPerResult !== null ? formatCurrency(decision.actual.costPerResult, currency) : 'Sem valor confiável'} />
-                <Field label="Orçamento vs. gasto" value={`${formatCurrency(decision.budgetPacing.plannedMonthlyBudget, currency)} planejado · ${formatCurrency(decision.budgetPacing.actualSpend, currency)} gasto`} />
-                <Field
-                  label="Gap da meta"
-                  value={decision.gap.volumeDeficit !== null && decision.gap.volumeDeficit > 0
-                    ? `-${formatNumber(decision.gap.volumeDeficit)} ${decision.primaryMetric.label.toLowerCase()}`
-                    : decision.gap.costDifferencePercent !== null
-                      ? `${decision.gap.costDifferencePercent > 0 ? '+' : ''}${decision.gap.costDifferencePercent.toFixed(1)}% no custo`
-                      : 'Dentro da meta'}
-                />
-              </div>
-            </Section>
-          )}
+          <Section title="Comparação: esperado vs. realizado">
+            <ClientMetricComparisonGrid performance={performance} />
+          </Section>
 
           {/* Projeção */}
           {decision && decision.status !== 'no_profile' && decision.status !== 'no_data' && (

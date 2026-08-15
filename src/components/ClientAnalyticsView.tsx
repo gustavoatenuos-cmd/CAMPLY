@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { usePerformanceDashboard } from '../lib/performance/usePerformanceDashboard';
 import { readPendingAnalyticsPeriod, setPendingClientSelection } from '../lib/performance/pendingClientSelection';
 import { ClientAnalyticsBoard } from './analytics/ClientAnalyticsBoard';
 import type { ViewId } from '../types';
+import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 
 interface ClientAnalyticsViewProps {
   data: any; // We can use CamplyData here but let's just use any to avoid import cycles if not needed, or import CamplyData. Let's import CamplyData.
@@ -14,7 +15,8 @@ export function ClientAnalyticsView({ data, updateData, setActiveView }: { data:
   // "Ver análise" (ver setPendingAnalyticsPeriod em OverviewView) - sem isso,
   // esta tela sempre abriria no período padrão do hook, diferente do que o
   // usuário estava olhando.
-  const { clients, period, loading, error } = usePerformanceDashboard(data, readPendingAnalyticsPeriod() ?? undefined);
+  const [initialPeriod] = useState<DashboardPeriod | undefined>(() => readPendingAnalyticsPeriod() ?? undefined);
+  const { clients, period, setPeriod, loading, error } = usePerformanceDashboard(data, initialPeriod);
 
   const handleEditClient = setActiveView
     ? (clientId: string) => {
@@ -39,6 +41,7 @@ export function ClientAnalyticsView({ data, updateData, setActiveView }: { data:
         period={period}
         loading={loading}
         onEditClient={handleEditClient}
+        onPeriodChange={setPeriod}
       />
     </div>
   );

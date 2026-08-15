@@ -2,7 +2,7 @@ import type { Client } from '../../types';
 import type { BudgetPeriod, ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import { calculateClientBudgetPacing, type BudgetPacingStatus } from './budgetPacingUtils';
 import type { DataQualityContract, GlobalClientStatus, GlobalMetricGroup, MetricContract, RunSummary } from './globalPerformanceDashboard';
-import type { PerformanceTarget, TargetKind } from './types';
+import type { BudgetPacingResult, PerformanceTarget, TargetKind } from './types';
 import { exactPeriodRange } from '../meta/periodRange';
 import type { DashboardPeriod } from './analyticsCapabilities';
 
@@ -21,10 +21,19 @@ export type PrimaryMetricFamily = 'sales' | 'leads' | 'messaging' | 'awareness' 
 // "the primary metric" means for a given client.
 const FAMILY_ALIASES: Record<Exclude<PrimaryMetricFamily, 'unknown'>, string[]> = {
   sales: ['purchases', 'compra_site', 'compra_checkout', 'pedido_realizado'],
-  messaging: ['messaging_conversations_started_total', 'conversa_iniciada', 'whatsapp', 'mensagem_direct'],
+  messaging: [
+    'messaging_conversations_started_total',
+    'whatsapp_conversations_started',
+    'messenger_conversations_started',
+    'instagram_direct_conversations_started',
+    'messaging_conversations_started_generic',
+    'conversa_iniciada',
+    'whatsapp',
+    'mensagem_direct',
+  ],
   leads: ['leads', 'lead_gerado', 'agendamento_realizado', 'orcamento_solicitado', 'cadastro_preenchido', 'ligacao_recebida', 'rota_solicitada'],
   awareness: ['reach', 'alcance'],
-  traffic: ['traffic', 'cliques', 'visitas_site'],
+  traffic: ['traffic', 'link_clicks', 'landing_page_views', 'cliques', 'visitas_site'],
 };
 
 interface FamilyMetricIds {
@@ -41,6 +50,37 @@ const FAMILY_METRIC_IDS: Record<PrimaryMetricFamily, FamilyMetricIds> = {
   traffic: { resultMetricId: 'link_clicks', costMetricId: 'link_cpc', label: 'Cliques' },
   unknown: { resultMetricId: null, costMetricId: null, label: 'Métrica' },
 };
+
+const CHANNEL_MESSAGING_METRICS = new Set([
+  'messaging_conversations_started_total',
+  'whatsapp_conversations_started',
+  'messenger_conversations_started',
+  'instagram_direct_conversations_started',
+  'messaging_conversations_started_generic',
+]);
+
+function resolvedFamilyMetricIds(family: PrimaryMetricFamily, configuredMetricId?: string | null): FamilyMetricIds {
+  if (family === 'messaging' && configuredMetricId && CHANNEL_MESSAGING_METRICS.has(configuredMetricId)) {
+    const labels: Record<string, string> = {
+      whatsapp_conversations_started: 'Conversas no WhatsApp',
+      messenger_conversations_started: 'Conversas no Messenger',
+      instagram_direct_conversations_started: 'Conversas no Instagram',
+      messaging_conversations_started_generic: 'Outras conversas',
+    };
+    return {
+      ...FAMILY_METRIC_IDS.messaging,
+      resultMetricId: configuredMetricId,
+      label: labels[configuredMetricId] ?? FAMILY_METRIC_IDS.messaging.label,
+    };
+  }
+  if (family === 'traffic' && configuredMetricId === 'landing_page_views') {
+    return { resultMetricId: 'landing_page_views', costMetricId: null, label: 'Visualizações da página' };
+  }
+  if (family === 'traffic' && configuredMetricId === 'link_clicks') {
+    return { ...FAMILY_METRIC_IDS.traffic, resultMetricId: 'link_clicks' };
+  }
+  return FAMILY_METRIC_IDS[family];
+}
 
 // "Próximo de estourar meta": custo já está a partir de 85% do teto configurado.
 const NEAR_TARGET_RATIO = 0.85;
@@ -109,6 +149,7 @@ export interface ClientAnalyticsDecisionInput {
   accountMetrics: Record<string, MetricContract>;
   metricGroups: GlobalMetricGroup[];
   resolvedTargets: PerformanceTarget[];
+  budgetPacing?: BudgetPacingResult | null;
   period: AnalyticsPeriod;
   currentDate: Date;
 }
@@ -437,10 +478,10 @@ function buildRecommendation(
 }
 
 export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput): ClientAnalyticsDecision {
-  const { client, analysisProfile, globalPerformance, accountMetrics, metricGroups, resolvedTargets, period, currentDate } = input;
+  const { client, analysisProfile, globalPerformance, accountMetrics, metricGroups, resolvedTargets, budgetPacing, period, currentDate } = input;
 
   const family = resolvePrimaryMetricFamily(analysisProfile?.primaryConversionMetric);
-  const familyIds = FAMILY_METRIC_IDS[family];
+  const familyIds = resolvedFamilyMetricIds(family, analysisProfile?.primaryConversionMetric);
   const primaryMetric: ClientAnalyticsDecision['primaryMetric'] = {
     family,
     metricId: analysisProfile?.primaryConversionMetric ?? null,
@@ -562,7 +603,21 @@ export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput
     ? Math.max(0, minVolume - projection.projectedResult)
     : null;
 
-  const budgetPacingCalc = calculateClientBudgetPacing(plannedBudget, analysisProfile.budgetPeriod, spend ?? 0, currentDate);
+  const legacyBudgetPacing = budgetPacing === undefined
+    ? calculateClientBudgetPacing(plannedBudget, analysisProfile.budgetPeriod, spend ?? 0, currentDate)
+    : null;
+  const normalizedPeriodBudget = budgetPacing
+    ? budgetPacing.targetDailyBudget * budgetPacing.totalDays
+    : legacyBudgetPacing?.plannedMonthlyBudget ?? null;
+  const budgetPacingStatus: BudgetPacingStatus = budgetPacing === undefined
+    ? legacyBudgetPacing?.status ?? 'no_budget'
+    : !budgetPacing
+      ? 'no_budget'
+      : budgetPacing.status === 'on_track'
+        ? 'on_track'
+        : budgetPacing.differencePercent < 0
+          ? 'under_pacing'
+          : 'over_pacing';
 
   const reasons = collectReasons({
     costCeiling,
@@ -574,7 +629,7 @@ export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput
     spend,
     resultCount,
     plannedBudget,
-    budgetPacingStatus: budgetPacingCalc.status,
+    budgetPacingStatus,
     dataQualityStatus,
     objectiveDataIncomplete: scoped ? !scoped.allComplete : false,
   });
@@ -594,10 +649,12 @@ export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput
     gap: { costDifferenceValue, costDifferencePercent, volumeDeficit },
     projection,
     budgetPacing: {
-      status: budgetPacingCalc.status,
-      plannedMonthlyBudget: budgetPacingCalc.plannedMonthlyBudget,
-      actualSpend: budgetPacingCalc.actualSpend,
-      remainingBudget: budgetPacingCalc.remainingBudget,
+      status: budgetPacingStatus,
+      plannedMonthlyBudget: normalizedPeriodBudget,
+      actualSpend: budgetPacing?.actualSpend ?? legacyBudgetPacing?.actualSpend ?? spend ?? 0,
+      remainingBudget: normalizedPeriodBudget !== null && budgetPacing
+        ? normalizedPeriodBudget - budgetPacing.actualSpend
+        : legacyBudgetPacing?.remainingBudget ?? null,
     },
     resultPacing: { status: resultPacingStatus(minVolume, projection.projectedResult) },
     dataQuality: { status: dataQualityStatus, reason: globalPerformance?.dataQuality?.reason ?? null, lastSyncAgeHours },
@@ -612,7 +669,7 @@ export function buildClientAnalyticsDecision(input: ClientAnalyticsDecisionInput
       minVolume,
       projectedResult: projection.projectedResult,
       spend,
-      budgetPacingStatus: budgetPacingCalc.status,
+      budgetPacingStatus,
     }),
   };
 }
@@ -668,7 +725,7 @@ export function getClientPrimaryMetricView(
   }
 
   const family = resolvePrimaryMetricFamily(profile.primaryConversionMetric);
-  const familyIds = FAMILY_METRIC_IDS[family];
+  const familyIds = resolvedFamilyMetricIds(family, profile.primaryConversionMetric);
 
   if (family === 'unknown' || !familyIds.resultMetricId) {
     return { family, label: profile.primaryConversionMetric, actual: null, target: null, gap: null, costMetric: null, secondaryMetric: null, status: 'unmapped' };

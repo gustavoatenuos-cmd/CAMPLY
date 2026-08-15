@@ -69,15 +69,28 @@ serve(async (req) => {
     const clientIds = stringArray(body.clientIds)
     const assetIds = stringArray(body.assetIds)
     
-    const { data, error } = await supabase.rpc('get_global_performance_dashboard_v2', {
+    const dashboardPromise = supabase.rpc('get_global_performance_dashboard_v2', {
       p_period: period,
       p_client_ids: clientIds,
       p_asset_ids: assetIds
     })
-    
-    if (error) throw error
 
-    return jsonResponse({ success: true, dashboard: data ?? [] })
+    const profileQuery = supabase
+      .from('client_analysis_profiles')
+      .select('*')
+    const profilesPromise = clientIds?.length
+      ? profileQuery.in('client_id', clientIds)
+      : profileQuery
+
+    const [dashboardResult, profilesResult] = await Promise.all([dashboardPromise, profilesPromise])
+    if (dashboardResult.error) throw dashboardResult.error
+    if (profilesResult.error) throw profilesResult.error
+
+    return jsonResponse({
+      success: true,
+      dashboard: dashboardResult.data ?? [],
+      analysisProfiles: profilesResult.data ?? [],
+    })
   } catch (error) {
     if (error instanceof HttpError) {
       return jsonResponse({

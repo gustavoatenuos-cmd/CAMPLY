@@ -89,7 +89,7 @@ describe('ClientCampaignDrawer', () => {
     render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
 
     await waitFor(() => expect(fetchHierarchyMock).toHaveBeenCalledTimes(1));
-    expect(fetchHierarchyMock).toHaveBeenCalledWith('asset-valid', 'last_30d', 'campaign', null, 1, 100);
+    expect(fetchHierarchyMock).toHaveBeenCalledWith('asset-valid', 'last_30d', 'campaign', null, 1, 100, true);
   });
 
   it('renderiza estado vazio quando a RPC retorna empty', async () => {
@@ -108,6 +108,29 @@ describe('ClientCampaignDrawer', () => {
     render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={performance} period="last_30d" />);
 
     expect(await screen.findByText('Esse período ainda não foi sincronizado.')).toBeInTheDocument();
+  });
+
+  it('explica a cobertura parcial com intervalo e dias ausentes', async () => {
+    fetchHierarchyMock.mockResolvedValue({
+      state: 'partial_coverage',
+      items: [],
+      total: 0,
+      coverage: {
+        status: 'partial_coverage',
+        requestedDateStart: '2026-07-05',
+        requestedDateStop: '2026-08-03',
+        coveredDateStart: '2026-07-15',
+        coveredDateStop: '2026-08-03',
+        missingDays: 10,
+        reason: 'A coleta começou depois do início solicitado.',
+      },
+    });
+
+    render(<ClientCampaignDrawer isOpen onClose={() => {}} performance={makePerformance([makeAccount()])} period="last_30d" />);
+
+    expect(await screen.findByText(/As campanhas podem ser consultadas/)).toBeInTheDocument();
+    expect(screen.getByText(/Dias ausentes:/)).toHaveTextContent('10');
+    expect(screen.getByText(/A coleta começou/)).toBeInTheDocument();
   });
 
   it('renderiza as campanhas quando a RPC retorna ready', async () => {
