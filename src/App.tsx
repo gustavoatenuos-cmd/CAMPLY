@@ -1,13 +1,13 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { AlertCircle, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
-import { buildInsights } from './data/camplyStore';
 import { useCamplyWorkspace } from './hooks/useCamplyWorkspace';
 import { getCamplyBuildInfo } from './lib/diagnostics/buildInfo';
+import { isMetaE2EMode } from './lib/meta/metaE2ERuntime';
 import { getSupabaseSessionDiagnostics } from './lib/supabase';
 import type { ViewId } from './types';
 
@@ -58,10 +58,7 @@ function SyncErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewId>(() => initialActiveView());
-  const [claudeSummary] = useState<string | null>(null);
-  const [claudeLoading] = useState(false);
   const workspace = useCamplyWorkspace();
-  const insights = useMemo(() => buildInsights(workspace.data), [workspace.data]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -119,7 +116,7 @@ export default function App() {
               {activeView === 'today' ? (
                 <OverviewView
                   data={workspace.data}
-                  insights={insights}
+                  insights={[]}
                   updateData={workspace.updateData}
                   setActiveView={setActiveView}
                 />
@@ -130,7 +127,7 @@ export default function App() {
               {activeView === 'projects' ? <ProjectsView data={workspace.data} updateData={workspace.updateData} /> : null}
               {activeView === 'personalFinance' ? <PersonalFinanceView data={workspace.data} updateData={workspace.updateData} /> : null}
               {activeView === 'activity' ? <ActivityView data={workspace.data} /> : null}
-              {activeView === 'intelligence' ? <IntelligenceView data={workspace.data} insights={insights} /> : null}
+              {activeView === 'intelligence' ? <IntelligenceView data={workspace.data} /> : null}
               {activeView === 'agentSettings' ? <AgentSettingsView data={workspace.data} updateData={workspace.updateData} /> : null}
               {activeView === 'creativeCritic' ? <CreativeCriticView data={workspace.data} /> : null}
               {activeView === 'metaIntegration' ? <MetaIntegrationView data={workspace.data} updateData={workspace.updateData} /> : null}
@@ -145,12 +142,7 @@ export default function App() {
           <SyncErrorToast message={workspace.syncError} onDismiss={workspace.dismissSyncError} />
         ) : null}
       </AnimatePresence>
-      <StartupModal
-        data={workspace.data}
-        setActiveView={setActiveView}
-        claudeSummary={claudeSummary}
-        claudeLoading={claudeLoading}
-      />
+      {!isMetaE2EMode ? <StartupModal data={workspace.data} setActiveView={setActiveView} /> : null}
     </div>
   );
 }

@@ -9,7 +9,6 @@ import {
   saveRemoteDataAndConfirmClient,
 } from '../data/supabaseStore';
 import { resetE2EAnalysisProfiles } from '../lib/analysis/clientAnalysisProfile';
-import { runAgentEngine } from '../lib/agentEngine';
 import {
   E2E_USER_ID,
   isMetaE2EMode,
@@ -17,6 +16,8 @@ import {
   resetMetaE2EState,
   restoreMetaE2EState,
 } from '../lib/meta/metaE2ERuntime';
+import { evaluateOperationalSignals } from '../lib/operational/evaluateOperationalSignals';
+import { syncOperationalSignals } from '../lib/operational/syncOperationalSignals';
 import { canMutateWorkspace, WORKSPACE_READ_ONLY_MESSAGE } from '../lib/operational/workspaceMutationPolicy';
 import { setSupabaseSession, supabase } from '../lib/supabase';
 import type { CamplyData } from '../types';
@@ -25,6 +26,14 @@ const REMOTE_LOAD_ERROR = 'Não foi possível carregar seus dados mais recentes 
 const REMOTE_CONFLICT_RECOVERED = 'Este dispositivo estava com dados desatualizados. Carregamos a versão mais recente do banco — confira sua última alteração e refaça se necessário.';
 const REMOTE_CONFLICT_RELOAD = 'Os dados foram alterados em outro dispositivo. Recarregue a página antes de continuar editando.';
 const REMOTE_SAVE_ERROR = 'Não foi possível salvar uma alteração do CRM no banco. Recarregue antes de editar novamente. A sincronização das contas Meta não foi alterada.';
+
+function reconcileWorkspace(workspace: CamplyData): CamplyData {
+  const agentAlerts = syncOperationalSignals(
+    workspace.agentAlerts || [],
+    evaluateOperationalSignals(workspace)
+  );
+  return agentAlerts === workspace.agentAlerts ? workspace : { ...workspace, agentAlerts };
+}
 
 export interface CamplyWorkspaceController {
   session: Session | null;
@@ -47,7 +56,7 @@ export interface CamplyWorkspaceController {
 export function useCamplyWorkspace(): CamplyWorkspaceController {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [data, setData] = useState<CamplyData>(() => isMetaE2EMode ? metaE2EWorkspace : initialData);
+  const [data, setData] = useState<CamplyData>(() => reconcileWorkspace(isMetaE2EMode ? metaE2EWorkspace : initialData));
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncErrorDismissed, setSyncErrorDismissed] = useState(false);
@@ -93,7 +102,7 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
       resetRemoteWorkspaceState();
       setRemoteLoaded(false);
       setSession(sessionResult.session);
-      setData(loadData(sessionResult.session?.user.id));
+      setData(reconcileWorkspace(loadData(sessionResult.session?.user.id)));
       setAuthReady(true);
     });
 
@@ -109,7 +118,7 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
         sessionUserIdRef.current = nextUserId;
       }
       setSession(nextSession);
-      setData(nextSession ? loadData(nextSession.user.id) : initialData);
+      setData(reconcileWorkspace(nextSession ? loadData(nextSession.user.id) : initialData));
       setAuthReady(true);
     });
 
@@ -143,8 +152,9 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
       remoteHydratingRef.current = false;
       authTransitionRef.current = false;
       if (result.status === 'ok') {
-        skipRemoteSaveDataRef.current = result.data;
-        setData(result.data);
+        const reconciled = reconcileWorkspace(result.data);
+        skipRemoteSaveDataRef.current = reconciled;
+        setData(reconciled);
         setRemoteLoaded(true);
         setRemoteLoadError(null);
         return;
@@ -176,8 +186,9 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
           remoteHydratingRef.current = true;
           const result = await loadRemoteData();
           if (result.status === 'ok') {
-            skipRemoteSaveDataRef.current = result.data;
-            setData(result.data);
+            const reconciled = reconcileWorkspace(result.data);
+            skipRemoteSaveDataRef.current = reconciled;
+            setData(reconciled);
           }
           remoteHydratingRef.current = false;
         })
@@ -221,8 +232,9 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
           if (now - lastConflictAtRef.current <= 5_000) return;
           lastConflictAtRef.current = now;
           if (result.remoteData) {
-            skipRemoteSaveDataRef.current = result.remoteData;
-            setData(result.remoteData);
+            const reconciled = reconcileWorkspace(result.remoteData);
+            skipRemoteSaveDataRef.current = reconciled;
+            setData(reconciled);
             setSyncError(REMOTE_CONFLICT_RECOVERED);
           } else {
             setSyncError(REMOTE_CONFLICT_RELOAD);
@@ -236,34 +248,12 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
     return () => window.clearTimeout(timeout);
   }, [authenticated, data, remoteLoaded, remoteLoadError]);
 
-  useEffect(() => {
-    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
-    setData((current) => {
-      const { newAlerts, newLogs } = runAgentEngine(current);
-      if (!newAlerts.length && !newLogs.length) return current;
-      return {
-        ...current,
-        agentAlerts: [...newAlerts, ...current.agentAlerts],
-        agentLogs: [...newLogs, ...current.agentLogs],
-      };
-    });
-  }, [authenticated, remoteLoaded]);
-
   const updateData = useCallback((updater: (workspace: CamplyData) => CamplyData) => {
     if (workspaceReadOnly) {
       setSyncError(WORKSPACE_READ_ONLY_MESSAGE);
       return;
     }
-    setData((current) => {
-      const next = updater(current);
-      const { newAlerts, newLogs } = runAgentEngine(next);
-      if (!newAlerts.length && !newLogs.length) return next;
-      return {
-        ...next,
-        agentAlerts: [...newAlerts, ...next.agentAlerts],
-        agentLogs: [...newLogs, ...next.agentLogs],
-      };
-    });
+    setData((current) => reconcileWorkspace(updater(current)));
   }, [workspaceReadOnly]);
 
   const persistClientData = useCallback(async (nextData: CamplyData, clientId: string) => {
@@ -271,20 +261,21 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
       setSyncError(WORKSPACE_READ_ONLY_MESSAGE);
       throw new Error(WORKSPACE_READ_ONLY_MESSAGE);
     }
+    const reconciled = reconcileWorkspace(nextData);
     if (!authenticated || isMetaE2EMode) {
-      skipRemoteSaveDataRef.current = nextData;
-      setData(nextData);
+      skipRemoteSaveDataRef.current = reconciled;
+      setData(reconciled);
       return;
     }
-    await saveRemoteDataAndConfirmClient(nextData, clientId);
-    skipRemoteSaveDataRef.current = nextData;
-    setData(nextData);
+    await saveRemoteDataAndConfirmClient(reconciled, clientId);
+    skipRemoteSaveDataRef.current = reconciled;
+    setData(reconciled);
     setSyncError(null);
   }, [authenticated, workspaceReadOnly]);
 
   const mockLogin = isMetaE2EMode ? () => {
     sessionUserIdRef.current = E2E_USER_ID;
-    setData(metaE2EWorkspace);
+    setData(reconcileWorkspace(metaE2EWorkspace));
     setSession({ user: { id: E2E_USER_ID } } as Session);
     setRemoteLoaded(true);
   } : undefined;
