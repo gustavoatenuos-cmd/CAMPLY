@@ -57,8 +57,6 @@ function SyncErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewId>(() => initialActiveView());
-  const [claudeSummary] = useState<string | null>(null);
-  const [claudeLoading] = useState(false);
   const workspace = useCamplyWorkspace();
 
   useEffect(() => {
@@ -143,12 +141,7 @@ export default function App() {
           <SyncErrorToast message={workspace.syncError} onDismiss={workspace.dismissSyncError} />
         ) : null}
       </AnimatePresence>
-      <StartupModal
-        data={workspace.data}
-        setActiveView={setActiveView}
-        claudeSummary={claudeSummary}
-        claudeLoading={claudeLoading}
-      />
+      <StartupModal data={workspace.data} setActiveView={setActiveView} />
     </div>
   );
 }
