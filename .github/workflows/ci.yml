@@ -17,16 +17,29 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Production dependency audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > audit-production.json
+          audit_status=$?
+          node -e 'const fs=require("node:fs"); const a=JSON.parse(fs.readFileSync("audit-production.json","utf8")); const b=Object.entries(a.vulnerabilities||{}).filter(([,v])=>v.severity==="high"||v.severity==="critical"); if(!b.length) console.log("No high/critical production dependency vulnerabilities."); for(const [name,v] of b){ const via=(v.via||[]).map(e=>typeof e==="string"?e:(e.title||e.url||"advisory")).join(", "); const fix=v.fixAvailable===true?"fix available":(v.fixAvailable&&typeof v.fixAvailable==="object"?`fix: ${v.fixAvailable.name||name}@${v.fixAvailable.version||"available"}`:"no automatic fix"); console.log(`::error file=package.json,title=Production dependency vulnerability::${name} | severity=${v.severity} | range=${v.range||"unknown"} | via=${via||"unknown"} | ${fix}`); }'
+          exit "$audit_status"
+
+      - name: Full dependency audit report
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       - name: Typecheck
         run: npm run lint
