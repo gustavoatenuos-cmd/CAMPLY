@@ -6,6 +6,7 @@ const workspace = readFileSync(new URL('../hooks/useCamplyWorkspace.ts', import.
 const alerts = readFileSync(new URL('../components/AlertCenterView.tsx', import.meta.url), 'utf8');
 const intelligence = readFileSync(new URL('../components/IntelligenceView.tsx', import.meta.url), 'utf8');
 const evaluator = readFileSync(new URL('../lib/operational/evaluateOperationalSignals.ts', import.meta.url), 'utf8');
+const aiService = readFileSync(new URL('../lib/claudeService.ts', import.meta.url), 'utf8');
 
 describe('operational decision ownership', () => {
   it('uses one evaluator for workspace operational signals', () => {
@@ -23,5 +24,14 @@ describe('operational decision ownership', () => {
     expect(evaluator).not.toContain('client?.benchmarks?.cpr');
     expect(evaluator).not.toContain('purchase_roas');
     expect(evaluator).not.toContain('cost_per_purchase');
+  });
+
+  it('keeps interpretive AI downstream of canonical signals instead of manual media fields', () => {
+    expect(aiService).toContain('activeAlerts');
+    expect(aiService).toContain('consultar o Analytics do CAMPLY');
+    expect(aiService).not.toContain('generateCampaignAnalysis');
+    expect(aiService).not.toContain('campaign.spent');
+    expect(aiService).not.toContain('campaign.budget');
+    expect(aiService).not.toContain('budget_assessment');
   });
 });
