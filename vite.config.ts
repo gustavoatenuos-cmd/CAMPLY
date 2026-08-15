@@ -14,6 +14,18 @@ export default defineConfig({
     'import.meta.env.VITE_DEPLOY_ENV': JSON.stringify(deployEnv),
   },
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'supabase-vendor': ['@supabase/supabase-js'],
+          'motion-vendor': ['framer-motion'],
+          'ui-vendor': ['lucide-react', '@hello-pangea/dnd', '@radix-ui/react-slot'],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

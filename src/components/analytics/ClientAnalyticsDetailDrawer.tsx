@@ -4,10 +4,15 @@ import { type EnrichedGlobalClientPerformance } from '../../lib/performance/useP
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { periodLabels } from '../../lib/performance/analyticsCapabilities';
 import type { GlobalClientStatus } from '../../lib/performance/globalPerformanceDashboard';
-import { buildClientAnalyticsDecision, periodFromDashboardPeriod, type ClientAnalyticsDecision } from '../../lib/performance/clientAnalyticsDecision';
+import {
+  buildClientAnalyticsDecision,
+  periodFromDashboardPeriod,
+  type ClientAnalyticsDecision,
+} from '../../lib/performance/clientAnalyticsDecision';
 import { explainDashboardClientSync } from '../../lib/performance/explainClientSyncState';
 import { metricLabels } from '../../lib/analysis/clientAnalysisProfile';
 import { resolveClientPrimaryName } from '../../data/clientDisplay';
+import { ClientMetricComparisonGrid } from './ClientMetricComparisonGrid';
 
 interface ClientAnalyticsDetailDrawerProps {
   isOpen: boolean;
@@ -46,12 +51,20 @@ function formatNumber(value: number | null): string {
   return value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
 
-function metricValue(metrics: Record<string, { available: boolean; value: number | null }>, id: string): number | null {
-  const metric = metrics[id];
-  return metric?.available && typeof metric.value === 'number' ? metric.value : null;
+function primaryResultValue(decision: ClientAnalyticsDecision): string {
+  const actual = formatNumber(decision.actual.resultCount);
+  if (decision.actual.costPerResult === null) return actual;
+  return `${actual} · ${formatCurrency(decision.actual.costPerResult)} por resultado`;
 }
 
-export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, period, onOpenCampaigns, onEditClient }: ClientAnalyticsDetailDrawerProps) {
+export function ClientAnalyticsDetailDrawer({
+  isOpen,
+  onClose,
+  performance,
+  period,
+  onOpenCampaigns,
+  onEditClient,
+}: ClientAnalyticsDetailDrawerProps) {
   const decision = useMemo<ClientAnalyticsDecision | null>(() => {
     if (!performance) return null;
     const now = new Date();
@@ -67,6 +80,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
+      budgetPacing: performance.budgetPacing,
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
@@ -87,10 +101,6 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
   const currency = account?.currency || 'BRL';
   const clientName = resolveClientPrimaryName(performance.client, profile, performance);
 
-  // Diagnóstico determinístico, por regra - nunca IA generativa. O estado de
-  // sincronização (não sincronizado/falhou/parcial) tem prioridade sobre o
-  // diagnóstico de meta, porque não faz sentido avaliar custo/volume sobre
-  // dados que ainda não são confiáveis.
   const primaryDiagnosisTitle = syncDiagnosis !== 'ok'
     ? SYNC_DIAGNOSIS_COPY[syncDiagnosis].title
     : decision?.status === 'no_profile'
@@ -101,62 +111,61 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
           ? 'Operação em atenção.'
           : decision?.status === 'critical'
             ? 'Operação crítica.'
-            : 'Sem dados confiáveis.';
+            : decision?.status === 'stale_data'
+              ? 'Dados desatualizados.'
+              : 'Sem dados confiáveis.';
 
-  const recommendedAction = syncDiagnosis !== 'ok' ? SYNC_DIAGNOSIS_COPY[syncDiagnosis].action : decision?.recommendation ?? 'Configure a meta principal do cliente.';
-
-  const metrics = performance.metrics ?? {};
+  const recommendedAction = syncDiagnosis !== 'ok'
+    ? SYNC_DIAGNOSIS_COPY[syncDiagnosis].action
+    : decision?.recommendation ?? 'Configure a meta principal do cliente.';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm transition-all" onClick={onClose}>
       <div
-        className="w-full max-w-2xl h-full bg-white shadow-2xl flex flex-col transform transition-transform border-l border-gray-200"
-        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-2xl flex-col border-l border-gray-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
       >
-        {/* Header / Identificação */}
-        <div className="flex flex-col space-y-2 p-6 border-b">
-          <div className="flex justify-between items-start">
+        <div className="flex flex-col space-y-2 border-b p-6">
+          <div className="flex items-start justify-between">
             <div>
-              <h3 className="font-semibold text-lg tracking-tight">{clientName}</h3>
+              <h3 className="text-lg font-semibold tracking-tight">{clientName}</h3>
               <p className="text-sm text-muted-foreground">
                 {account?.accountName || 'Conta Meta não vinculada'} · {periodLabels[period]}
               </p>
             </div>
-            <button onClick={onClose} className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+            <button type="button" onClick={onClose} className="rounded-sm opacity-70 transition-opacity hover:opacity-100">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-gray-500">
             <span>Última sincronização: {performance.lastSuccessfulRun?.finishedAt ? new Date(performance.lastSuccessfulRun.finishedAt).toLocaleString('pt-BR') : 'nunca'}</span>
-            <span>· Qualidade dos dados: {performance.dataQuality?.status ?? 'unavailable'}</span>
+            <span>· Qualidade: {performance.dataQuality?.status ?? 'unavailable'}</span>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6 space-y-6">
-          {/* Diagnóstico + ação recomendada */}
-          <Section title="Diagnóstico">
+        <div className="flex-1 space-y-6 overflow-auto p-6">
+          <Section title="Diagnóstico do gerente de contas">
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
               <p className="text-sm font-semibold text-gray-900">{primaryDiagnosisTitle}</p>
               <p className="mt-1 text-sm text-gray-600">{recommendedAction}</p>
             </div>
-            {(performance.hasNewerPartial || performance.hasNewerFailure) && (
+            {(performance.hasNewerPartial || performance.hasNewerFailure) ? (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Último dado confiável em uso; a tentativa de sincronização mais recente {performance.hasNewerFailure ? 'falhou' : 'ficou parcial'}. Os números abaixo vêm da última sincronização bem-sucedida, não da mais recente.
+                Último snapshot confiável em uso; a tentativa mais recente {performance.hasNewerFailure ? 'falhou' : 'ficou parcial'}. A análise abaixo não usa a tentativa incompleta.
               </div>
-            )}
+            ) : null}
           </Section>
 
-          {/* Contrato do cliente */}
           <Section title="Contrato do cliente">
             {!profile ? (
-              <p className="text-sm text-gray-500 italic">Perfil de análise não configurado.</p>
+              <p className="text-sm italic text-gray-500">Perfil de análise não configurado.</p>
             ) : (
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <Field label="Métrica principal" value={metricLabels[profile.primaryConversionMetric] || profile.primaryConversionMetric} />
                 <Field label="Orçamento planejado" value={formatCurrency(profile.plannedBudget, currency)} />
-                <Field label="Custo máximo aceitável" value={decision?.target.costCeiling !== null && decision?.target.costCeiling !== undefined ? formatCurrency(decision.target.costCeiling, currency) : 'Não configurado'} />
-                <Field label="ROAS mínimo" value={decision?.target.minRoas !== null && decision?.target.minRoas !== undefined ? `${decision.target.minRoas.toFixed(2)}x` : 'Não configurado'} />
-                <Field label="Volume esperado" value={decision?.target.minVolume !== null && decision?.target.minVolume !== undefined ? formatNumber(decision.target.minVolume) : 'Não configurado'} />
+                <Field label="Custo máximo aceitável" value={decision?.target.costCeiling != null ? formatCurrency(decision.target.costCeiling, currency) : 'Não configurado'} />
+                <Field label="ROAS mínimo" value={decision?.target.minRoas != null ? `${decision.target.minRoas.toFixed(2)}x` : 'Não configurado'} />
+                <Field label="Volume esperado" value={decision?.target.minVolume != null ? formatNumber(decision.target.minVolume) : 'Não configurado'} />
                 <Field label="Canal principal" value={profile.primaryChannel || '—'} />
                 <Field label="Modelo de venda" value={profile.salesModels?.length ? profile.salesModels.join(', ') : '—'} />
                 <Field label="Operação" value={profile.operationType || '—'} />
@@ -164,66 +173,51 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
             )}
           </Section>
 
-          {/* Resultado real */}
-          <Section title="Resultado real no período">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-              <Field label="Investimento" value={formatCurrency(metricValue(metrics, 'spend'), currency)} />
-              <Field label="Conversas" value={formatNumber(metricValue(metrics, 'messaging_conversations_started_total'))} />
-              <Field label="Leads" value={formatNumber(metricValue(metrics, 'leads'))} />
-              <Field label="Compras" value={formatNumber(metricValue(metrics, 'purchases'))} />
-              <Field label="Valor de compra" value={formatCurrency(metricValue(metrics, 'purchase_value'), currency)} />
-              <Field label="ROAS" value={metricValue(metrics, 'purchase_roas') !== null ? `${metricValue(metrics, 'purchase_roas')!.toFixed(2)}x` : '—'} />
-              <Field label="Alcance" value={formatNumber(metricValue(metrics, 'reach'))} />
-              <Field label="Impressões" value={formatNumber(metricValue(metrics, 'impressions'))} />
-              <Field label="Cliques" value={formatNumber(metricValue(metrics, 'link_clicks'))} />
-            </div>
+          <Section title="Resultado principal">
+            {!decision || decision.status === 'no_profile' ? (
+              <p className="text-sm text-gray-500">Configure a métrica principal para transformar os dados da Meta em uma leitura orientada ao cliente.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Field label={decision.primaryMetric.label} value={primaryResultValue(decision)} />
+                <Field label="Investimento no período" value={formatCurrency(decision.actual.spend, currency)} />
+                {decision.primaryMetric.family === 'sales' ? (
+                  <Field label="ROAS" value={decision.actual.roas != null ? `${decision.actual.roas.toFixed(2)}x` : '—'} />
+                ) : null}
+                <Field label="Fonte do resultado" value={decision.actual.objectiveScoped ? 'Objetivo/canal compatível' : 'Conta agregada'} />
+              </div>
+            )}
           </Section>
 
-          {/* Comparação */}
-          {decision && decision.status !== 'no_profile' && decision.status !== 'no_data' && (
-            <Section title="Comparação: esperado vs. realizado">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <Field label={`${decision.primaryMetric.label} realizado`} value={formatNumber(decision.actual.resultCount)} />
-                <Field label="Custo atual" value={decision.actual.costPerResult !== null ? formatCurrency(decision.actual.costPerResult, currency) : 'Sem valor confiável'} />
-                <Field label="Orçamento vs. gasto" value={`${formatCurrency(decision.budgetPacing.plannedMonthlyBudget, currency)} planejado · ${formatCurrency(decision.budgetPacing.actualSpend, currency)} gasto`} />
-                <Field
-                  label="Gap da meta"
-                  value={decision.gap.volumeDeficit !== null && decision.gap.volumeDeficit > 0
-                    ? `-${formatNumber(decision.gap.volumeDeficit)} ${decision.primaryMetric.label.toLowerCase()}`
-                    : decision.gap.costDifferencePercent !== null
-                      ? `${decision.gap.costDifferencePercent > 0 ? '+' : ''}${decision.gap.costDifferencePercent.toFixed(1)}% no custo`
-                      : 'Dentro da meta'}
-                />
-              </div>
-            </Section>
-          )}
+          <Section title="Métricas principais, secundárias e regras">
+            <ClientMetricComparisonGrid performance={performance} />
+          </Section>
 
-          {/* Projeção */}
-          {decision && decision.status !== 'no_profile' && decision.status !== 'no_data' && (
+          {decision && !['no_profile', 'no_data'].includes(decision.status) ? (
             <Section title="Projeção até o fim do período">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <Field label="Ritmo atual" value={decision.projection.dailyResultRate !== null ? `${decision.projection.dailyResultRate.toFixed(1)} / dia` : '—'} />
                 <Field label="Projeção do período" value={formatNumber(decision.projection.projectedResult)} />
-                <Field label="Status de ritmo" value={RESULT_PACING_LABEL[decision.resultPacing.status]} />
+                <Field label="Status de resultado" value={RESULT_PACING_LABEL[decision.resultPacing.status]} />
                 <Field label="Ritmo de orçamento" value={BUDGET_PACING_LABEL[decision.budgetPacing.status]} />
               </div>
             </Section>
-          )}
+          ) : null}
         </div>
 
-        {/* Ações */}
-        <div className="grid grid-cols-2 gap-px bg-gray-100 border-t">
+        <div className="grid grid-cols-2 gap-px border-t bg-gray-100">
           <button
+            type="button"
             onClick={() => onOpenCampaigns(performance)}
             data-testid="detail-drawer-open-campaigns"
-            className="flex items-center justify-center gap-1.5 bg-white py-3 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+            className="flex items-center justify-center gap-1.5 bg-white py-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-50"
           >
             Ver campanhas
           </button>
           <button
+            type="button"
             onClick={() => onEditClient?.(performance.clientId)}
             disabled={!onEditClient}
-            className="flex items-center justify-center gap-1.5 bg-white py-3 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-1.5 bg-white py-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Editar metas
           </button>
@@ -251,7 +245,7 @@ const BUDGET_PACING_LABEL: Record<ClientAnalyticsDecision['budgetPacing']['statu
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">{title}</h4>
       {children}
     </section>
   );
@@ -259,7 +253,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-gray-50 rounded p-2">
+    <div className="rounded bg-gray-50 p-2">
       <p className="text-[10px] uppercase text-gray-500">{label}</p>
       <p className="font-semibold text-gray-900">{value}</p>
     </div>

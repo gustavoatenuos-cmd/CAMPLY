@@ -39,6 +39,29 @@ export interface BulkSyncAccountInput {
   adAccountId: string;
 }
 
+/**
+ * Runs independent account synchronizations with a small, explicit concurrency
+ * ceiling. This avoids the previous all-sequential wait without flooding the
+ * Meta/Supabase functions with an unbounded Promise.all burst.
+ */
+export async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) return;
+  const workerCount = Math.max(1, Math.min(Math.floor(concurrency), items.length));
+  let nextIndex = 0;
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      await worker(items[currentIndex], currentIndex);
+    }
+  }));
+}
+
 export function initializeBulkSyncProgress(accounts: BulkSyncAccountInput[]): BulkSyncProgress {
   return {
     total: accounts.length,

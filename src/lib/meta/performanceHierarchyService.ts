@@ -1,8 +1,10 @@
 import type { DashboardPeriod } from '../performance/analyticsCapabilities';
 import { normalizeTraceableMetric, type TraceableMetric } from '../performance/traceableMetrics';
 import { invokeFunction } from '../invokeFunction';
+import { supabaseData } from '../supabase';
 import { e2eMetric, isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
 import type { MetaRunSummary } from './clientMetaAssetService';
+import { exactPeriodRange } from './periodRange';
 
 export type MetaHierarchyLevel = 'campaign' | 'adset' | 'ad' | 'creative';
 
@@ -30,7 +32,7 @@ export interface MetaHierarchyItem {
 }
 
 export interface MetaHierarchyPage {
-  state: 'ready' | 'empty' | 'period_not_synced';
+  state: 'ready' | 'empty' | 'period_not_synced' | 'partial_coverage';
   level: MetaHierarchyLevel;
   period: DashboardPeriod;
   page: number;
@@ -47,6 +49,15 @@ export interface MetaHierarchyPage {
   dateStart?: string | null;
   dateStop?: string | null;
   run?: MetaRunSummary;
+  coverage?: {
+    status: 'covered' | 'partial_coverage' | 'not_covered';
+    requestedDateStart: string;
+    requestedDateStop: string;
+    coveredDateStart: string | null;
+    coveredDateStop: string | null;
+    missingDays: number;
+    reason: string | null;
+  };
 }
 
 const isActiveMetaItem = (item: Pick<MetaHierarchyItem, 'effectiveStatus' | 'status'>) =>
@@ -96,7 +107,7 @@ function fixtureItems(level: MetaHierarchyLevel, parentId?: string): MetaHierarc
   return [];
 }
 
-function normalizePage(value: unknown): MetaHierarchyPage {
+function normalizePage(value: unknown, includeHistorical = false): MetaHierarchyPage {
   const page = value as MetaHierarchyPage;
   const items = Array.isArray(page.items) ? page.items.map((item) => ({
     ...item,
@@ -104,13 +115,46 @@ function normalizePage(value: unknown): MetaHierarchyPage {
       [metricId, normalizeTraceableMetric(metricId, metric)]
     ))),
   })) : [];
-  const visibleItems = page.level === 'campaign' ? items.filter(isActiveMetaItem) : items;
+  const visibleItems = page.level === 'campaign' && !includeHistorical ? items.filter(isActiveMetaItem) : items;
   return {
     ...page,
     total: page.level === 'campaign' ? visibleItems.length : page.total,
     state: page.level === 'campaign' && page.state === 'ready' && visibleItems.length === 0 ? 'empty' : page.state,
     items: visibleItems,
   };
+}
+
+async function loadMetaHierarchyFromRpc(input: {
+  clientMetaAssetId: string;
+  period: DashboardPeriod;
+  level: MetaHierarchyLevel;
+  parentId?: string;
+  page?: number;
+  pageSize?: number;
+  includeHistorical?: boolean;
+}): Promise<MetaHierarchyPage> {
+  if (!supabaseData) {
+    throw new Error('Supabase não está configurado.');
+  }
+
+  const range = exactPeriodRange(input.period, 'America/Sao_Paulo');
+  const { data, error } = await supabaseData.rpc('get_meta_performance_hierarchy_v2', {
+    p_client_meta_asset_id: input.clientMetaAssetId,
+    p_period: input.period,
+    p_date_start: range.dateStart,
+    p_date_stop: range.dateStop,
+    p_level: input.level,
+    p_parent_id: input.parentId || null,
+    p_page: input.page || 1,
+    p_page_size: input.pageSize || 25,
+    p_include_historical: input.includeHistorical === true,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Não foi possível carregar a hierarquia salva.');
+  }
+
+  return normalizePage(data, input.includeHistorical);
 }
 
 export async function loadMetaHierarchy(input: {
@@ -120,28 +164,44 @@ export async function loadMetaHierarchy(input: {
   parentId?: string;
   page?: number;
   pageSize?: number;
+  includeHistorical?: boolean;
 }): Promise<MetaHierarchyPage> {
   if (isMetaE2EMode) {
-    if (!metaE2EState.syncedPeriods.has(input.period)) {
+    if (!metaE2EState.syncedPeriods.has(input.period) && !metaE2EState.syncedPeriods.has('last_90d')) {
       return { state: 'period_not_synced', level: input.level, period: input.period, page: 1, pageSize: 25, total: 0, items: [] };
     }
     const items = fixtureItems(input.level, input.parentId);
-    return {
+    return normalizePage({
       state: items.length ? 'ready' : 'empty', level: input.level, period: input.period,
       page: 1, pageSize: 25, total: items.length, items,
       clientId: 'client-e2e', clientMetaAssetId: input.clientMetaAssetId,
       metaAssetId: '20000000-0000-0000-0000-00000000e2e0', integrationId: 'integration-e2e',
       adAccountId: 'act_e2e', currency: 'BRL', timezone: 'America/Sao_Paulo',
       dateStart: '2026-07-01', dateStop: '2026-07-01',
-    };
+    }, input.includeHistorical);
   }
-  const data = await invokeFunction<MetaHierarchyPage>('meta-hierarchy', {
-    clientMetaAssetId: input.clientMetaAssetId,
-    period: input.period,
-    level: input.level,
-    parentId: input.parentId || null,
-    page: input.page || 1,
-    pageSize: input.pageSize || 25,
-  }, 20_000);
-  return normalizePage(data);
+  const range = exactPeriodRange(input.period, 'America/Sao_Paulo');
+  try {
+    const data = await invokeFunction<MetaHierarchyPage>('meta-hierarchy', {
+      clientMetaAssetId: input.clientMetaAssetId,
+      period: input.period,
+      level: input.level,
+      parentId: input.parentId || null,
+      page: input.page || 1,
+      pageSize: input.pageSize || 25,
+      dateStart: range.dateStart,
+      dateStop: range.dateStop,
+      includeHistorical: input.includeHistorical === true,
+    }, 20_000);
+    const normalized = normalizePage(data, input.includeHistorical);
+    if (normalized.state !== 'period_not_synced') return normalized;
+    try {
+      return await loadMetaHierarchyFromRpc(input);
+    } catch {
+      return normalized;
+    }
+  } catch (edgeError) {
+    console.warn('[performanceHierarchyService] meta-hierarchy Edge Function failed; falling back to authenticated RPC.', edgeError);
+    return loadMetaHierarchyFromRpc(input);
+  }
 }

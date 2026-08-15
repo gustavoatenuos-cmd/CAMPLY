@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { type EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 import { X, ExternalLink, Loader2 } from 'lucide-react';
-import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode } from '../../lib/performance/metaPerformanceHierarchy';
+import { fetchMetaPerformanceHierarchy, type HierarchicalMetricNode, type HierarchyResponse } from '../../lib/performance/metaPerformanceHierarchy';
 import type { GlobalPerformanceAccount } from '../../lib/performance/globalPerformanceDashboard';
 import type { DashboardPeriod } from '../../lib/performance/analyticsCapabilities';
 import { TraceableMetricValue } from '../performance/TraceableMetricValue';
@@ -20,11 +20,12 @@ interface ClientCampaignDrawerProps {
 type DrawerState =
   | { kind: 'loading' }
   | { kind: 'no_account' }
-  | { kind: 'period_not_synced' }
+  | { kind: 'period_not_synced'; coverage?: HierarchyResponse['coverage'] }
+  | { kind: 'partial_coverage'; coverage?: HierarchyResponse['coverage'] }
   | { kind: 'unauthorized' }
   | { kind: 'empty' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; items: HierarchicalMetricNode[] };
+  | { kind: 'ready'; items: HierarchicalMetricNode[]; coverage?: HierarchyResponse['coverage'] };
 
 // Contas sem clientMetaAssetId não têm vínculo analítico oficial e não podem
 // ser usadas para buscar hierarquia — pular silenciosamente para a próxima.
@@ -57,6 +58,7 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
       accountMetrics: performance.metrics ?? {},
       metricGroups: performance.metricGroups ?? [],
       resolvedTargets: performance.resolvedTargets ?? [],
+      budgetPacing: performance.budgetPacing,
       period: periodFromDashboardPeriod(period, timezone, now),
       currentDate: now,
     });
@@ -85,17 +87,19 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
     let active = true;
     setState({ kind: 'loading' });
 
-    fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100)
+    fetchMetaPerformanceHierarchy(account.clientMetaAssetId, period, 'campaign', null, 1, 100, true)
       .then((response) => {
         if (!active) return;
         if (response.state === 'period_not_synced') {
-          setState({ kind: 'period_not_synced' });
+          setState({ kind: 'period_not_synced', coverage: response.coverage });
+        } else if (response.state === 'partial_coverage') {
+          setState({ kind: 'partial_coverage', coverage: response.coverage });
         } else if (response.state === 'unauthorized') {
           setState({ kind: 'unauthorized' });
         } else if (response.state === 'empty' || response.items.length === 0) {
           setState({ kind: 'empty' });
         } else {
-          setState({ kind: 'ready', items: response.items });
+          setState({ kind: 'ready', items: response.items, coverage: response.coverage });
         }
       })
       .catch((err) => {
@@ -153,7 +157,11 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
           )}
 
           {state.kind === 'period_not_synced' && (
-            <EmptyMessage>Esse período ainda não foi sincronizado.</EmptyMessage>
+            <CoverageMessage coverage={state.coverage} fallback="Esse período ainda não foi sincronizado." />
+          )}
+
+          {state.kind === 'partial_coverage' && (
+            <CoverageMessage coverage={state.coverage} fallback="As campanhas podem ser consultadas, mas as métricas não cobrem todo o período selecionado." />
           )}
 
           {state.kind === 'unauthorized' && (
@@ -173,6 +181,12 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
 
           {state.kind === 'ready' && account && (
             <div className="space-y-4">
+              {state.coverage && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  Período solicitado: <strong>{formatCoverageRange(state.coverage.requestedDateStart, state.coverage.requestedDateStop)}</strong>
+                  {' · '}Período efetivamente coberto: <strong>{formatCoverageRange(state.coverage.coveredDateStart, state.coverage.coveredDateStop)}</strong>
+                </div>
+              )}
               {readiness && (readiness.campaigns.status === 'partial' || readiness.campaigns.status === 'stale') && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
                   {readiness.campaigns.warnings.join(' ') || 'Dados da campanha podem estar incompletos.'}
@@ -185,6 +199,28 @@ export function ClientCampaignDrawer({ isOpen, onClose, performance, period }: C
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function formatCoverageRange(dateStart: string | null | undefined, dateStop: string | null | undefined): string {
+  if (!dateStart || !dateStop) return 'indisponível';
+  const format = (value: string) => value.split('-').reverse().join('/');
+  return `${format(dateStart)} a ${format(dateStop)}`;
+}
+
+function CoverageMessage({ coverage, fallback }: { coverage?: HierarchyResponse['coverage']; fallback: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center rounded-lg border border-dashed bg-gray-50 p-6 text-center text-gray-500">
+      <p>{fallback}</p>
+      {coverage && (
+        <div className="mt-3 space-y-1 text-xs">
+          <p>Solicitado: <strong>{formatCoverageRange(coverage.requestedDateStart, coverage.requestedDateStop)}</strong></p>
+          <p>Coberto: <strong>{formatCoverageRange(coverage.coveredDateStart, coverage.coveredDateStop)}</strong></p>
+          <p>Dias ausentes: <strong>{coverage.missingDays}</strong></p>
+          {coverage.reason && <p>Motivo: {coverage.reason}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -246,4 +282,3 @@ function MetricCell({ label, value, metric }: { label: string; value: string; me
     </div>
   );
 }
-

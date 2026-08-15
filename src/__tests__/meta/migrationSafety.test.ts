@@ -42,6 +42,16 @@ const singleLast90dContractMigration = readFileSync(
   'utf8'
 );
 
+const persistedMetaSyncBatchesMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260803000000_persist_meta_sync_batches.sql', import.meta.url),
+  'utf8'
+);
+
+const hierarchyDateCoverageMigration = readFileSync(
+  new URL('../../../supabase/migrations/20260804000000_meta_hierarchy_date_coverage_contract.sql', import.meta.url),
+  'utf8'
+);
+
 const metaSyncPerformanceFunction = readFileSync(
   new URL('../../../supabase/functions/meta-sync-performance/index.ts', import.meta.url),
   'utf8'
@@ -192,6 +202,8 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(metaSyncPerformanceFunction).toContain("const OFFICIAL_SYNC_PERIOD = 'last_90d'");
     expect(metaSyncPerformanceFunction).toContain('const periods = [OFFICIAL_SYNC_PERIOD]');
     expect(metaSyncPerformanceFunction).toContain("time_increment: '1'");
+    expect(metaSyncPerformanceFunction).toContain('officialRangeDiagnostics.expectedDateStart');
+    expect(metaSyncPerformanceFunction).toContain('officialRangeDiagnostics.expectedDateStop');
     expect(metaSyncPerformanceFunction).toContain(
       'for (const accountInsightGroup of groupAccountInsightsByDateRange(accountInsights))'
     );
@@ -208,5 +220,44 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
     expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
     expect(metaIntegrationView).toContain('syncMetaAsset');
+  });
+});
+
+describe('persisted Meta sync batch migration safety', () => {
+  it('keeps batch mutations authenticated, resumable and server-side', () => {
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE TABLE IF NOT EXISTS public.meta_sync_batches');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE TABLE IF NOT EXISTS public.meta_sync_batch_items');
+    expect(persistedMetaSyncBatchesMigration).toContain('ENABLE ROW LEVEL SECURITY');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.start_meta_sync_batch');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.get_latest_meta_sync_batch');
+    expect(persistedMetaSyncBatchesMigration).toContain('CREATE OR REPLACE FUNCTION public.finish_meta_sync_batch_item');
+    expect(persistedMetaSyncBatchesMigration).toContain("b.status = 'running'");
+    expect(persistedMetaSyncBatchesMigration).toContain('auth.uid()');
+    expect(persistedMetaSyncBatchesMigration).toContain('pg_advisory_xact_lock');
+    expect(persistedMetaSyncBatchesMigration).not.toMatch(/\bDELETE\s+FROM\s+public\.meta_sync_/i);
+  });
+});
+
+describe('hierarchy date coverage contract safety', () => {
+  it('reads an explicit date range from a covering successful run', () => {
+    expect(hierarchyDateCoverageMigration).toContain('CREATE OR REPLACE FUNCTION public.get_meta_performance_hierarchy_v2');
+    expect(hierarchyDateCoverageMigration).toContain('r.date_start <= p_date_start');
+    expect(hierarchyDateCoverageMigration).toContain('r.date_stop >= p_date_stop');
+    expect(hierarchyDateCoverageMigration).toContain("r.status = 'success'");
+    expect(hierarchyDateCoverageMigration).not.toMatch(/pg_get_functiondef/i);
+  });
+
+  it('aggregates daily metrics within the selected range and preserves unavailable values', () => {
+    expect(hierarchyDateCoverageMigration).toContain('get_traceable_entity_metrics_for_range');
+    expect(hierarchyDateCoverageMigration).toContain('SUM(m.metric_value)');
+    expect(hierarchyDateCoverageMigration).toContain('m.date_start >= p_date_start');
+    expect(hierarchyDateCoverageMigration).toContain('m.date_stop <= p_date_stop');
+    expect(hierarchyDateCoverageMigration).toContain('ELSE NULL');
+  });
+
+  it('includes paused historical campaigns only when they delivered in the requested range', () => {
+    expect(hierarchyDateCoverageMigration).toContain('p_include_historical');
+    expect(hierarchyDateCoverageMigration).toContain("m.metric_id = 'spend'");
+    expect(hierarchyDateCoverageMigration).toContain('m.metric_value > 0');
   });
 });

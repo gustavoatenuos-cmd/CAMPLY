@@ -1,7 +1,7 @@
 # Auditoria Sênior Definitiva — Camply Meta Analytics Engine
 
 ## 1. Fluxo Completo dos Dados
-1. O Frontend despacha uma requisição POST com `adAccountId` e `periods` para `meta-sync-ads`.
+1. O Frontend despacha uma requisição POST com `clientMetaAssetId`, período oficial `last_90d` e nível solicitado para `meta-sync-performance`.
 2. A Edge Function valida o JWT via Supabase Auth, verifica no DB se a integração pertence ao usuário, está ativa, e se o `asset` de `adaccount` está autorizado.
 3. Se autorizado, o backend decripta o token OAuth versionado AES-GCM (tratando chaves e sentinelas nulas).
 4. O Deno faz HTTP GET para `graph.facebook.com` coletando campanhas e ad sets paginados.
@@ -40,7 +40,7 @@
 - **Novas**: `meta_campaign_snapshots`, `meta_adset_snapshots` (Histórico Imutável).
 
 ## 6. Edge Functions Auditadas
-- `meta-sync-ads`: Orchestration da sync, auth check e persistence atômica.
+- `meta-sync-performance`: orquestração da sincronização, autorização do vínculo e persistência atômica.
 - `meta-oauth-start` / `meta-oauth-callback`: OAuth com State Hash SHA-256 no Banco.
 - Outras serão uniformizadas para timeouts, erros e checks de usuário: `meta-list-assets`, `meta-disconnect`, `meta-validate-token`, `meta-fetch-creatives`, `meta-creative-critic`.
 - O endpoint legado `meta-sync-campaigns` será removido/desativado.

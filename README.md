@@ -30,7 +30,7 @@ Ela descreve:
 
 ## Estado atual
 
-O app usa Supabase Auth com e-mail e senha, RLS por usuário e persistência híbrida. O `localStorage` mantém uma cópia local para abertura rápida; o Supabase sincroniza o workspace com controle de versão para impedir sobrescritas silenciosas entre dispositivos.
+O app usa Supabase Auth com e-mail e senha, RLS por usuário e persistência server-first. O Supabase é a fonte oficial do workspace e usa controle de versão para impedir sobrescritas silenciosas entre dispositivos. O `localStorage` mantém somente uma cópia de abertura rápida; quando o banco não pode ser lido, o app entra em modo somente leitura e esse cache não é promovido automaticamente como fonte oficial.
 
 ## Supabase
 

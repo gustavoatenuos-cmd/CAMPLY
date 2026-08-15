@@ -175,38 +175,11 @@ function applyProfileDataGate(
   }));
 }
 
-function fallbackRange(period: DashboardPeriod, currentDate: Date): { start: Date; end: Date } {
-  const end = new Date(currentDate);
-  const start = new Date(currentDate);
-  if (period === 'this_month') {
-    start.setUTCDate(1);
-    end.setUTCMonth(end.getUTCMonth() + 1, 0);
-  }
-  if (period === 'this_week') {
-    const day = start.getUTCDay();
-    const daysFromMonday = (day + 6) % 7;
-    start.setUTCDate(start.getUTCDate() - daysFromMonday);
-    end.setTime(start.getTime());
-    end.setUTCDate(end.getUTCDate() + 6);
-  }
-  if (period === 'yesterday') {
-    start.setUTCDate(start.getUTCDate() - 1);
-    end.setUTCDate(end.getUTCDate() - 1);
-  }
-  if (period === 'today_and_yesterday') start.setUTCDate(start.getUTCDate() - 1);
-  if (period === 'last_7d') start.setUTCDate(start.getUTCDate() - 6);
-  if (period === 'last_30d') start.setUTCDate(start.getUTCDate() - 29);
-  if (period === 'last_90d') start.setUTCDate(start.getUTCDate() - 89);
-  return { start, end };
-}
-
 function fullBudgetRange(
   period: DashboardPeriod,
   timezone: string,
-  currentDate: Date,
-  fallback: { start: Date; end: Date }
-): { start: string | Date; end: string | Date } {
-  if (!['today', 'this_week', 'this_month'].includes(period)) return fallback;
+  currentDate: Date
+): { start: string; end: string } {
   const exact = exactPeriodRange(period, timezone, currentDate);
   if (period === 'today') return { start: exact.dateStart, end: exact.dateStop };
   if (period === 'this_week') {
@@ -214,9 +187,38 @@ function fullBudgetRange(
     end.setUTCDate(end.getUTCDate() + 6);
     return { start: exact.dateStart, end: end.toISOString().slice(0, 10) };
   }
-  const [year, month] = exact.dateStart.split('-').map(Number);
-  const end = new Date(Date.UTC(year, month, 0, 12));
-  return { start: exact.dateStart, end: end.toISOString().slice(0, 10) };
+  if (period === 'this_month') {
+    const [year, month] = exact.dateStart.split('-').map(Number);
+    const end = new Date(Date.UTC(year, month, 0, 12));
+    return { start: exact.dateStart, end: end.toISOString().slice(0, 10) };
+  }
+  return { start: exact.dateStart, end: exact.dateStop };
+}
+
+function normalizedBudgetForRange(
+  plannedBudget: number,
+  budgetPeriod: ClientAnalysisProfile['budgetPeriod'],
+  range: { start: string; end: string }
+): number | null {
+  if (!Number.isFinite(plannedBudget) || plannedBudget <= 0) return null;
+  const start = new Date(`${range.start}T12:00:00Z`);
+  const end = new Date(`${range.end}T12:00:00Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) return null;
+
+  let expected = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    if (budgetPeriod === 'daily') {
+      expected += plannedBudget;
+    } else if (budgetPeriod === 'weekly') {
+      expected += plannedBudget / 7;
+    } else {
+      const daysInMonth = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0, 12)).getUTCDate();
+      expected += plannedBudget / daysInMonth;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return expected;
 }
 
 function buildUnavailableEvaluation(
@@ -333,27 +335,25 @@ function calculateAccountPacing(
   const daily = accountTargets.find((target) => target.targetKind === 'daily_budget');
   const weekly = accountTargets.find((target) => target.targetKind === 'weekly_budget');
   const monthly = accountTargets.find((target) => target.targetKind === 'monthly_budget');
-  const profileBudget = useProfileBudget && profile?.analysisEnabled && profile.plannedBudget && (
-    (profile.budgetPeriod === 'daily' && period === 'today')
-    || (profile.budgetPeriod === 'weekly' && period === 'this_week')
-    || (profile.budgetPeriod === 'monthly' && period === 'this_month')
-  ) ? profile.plannedBudget : null;
-
-  const fallback = fallbackRange(period, currentDate);
-  const targetDailyBudget = daily?.targetValue ?? (profile?.budgetPeriod === 'daily' ? profileBudget : null);
-  const targetPeriodBudget = period === 'this_week'
-    ? weekly?.targetValue ?? (profile?.budgetPeriod === 'weekly' ? profileBudget : null)
-    : period === 'this_month'
-      ? monthly?.targetValue ?? (profile?.budgetPeriod === 'monthly' ? profileBudget : null)
-      : null;
+  const budgetRange = fullBudgetRange(period, account.timezone, currentDate);
+  const profileBudget = useProfileBudget && profile?.analysisEnabled && profile.plannedBudget
+    ? normalizedBudgetForRange(profile.plannedBudget, profile.budgetPeriod, budgetRange)
+    : null;
+  const weeklyBudget = weekly
+    ? normalizedBudgetForRange(weekly.targetValue, 'weekly', budgetRange)
+    : null;
+  const monthlyBudget = monthly
+    ? normalizedBudgetForRange(monthly.targetValue, 'monthly', budgetRange)
+    : null;
+  const targetDailyBudget = daily?.targetValue ?? null;
+  const targetPeriodBudget = targetDailyBudget ? null : weeklyBudget ?? monthlyBudget ?? profileBudget;
   if (!targetDailyBudget && !targetPeriodBudget) return null;
-  const budgetRange = fullBudgetRange(period, account.timezone, currentDate, fallback);
   const result = calculateBudgetPacing({
     actualSpend: spend.value,
     targetDailyBudget,
     targetMonthlyBudget: targetPeriodBudget,
-    periodStart: ['today', 'this_week', 'this_month'].includes(period) ? budgetRange.start : account.dateStart ?? fallback.start,
-    periodEnd: ['today', 'this_week', 'this_month'].includes(period) ? budgetRange.end : account.dateStop ?? fallback.end,
+    periodStart: budgetRange.start,
+    periodEnd: budgetRange.end,
     currentDate,
     timezone: account.timezone,
     currency: account.currency,
@@ -720,7 +720,7 @@ export async function loadGlobalPerformanceDashboard(options: {
   }
   if (!isSupabaseConfigured || !supabaseData) return [];
 
-  const response = await invokeFunction<{ dashboard: unknown }>(
+  const response = await invokeFunction<{ dashboard: unknown; analysisProfiles?: unknown }>(
     'analytics-dashboard',
     {
       action: 'dashboard',
@@ -736,8 +736,11 @@ export async function loadGlobalPerformanceDashboard(options: {
     : [];
   const clientIds = rows.map((row) => row.clientId).filter(Boolean);
   if (clientIds.length > 0) {
-    try {
-      const { data: profileRows, error: profileError } = await withTimeout(
+    let profileRows = Array.isArray(response.analysisProfiles)
+      ? response.analysisProfiles as Record<string, unknown>[]
+      : null;
+    if (profileRows === null) {
+      const { data: fetchedProfileRows, error: profileError } = await withTimeout(
         supabaseData
           .from('client_analysis_profiles')
           .select('*')
@@ -745,20 +748,16 @@ export async function loadGlobalPerformanceDashboard(options: {
         6_000,
         'A leitura dos perfis analíticos demorou mais que o esperado.'
       );
-      if (!profileError) {
-        const profiles = new Map((profileRows || []).map((row) => {
-          const profile = mapClientProfileRow(row as Record<string, unknown>);
-          return [profile.clientId, profile];
-        }));
-        rows.forEach((row) => {
-          row.analysisProfile = profiles.get(row.clientId) ?? null;
-        });
-      } else {
-        console.warn('Client analysis profiles failed:', profileError.message);
-      }
-    } catch (error) {
-      console.warn('Client analysis profiles skipped:', error instanceof Error ? error.message : String(error));
+      if (profileError) throw new Error(`Não foi possível carregar os perfis analíticos: ${profileError.message}`);
+      profileRows = (fetchedProfileRows || []) as Record<string, unknown>[];
     }
+    const profiles = new Map(profileRows.map((row) => {
+      const profile = mapClientProfileRow(row);
+      return [profile.clientId, profile];
+    }));
+    rows.forEach((row) => {
+      row.analysisProfile = profiles.get(row.clientId) ?? null;
+    });
   }
 
   // Frontend traceability: do not mask actual state, trace out whatever the RPC returned
