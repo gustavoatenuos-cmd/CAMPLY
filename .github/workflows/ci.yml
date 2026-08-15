@@ -29,7 +29,31 @@ jobs:
         run: npm ci
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > audit-production.json
+          audit_status=$?
+          node <<'NODE'
+          const fs = require('node:fs');
+          const audit = JSON.parse(fs.readFileSync('audit-production.json', 'utf8'));
+          const blocking = Object.entries(audit.vulnerabilities || {})
+            .filter(([, value]) => value.severity === 'high' || value.severity === 'critical');
+          if (blocking.length === 0) {
+            console.log('No high/critical production dependency vulnerabilities.');
+          }
+          for (const [name, value] of blocking) {
+            const via = (value.via || []).map((entry) => typeof entry === 'string' ? entry : entry.title || entry.url || 'advisory').join(', ');
+            const fix = value.fixAvailable === true
+              ? 'fix available'
+              : value.fixAvailable && typeof value.fixAvailable === 'object'
+                ? `fix: ${value.fixAvailable.name || name}@${value.fixAvailable.version || 'available'}`
+                : 'no automatic fix';
+            const message = `${name} | severity=${value.severity} | range=${value.range || 'unknown'} | via=${via || 'unknown'} | ${fix}`;
+            console.log(`::error file=package.json,title=Production dependency vulnerability::${message}`);
+          }
+NODE
+          exit "$audit_status"
 
       - name: Full dependency audit report
         continue-on-error: true
