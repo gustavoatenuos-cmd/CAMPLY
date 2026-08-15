@@ -1,7 +1,10 @@
 name: Supabase Staging Dry Run
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/staging-dry-run-validation
 permissions:
   contents: read
 
