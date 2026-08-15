@@ -15,12 +15,15 @@ vi.mock('../lib/supabase', () => ({
   getSupabaseSessionUserId: () => mockState.userId,
   supabaseData: {
     from: () => ({
-      select: () => ({
-        eq: () => ({
+      select: () => {
+        const builder = {
+          eq: () => builder,
+          is: () => builder,
           maybeSingle: async () =>
             mockState.selectQueue.shift() ?? { data: null, error: null },
-        }),
-      }),
+        };
+        return builder;
+      },
     }),
     rpc: (_name: string, args: Record<string, unknown>) => {
       mockState.rpcCalls.push(args);
@@ -38,6 +41,7 @@ import {
   loadRemoteData,
   resetRemoteWorkspaceState,
   saveRemoteData,
+  saveRemoteDataAndConfirmClient,
 } from './supabaseStore';
 
 const workspaceFixture = { ...initialData, notes: [] };
@@ -74,16 +78,28 @@ describe('loadRemoteData', () => {
   it('returns the normalized workspace and tracks its version for later saves', async () => {
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 7 }, error: null });
     const result = await loadRemoteData();
-    expect(result.status).toBe('ok');
+    expect(result).toMatchObject({ status: 'ok', version: 7 });
 
     mockState.rpcQueue.push({ data: { status: 'saved', version: 8 }, error: null });
     const saved = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
-    expect(saved.status).toBe('saved');
+    expect(saved).toEqual({ status: 'saved', version: 8 });
     expect(mockState.rpcCalls[0].p_expected_version).toBe(7);
   });
 });
 
 describe('saveRemoteData', () => {
+  it('starts a fresh optimistic version when the authenticated user changes', async () => {
+    mockState.selectQueue.push({ data: { data: workspaceFixture, version: 7 }, error: null });
+    await loadRemoteData();
+
+    mockState.userId = 'user-2';
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 1 }, error: null });
+    const result = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
+
+    expect(result).toEqual({ status: 'saved', version: 1 });
+    expect(mockState.rpcCalls[0].p_expected_version).toBeNull();
+  });
+
   it('chains versions across consecutive saves', async () => {
     mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
     await loadRemoteData();
@@ -92,6 +108,19 @@ describe('saveRemoteData', () => {
     mockState.rpcQueue.push({ data: { status: 'saved', version: 5 }, error: null });
     await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
     await saveRemoteData({ ...workspaceFixture, fakeData: 2 } as unknown as CamplyData);
+
+    expect(mockState.rpcCalls.map(c => c.p_expected_version)).toEqual([3, 4]);
+  });
+
+  it('chains versions when a second save is queued before the first one finishes', async () => {
+    mockState.selectQueue.push({ data: { data: workspaceFixture, version: 3 }, error: null });
+    await loadRemoteData();
+
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 4 }, error: null });
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 5 }, error: null });
+    const first = saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
+    const second = saveRemoteData({ ...workspaceFixture, fakeData: 2 } as unknown as CamplyData);
+    await Promise.all([first, second]);
 
     expect(mockState.rpcCalls.map(c => c.p_expected_version)).toEqual([3, 4]);
   });
@@ -108,6 +137,7 @@ describe('saveRemoteData', () => {
     expect(result.status).toBe('conflict');
     if (result.status === 'conflict') {
       expect(result.remoteData).not.toBeNull();
+      expect(result.remoteVersion).toBe(12);
     }
 
     // The next save must build on the fetched version, not the stale one.
@@ -130,6 +160,38 @@ describe('saveRemoteData', () => {
     expect(result.status).toBe('skipped');
     // RPC queue will not be consumed
     expect(mockState.rpcCalls.length).toBe(0);
+  });
+});
+
+describe('saveRemoteDataAndConfirmClient', () => {
+  it('exposes a typed conflict instead of requiring callers to parse text', async () => {
+    mockState.rpcQueue.push({ data: { status: 'conflict', current_version: 12 }, error: null });
+    mockState.selectQueue.push({ data: { data: workspaceFixture, version: 12 }, error: null });
+
+    await expect(
+      saveRemoteDataAndConfirmClient(
+        { ...workspaceFixture, fakeData: 1 } as unknown as CamplyData,
+        'client-1'
+      )
+    ).rejects.toMatchObject({
+      name: 'WorkspacePersistenceError',
+      code: 'WORKSPACE_CONFLICT',
+    });
+  });
+
+  it('distinguishes a missing client identity after the workspace was saved', async () => {
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 1 }, error: null });
+    mockState.selectQueue.push({ data: null, error: null });
+
+    await expect(
+      saveRemoteDataAndConfirmClient(
+        { ...workspaceFixture, fakeData: 1 } as unknown as CamplyData,
+        'client-1'
+      )
+    ).rejects.toMatchObject({
+      name: 'WorkspacePersistenceError',
+      code: 'CLIENT_IDENTITY_NOT_CONFIRMED',
+    });
   });
 });
 
