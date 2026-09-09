@@ -2,14 +2,15 @@ import React from 'react';
 import { usePerformanceDashboard } from '../lib/performance/usePerformanceDashboard';
 import { readPendingAnalyticsPeriod, setPendingClientSelection } from '../lib/performance/pendingClientSelection';
 import { ClientAnalyticsBoard } from './analytics/ClientAnalyticsBoard';
-import type { ViewId } from '../types';
+import type { CamplyData, ViewId } from '../types';
 
 interface ClientAnalyticsViewProps {
-  data: any; // We can use CamplyData here but let's just use any to avoid import cycles if not needed, or import CamplyData. Let's import CamplyData.
+  data: CamplyData;
+  updateData?: (updater: (data: CamplyData) => CamplyData) => void;
   setActiveView?: (view: ViewId) => void;
 }
 
-export function ClientAnalyticsView({ data, updateData, setActiveView }: { data: any; updateData?: any; setActiveView?: (view: ViewId) => void }) {
+export function ClientAnalyticsView({ data, updateData, setActiveView }: ClientAnalyticsViewProps) {
   // Herda o período que o usuário tinha selecionado no Dashboard ao clicar em
   // "Ver análise" (ver setPendingAnalyticsPeriod em OverviewView) - sem isso,
   // esta tela sempre abriria no período padrão do hook, diferente do que o

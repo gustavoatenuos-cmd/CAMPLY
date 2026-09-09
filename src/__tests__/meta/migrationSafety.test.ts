@@ -62,10 +62,7 @@ const metaIntegrationView = readFileSync(
   'utf8'
 );
 
-const todayView = readFileSync(
-  new URL('../../components/TodayView.tsx', import.meta.url),
-  'utf8'
-);
+
 
 describe('mixed attribution migration safety', () => {
   it('is rerunnable and deduplicates before creating the idempotency index', () => {
@@ -203,8 +200,8 @@ describe('single last_90d Meta sync read contract safety', () => {
     expect(overviewView).not.toContain('handleSyncPeriod');
     expect(overviewView).not.toContain('Sincronizar período');
     expect(clientAnalyticsDetailDrawer).not.toContain('syncMetaAsset');
-    expect(todayView).not.toContain('syncClientMeta');
-    expect(todayView).not.toContain('meta-sync-performance');
+    expect(overviewView).not.toContain('syncClientMeta');
+    expect(overviewView).not.toContain('meta-sync-performance');
     expect(clientAnalyticsDetailDrawer).not.toContain('Sincronizar período');
     expect(metaIntegrationView).toContain('OFFICIAL_META_SYNC_PERIOD');
     expect(metaIntegrationView).toContain('syncMetaAsset');

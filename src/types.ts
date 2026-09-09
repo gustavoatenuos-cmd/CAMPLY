@@ -16,14 +16,10 @@ export type ViewId =
   | 'activity'
   | 'intelligence'
   | 'agentSettings'
-  | 'agentChat'
   | 'metaIntegration'
   | 'creativeCritic'
-  // Analytical views (Phase 1+)
   | 'clientAnalytics'
-  | 'budgetTracker'
-  | 'alertCenter'
-  | 'campaignDrilldown';
+  | 'alertCenter';
 
 // ===================== CLIENT CATEGORY =====================
 
@@ -202,7 +198,7 @@ export interface Campaign {
   checkouts?: number;
   purchases?: number;
   impressions?: number;
-  conversations?: number; // @deprecated
+
   metricsByPeriod?: Record<string, CampaignMetrics>; // @deprecated legacy field
   classifiedObjective?: string;
   normalizedMetricsByPeriod?: Record<string, Record<string, number>>; // @deprecated

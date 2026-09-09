@@ -66,8 +66,8 @@ const clientsViewSource = readFileSync(
   'utf8'
 );
 
-const appSource = readFileSync(
-  new URL('../../App.tsx', import.meta.url),
+const useRemoteSyncSource = readFileSync(
+  new URL('../../shared/hooks/useRemoteSync.ts', import.meta.url),
   'utf8'
 );
 
@@ -180,8 +180,8 @@ describe('operational analytics contracts', () => {
 
     expect(clientsViewSource).toContain('metaWorkspaceKey');
     expect(clientsViewSource).toContain('onClientPersisted');
-    expect(appSource).toContain('saveRemoteDataAndConfirmClient');
-    expect(appSource).toContain('skipNextRemoteSaveRef');
+    expect(useRemoteSyncSource).toContain('persistClientData');
+    expect(useRemoteSyncSource).toContain('skipNextRemoteSaveRef');
     expect(supabaseStoreSource).toContain('confirmClientIdentity');
     expect(supabaseStoreSource).toContain('saveRemoteDataAndConfirmClient');
   });

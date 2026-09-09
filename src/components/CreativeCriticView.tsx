@@ -7,9 +7,29 @@ interface Props {
   data: CamplyData;
 }
 
+interface MetaAdAccount {
+  id?: string;
+  asset_id?: string;
+  asset_type: string;
+  asset_name?: string;
+}
+
+interface MetaValidateTokenResponse {
+  status: string;
+  assets?: MetaAdAccount[];
+}
+
+interface MetaFetchCreativesResponse {
+  ads?: Record<string, unknown>[];
+}
+
+interface MetaCreativeCriticResponse {
+  analysis: CreativeCriticResponse;
+}
+
 export function CreativeCriticView({ data }: Props) {
   const [activeAccount, setActiveAccount] = useState<string>('');
-  const [adAccounts, setAdAccounts] = useState<any[]>([]);
+  const [adAccounts, setAdAccounts] = useState<MetaAdAccount[]>([]);
   const [activeCampaign, setActiveCampaign] = useState<string>('');
   const [kpi, setKpi] = useState<string>('roas');
   
@@ -19,12 +39,12 @@ export function CreativeCriticView({ data }: Props) {
 
   // Auto-select first active integration
   useEffect(() => {
-    invokeFunction<any>('meta-validate-token').then((data) => {
+    invokeFunction<MetaValidateTokenResponse>('meta-validate-token').then((data) => {
       if (data && data.status === 'active' && data.assets) {
-        const accounts = data.assets.filter((a: any) => a.asset_type === 'adaccount');
+        const accounts = data.assets.filter((a) => a.asset_type === 'adaccount');
         setAdAccounts(accounts);
         if (accounts.length > 0) {
-          setActiveAccount(accounts[0].id || accounts[0].asset_id);
+          setActiveAccount(accounts[0].id || accounts[0].asset_id || '');
         }
       }
     }).catch((requestError) => setError(requestError.message));
@@ -57,7 +77,7 @@ export function CreativeCriticView({ data }: Props) {
         scopeName = camp.name;
       }
       
-      const fetchRes = await invokeFunction<any>('meta-fetch-creatives', { targetId, type });
+      const fetchRes = await invokeFunction<MetaFetchCreativesResponse>('meta-fetch-creatives', { targetId, type });
       
       const ads = fetchRes.ads;
       if (!ads || ads.length === 0) {
@@ -65,12 +85,12 @@ export function CreativeCriticView({ data }: Props) {
       }
 
       // 2. Call the Critic Agent
-      const agentRes = await invokeFunction<any>('meta-creative-critic', { adsData: ads, kpi, scopeName });
+      const agentRes = await invokeFunction<MetaCreativeCriticResponse>('meta-creative-critic', { adsData: ads, kpi, scopeName });
       
       setAnalysis(agentRes.analysis);
       
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

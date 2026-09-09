@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Banknote,
   BarChart3,
@@ -54,7 +55,7 @@ interface SidebarProps {
   onSignOut: () => void;
 }
 
-export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: SidebarProps) {
+export const Sidebar = React.memo(function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: SidebarProps) {
   return (
     <aside className="relative z-40 flex w-full shrink-0 flex-col border-b border-brand-line bg-brand-surface/50 backdrop-blur-xl xl:sticky xl:top-0 xl:h-dvh xl:w-72 xl:border-b-0 xl:border-r xl:overflow-hidden">
       {/* Decorative Gradient Glow */}
@@ -136,4 +137,4 @@ export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: Si
       </div>
     </aside>
   );
-}
+});

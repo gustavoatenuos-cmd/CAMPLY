@@ -317,7 +317,7 @@ export function AlertCenterView({ data, updateData }: AlertCenterViewProps) {
               return (
                 <AlertItem
                   key={alert.id}
-                  severity={alert.severity === 'good' ? 'info' : alert.severity as any}
+                  severity={alert.severity === 'good' ? 'info' : alert.severity as 'critical' | 'warning' | 'info'}
                   title={alert.title}
                   message={alert.message}
                   action={alert.suggestedAction}

@@ -721,7 +721,7 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   );
 }
 
-function QuickMetric({ icon: Icon, label, value, onClick }: { icon: any; label: string; value: number | string; onClick: () => void }) {
+function QuickMetric({ icon: Icon, label, value, onClick }: { icon: React.ComponentType<{ size?: number; className?: string }>; label: string; value: number | string; onClick: () => void }) {
   return (
     <motion.button
       whileHover={{ scale: 1.03, y: -2 }}

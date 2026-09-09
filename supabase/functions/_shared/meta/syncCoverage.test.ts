@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildVerifiedScopeCoverage } from './syncCoverage';
+import type { MetaInsightRow } from './aggregation';
 
 describe('buildVerifiedScopeCoverage', () => {
   it('returns complete when collection is complete, no gaps, and no errors', () => {

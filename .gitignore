@@ -13,3 +13,6 @@ serve.log
 .agents/
 .claude/settings.local.json
 scratch/
+tmp/
+.swarm/
+.claude-flow/

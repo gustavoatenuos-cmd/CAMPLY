@@ -102,7 +102,7 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }:
             <select 
               className="pl-8 bg-gray-50 flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               value={statusFilter} 
-              onChange={(e: any) => setStatusFilter(e.target.value as FilterStatus)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value as FilterStatus)}
             >
               <option value="ALL">Todos os clientes</option>
               <option value="HEALTHY">Saudáveis (&gt; 80)</option>

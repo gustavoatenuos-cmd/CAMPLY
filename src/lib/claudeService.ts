@@ -64,7 +64,7 @@ export async function generateAgentSummary(data: CamplyData, userEmail?: string 
 
 
   try {
-    const responseData = await invokeFunction<any>('claude-proxy', {
+    const responseData = await invokeFunction<{ result?: { content?: Array<{ text?: string }> } }>('claude-proxy', {
       mode: 'operational_summary',
       userMessage: `Analise o seguinte contexto operacional e gere o resumo:\n\n${JSON.stringify(context, null, 2)}`,
       maxTokens: 512,
@@ -212,7 +212,7 @@ export async function generateCampaignAnalysis(
   };
 
   try {
-    const responseData = await invokeFunction<any>('claude-proxy', {
+    const responseData = await invokeFunction<{ result?: { content?: Array<{ text?: string }> } }>('claude-proxy', {
       mode: 'campaign_analysis',
       userMessage: `Analise detalhadamente esta campanha e retorne um JSON com health_score (0-100), diagnosis, primary_issue, budget_assessment e recommendations:\n\n${JSON.stringify(context, null, 2)}`,
       maxTokens: 1024,

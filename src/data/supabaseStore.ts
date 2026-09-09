@@ -126,7 +126,7 @@ const fetchRemoteWorkspaceRow = async (userId: string): Promise<WorkspaceRow | n
   return data;
 };
 
-const saveRemoteDataNow = async (payload: any, payloadStr: string): Promise<RemoteSaveResult> => {
+const saveRemoteDataNow = async (payload: CamplyData, payloadStr: string): Promise<RemoteSaveResult> => {
   if (!isSupabaseConfigured || !supabaseData) {
     if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
     return { status: 'skipped' };
