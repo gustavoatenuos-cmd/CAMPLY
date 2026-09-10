@@ -115,8 +115,8 @@ export function errorResponse(error: unknown, headers: Record<string, string>, r
     // Only pass through 400s or non-500s directly if they are explicitly safe.
     // For 500s, mask them to avoid leaking DB or Meta details.
     if (status >= 500) {
-      console.error(`[${runId || 'NO_RUN_ID'}] Masked 500 Error:`, error.message);
-      message = error.publicMessage || (code === 'META_PERSISTENCE_FAILED' ? 'Não foi possível concluir a sincronização.' : 'Falha na comunicação com o servidor. Tente novamente.');
+      console.error(`[${runId || 'NO_RUN_ID'}] 500 Error:`, error.message);
+      message = error.publicMessage || error.message || 'Falha na comunicação com o servidor. Tente novamente.';
     } else {
       message = error.message;
     }
