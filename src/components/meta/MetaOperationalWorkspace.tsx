@@ -16,6 +16,7 @@ import {
 import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { SearchableSelect } from '../ui/SearchableSelect';
 
 function savedSnapshotLabel(account: ClientMetaAccount): string {
   const run = account.lastSuccess;
@@ -173,9 +174,15 @@ export function MetaOperationalWorkspace({
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <label className="text-xs font-bold text-brand-soft">
             Cliente
-            <select data-testid="meta-client-select" value={clientId} onChange={(event) => setClientId(event.target.value)} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white">
-              {data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || client.name}</option>)}
-            </select>
+            <div className="mt-1 w-full">
+              <SearchableSelect
+                data-testid="meta-client-select"
+                value={clientId}
+                onChange={(val) => setClientId(val)}
+                options={data.clients.map((client) => ({ value: client.id, label: client.company || client.name }))}
+                className="w-full"
+              />
+            </div>
           </label>
           <label className="text-xs font-bold text-brand-soft">
             Período exato
@@ -209,10 +216,17 @@ export function MetaOperationalWorkspace({
           <p className="mt-1 text-sm text-brand-muted">Escolha uma conta descoberta pela integração. O vínculo fica separado dos dados operacionais do cliente.</p>
           {linkableAssets.length > 0 ? (
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <select data-testid="meta-link-select" value={linkAssetId} onChange={(event) => setLinkAssetId(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-white">
-                {linkableAssets.map((asset) => <option key={asset.metaAssetId} value={asset.metaAssetId}>{asset.accountName} · {asset.adAccountId}</option>)}
-              </select>
-              <button data-testid="meta-link-button" type="button" onClick={() => void linkAccount()} disabled={loading || !linkAssetId} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-green px-4 py-2 font-black text-brand-ink disabled:opacity-60"><Link2 size={16} /> Vincular conta</button>
+              <div className="min-w-0 flex-1">
+                <SearchableSelect
+                  data-testid="meta-link-select"
+                  value={linkAssetId}
+                  onChange={(val) => setLinkAssetId(val)}
+                  options={linkableAssets.map((asset) => ({ value: asset.metaAssetId, label: `${asset.accountName} · ${asset.adAccountId}` }))}
+                  placeholder="Selecione uma conta para vincular..."
+                  className="w-full"
+                />
+              </div>
+              <button data-testid="meta-link-button" type="button" onClick={() => void linkAccount()} disabled={loading || !linkAssetId} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-lg bg-brand-green px-4 font-black text-brand-ink disabled:opacity-60"><Link2 size={16} /> Vincular conta</button>
             </div>
           ) : <p className="mt-4 text-sm text-amber-200">Nenhuma conta livre foi encontrada. Conecte ou reautorize a integração Meta.</p>}
         </div>
@@ -237,9 +251,14 @@ export function MetaOperationalWorkspace({
             {clientCatalog && clientCatalog.accounts.length > 1 && (
               <label className="mt-4 block max-w-xl text-xs font-bold text-brand-soft">
                 Conta vinculada em análise
-                <select value={account.clientMetaAssetId} onChange={(event) => setAccountId(event.target.value)} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm text-white">
-                  {clientCatalog.accounts.map((item) => <option key={item.clientMetaAssetId} value={item.clientMetaAssetId}>{item.accountName} · {item.adAccountId}</option>)}
-                </select>
+                <div className="mt-1 w-full">
+                  <SearchableSelect
+                    value={account.clientMetaAssetId}
+                    onChange={(val) => setAccountId(val)}
+                    options={clientCatalog.accounts.map((item) => ({ value: item.clientMetaAssetId, label: `${item.accountName} · ${item.adAccountId}` }))}
+                    className="w-full"
+                  />
+                </div>
               </label>
             )}
           </div>
