@@ -116,13 +116,13 @@ export function errorResponse(error: unknown, headers: Record<string, string>, r
     // For 500s, mask them to avoid leaking DB or Meta details.
     if (status >= 500) {
       console.error(`[${runId || 'NO_RUN_ID'}] Masked 500 Error:`, error.message);
-      message = error.publicMessage || 'Não foi possível concluir a sincronização.';
+      message = error.publicMessage || (code === 'META_PERSISTENCE_FAILED' ? 'Não foi possível concluir a sincronização.' : 'Falha na comunicação com o servidor. Tente novamente.');
     } else {
       message = error.message;
     }
   } else {
     console.error(`[${runId || 'NO_RUN_ID'}] Unhandled Edge Function error:`, error);
-    message = 'Não foi possível concluir a sincronização.';
+    message = code === 'META_PERSISTENCE_FAILED' ? 'Não foi possível concluir a sincronização.' : 'Falha na comunicação com o servidor. Tente novamente.';
   }
 
   return new Response(JSON.stringify({
