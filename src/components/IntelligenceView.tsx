@@ -5,12 +5,23 @@ import { useState } from 'react';
 interface IntelligenceViewProps {
   data: CamplyData;
   insights: Insight[];
+  updateData?: (updater: (data: CamplyData) => CamplyData) => void;
 }
 
 type FilterType = 'all' | 'critical' | 'warning' | 'client' | 'campaign' | 'project' | 'task';
 
-export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
+export function IntelligenceView({ data, insights, updateData }: IntelligenceViewProps) {
   const [filter, setFilter] = useState<FilterType>('all');
+
+  const handleResolveAlert = (alertId: string, status: 'resolved' | 'dismissed') => {
+    if (!updateData) return;
+    updateData((current) => ({
+      ...current,
+      agentAlerts: (current.agentAlerts || []).map((alert) =>
+        alert.id === alertId ? { ...alert, status } : alert
+      ),
+    }));
+  };
 
   const openTasks = data.tasks.filter((task) => !task.done).length;
   const activeCampaigns = data.campaigns.filter((campaign) => ['launching', 'live', 'optimize'].includes(campaign.status)).length;
@@ -159,6 +170,24 @@ export function IntelligenceView({ data, insights }: IntelligenceViewProps) {
                 {alert.suggestedAction && (
                   <div className="mt-4 flex items-center justify-between rounded-lg bg-brand-surface p-3 text-sm">
                     <span className="font-semibold text-brand-green">💡 {alert.suggestedAction}</span>
+                    {updateData && alert.status === 'active' && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleResolveAlert(alert.id, 'resolved')}
+                          className="rounded-md bg-brand-green/20 px-2.5 py-1 text-xs font-semibold text-brand-green hover:bg-brand-green/30"
+                        >
+                          Resolver
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleResolveAlert(alert.id, 'dismissed')}
+                          className="rounded-md bg-brand-surface border border-brand-line px-2.5 py-1 text-xs font-semibold text-brand-muted hover:text-white"
+                        >
+                          Dispensar
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

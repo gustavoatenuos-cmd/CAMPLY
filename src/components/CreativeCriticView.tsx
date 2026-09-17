@@ -27,7 +27,9 @@ export function CreativeCriticView({ data }: Props) {
           setActiveAccount(accounts[0].id || accounts[0].asset_id);
         }
       }
-    }).catch((requestError) => setError(requestError.message));
+    }).catch(() => {
+      // Graceful fallback when Meta token is not connected yet
+    });
   }, []);
 
   const handleAnalyze = async () => {

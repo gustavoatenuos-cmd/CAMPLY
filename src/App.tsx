@@ -418,7 +418,7 @@ export default function App() {
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
               {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
-              {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} />}
+              {activeView === 'intelligence' && <IntelligenceView data={data} insights={insights} updateData={updateData} />}
               {activeView === 'agentSettings' && <AgentSettingsView data={data} updateData={updateData} />}
 
               {activeView === 'creativeCritic' && <CreativeCriticView data={data} />}
