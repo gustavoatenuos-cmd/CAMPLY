@@ -498,12 +498,50 @@ async function resolveOwnedClientMetaAsset(
 ): Promise<OwnedClientMetaAsset | null> {
   const dbReadPublicMessage = 'Não foi possível ler o vínculo Meta no banco agora. A conexão Meta foi preservada; tente novamente em alguns segundos.';
 
-  const { data, error } = await supabaseClient.rpc('resolve_meta_sync_client_asset', {
+  let { data, error } = await supabaseClient.rpc('resolve_meta_sync_client_asset', {
     p_user_id: userId,
     p_client_meta_asset_id: clientMetaAssetId,
   });
 
   if (error) {
+    // Direct table fallback if RPC fails or is missing
+    const { data: directLink, error: directError } = await supabaseClient
+      .from('client_meta_assets')
+      .select(`
+        id,
+        client_id,
+        meta_asset:meta_assets!inner (
+          id,
+          asset_id,
+          integration_id,
+          integration:meta_integrations!inner (
+            user_id,
+            status,
+            access_token_encrypted
+          )
+        )
+      `)
+      .eq('id', clientMetaAssetId)
+      .eq('user_id', userId)
+      .is('unlinked_at', null)
+      .maybeSingle();
+
+    if (!directError && directLink) {
+      const asset = (directLink as any).meta_asset;
+      const integration = asset?.integration;
+      if (asset && integration) {
+        return {
+          client_meta_asset_id: String(directLink.id),
+          client_id: String(directLink.client_id),
+          id: String(asset.id),
+          asset_id: String(asset.asset_id),
+          integration_id: String(asset.integration_id),
+          integration_user_id: String(integration.user_id),
+          integration_status: String(integration.status),
+          access_token_encrypted: String(integration.access_token_encrypted),
+        };
+      }
+    }
     throw new HttpError(`Failed to resolve client Meta asset link: ${error.message}`, 500, dbReadPublicMessage);
   }
 
