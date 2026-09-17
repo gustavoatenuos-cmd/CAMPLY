@@ -410,12 +410,20 @@ export async function linkClientMetaAsset(clientId: string, metaAssetId: string)
     return E2E_LINK_ID;
   }
   if (!supabaseData) throw new Error('Backend analítico não configurado.');
-  const result = await invokeFunction<{ success: true; clientMetaAssetId: string }>('meta-client-assets', {
-    action: 'link',
-    clientId,
-    metaAssetId,
-  }, 15_000);
-  return result.clientMetaAssetId;
+  try {
+    const result = await invokeFunction<{ success: true; clientMetaAssetId: string }>('meta-client-assets', {
+      action: 'link',
+      clientId,
+      metaAssetId,
+    }, 15_000);
+    return result.clientMetaAssetId;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/CLIENT_NOT_FOUND|não existe mais/i.test(msg)) {
+      throw new Error('O cliente selecionado ainda não foi salvo no servidor. Sincronize a página e tente novamente.');
+    }
+    throw error;
+  }
 }
 
 export async function unlinkClientMetaAsset(clientMetaAssetId: string): Promise<void> {

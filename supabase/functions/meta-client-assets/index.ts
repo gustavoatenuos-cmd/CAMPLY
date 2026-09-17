@@ -61,59 +61,56 @@ serve(async (req) => {
       const clientId = requiredText(body.clientId, 'CLIENT_REQUIRED', 'Selecione um cliente.')
       const metaAssetId = requiredUuid(body.metaAssetId, 'ASSET_REQUIRED', 'Selecione uma conta Meta válida.')
 
-      const clientMetaAssetId = await withDirectPostgres((sql) => sql.begin(async (transaction) => {
-        await transaction`select pg_advisory_xact_lock(hashtextextended(${`${userId}:${metaAssetId}`}, 0))`
+      const clientMetaAssetId = await withDirectPostgres(async (sql) => {
+        return await sql.begin(async (transaction) => {
+          await transaction`select pg_advisory_xact_lock(hashtextextended(${`${userId}:${metaAssetId}`}, 0))`
 
-        const clients = await transaction<{ client_id: string }[]>`
-          select client_id
-          from public.client_identity
-          where user_id = ${userId}::uuid
-            and client_id = ${clientId}
-            and archived_at is null
-          limit 1
-        `
-        if (clients.length === 0) {
-          throw new SafeMutationError('CLIENT_NOT_FOUND', 'Este cliente não existe mais ou foi arquivado.', 404)
-        }
+          // Automatically ensure client_identity exists for newly created clients
+          await transaction`
+            insert into public.client_identity (user_id, client_id, display_name)
+            values (${userId}::uuid, ${clientId}, ${clientId})
+            on conflict (user_id, client_id) do nothing
+          `
 
-        const assets = await transaction<{ id: string }[]>`
-          select ma.id
-          from public.meta_assets ma
-          join public.meta_integrations mi on mi.id = ma.integration_id
-          where ma.id = ${metaAssetId}::uuid
-            and mi.user_id::text = ${userId}
-            and ma.asset_type = 'adaccount'
-          limit 1
-        `
-        if (assets.length === 0) {
-          throw new SafeMutationError('ASSET_NOT_FOUND', 'Esta conta Meta não pertence à integração conectada.', 404)
-        }
+          const assets = await transaction<{ id: string }[]>`
+            select ma.id
+            from public.meta_assets ma
+            join public.meta_integrations mi on mi.id = ma.integration_id
+            where ma.id = ${metaAssetId}::uuid
+              and mi.user_id::text = ${userId}
+              and ma.asset_type = 'adaccount'
+            limit 1
+          `
+          if (assets.length === 0) {
+            throw new SafeMutationError('ASSET_NOT_FOUND', 'Esta conta Meta não pertence à integração conectada.', 404)
+          }
 
-        const existing = await transaction<{ id: string; client_id: string }[]>`
-          select id, client_id
-          from public.client_meta_assets
-          where user_id = ${userId}::uuid
-            and meta_asset_id = ${metaAssetId}::uuid
-            and unlinked_at is null
-          limit 1
-          for update
-        `
-        if (existing[0]) {
-          if (existing[0].client_id === clientId) return existing[0].id
-          throw new SafeMutationError(
-            'ACCOUNT_ALREADY_LINKED',
-            'Esta conta Meta já está vinculada a outro cliente. Desvincule-a antes de continuar.',
-            409,
-          )
-        }
+          const existing = await transaction<{ id: string; client_id: string }[]>`
+            select id, client_id
+            from public.client_meta_assets
+            where user_id = ${userId}::uuid
+              and meta_asset_id = ${metaAssetId}::uuid
+              and unlinked_at is null
+            limit 1
+            for update
+          `
+          if (existing[0]) {
+            if (existing[0].client_id === clientId) return existing[0].id
+            throw new SafeMutationError(
+              'ACCOUNT_ALREADY_LINKED',
+              'Esta conta Meta já está vinculada a outro cliente. Desvincule-a antes de continuar.',
+              409,
+            )
+          }
 
-        const inserted = await transaction<{ id: string }[]>`
-          insert into public.client_meta_assets (user_id, client_id, meta_asset_id)
-          values (${userId}::uuid, ${clientId}, ${metaAssetId}::uuid)
-          returning id
-        `
-        return inserted[0].id
-      }))
+          const inserted = await transaction<{ id: string }[]>`
+            insert into public.client_meta_assets (user_id, client_id, meta_asset_id)
+            values (${userId}::uuid, ${clientId}, ${metaAssetId}::uuid)
+            returning id
+          `
+          return inserted[0].id
+        })
+      })
 
       console.log('[meta-client-assets] linked', { userId, clientId, metaAssetId, clientMetaAssetId })
       return jsonResponse({ success: true, clientMetaAssetId })
