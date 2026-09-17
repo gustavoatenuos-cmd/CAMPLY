@@ -359,6 +359,13 @@ export default function App() {
 
   const agentAlertCount = (data.agentAlerts || []).filter(a => a.status === 'active').length;
 
+  const profileName = session?.user.user_metadata?.name;
+  const userName = isMetaE2EMode
+    ? 'E2E'
+    : typeof profileName === 'string' && profileName.trim()
+      ? profileName.trim()
+      : session?.user.email?.split('@')[0] || 'Usuário';
+
   return (
     <div className="flex min-h-dvh flex-col bg-brand-ink text-white xl:flex-row">
       <Sidebar
@@ -432,7 +439,7 @@ export default function App() {
         />
       )}
 
-      <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} />
+      <StartupModal data={data} setActiveView={setActiveView} claudeSummary={claudeSummary} claudeLoading={claudeLoading} userName={userName} />
     </div>
   );
 }

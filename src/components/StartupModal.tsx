@@ -7,11 +7,12 @@ interface StartupModalProps {
   setActiveView: (view: ViewId) => void;
   claudeSummary: string | null;
   claudeLoading: boolean;
+  userName: string;
 }
 
 const SESSION_KEY = 'camply-startup-dismissed';
 
-export function StartupModal({ data, setActiveView, claudeSummary, claudeLoading }: StartupModalProps) {
+export function StartupModal({ data, setActiveView, claudeSummary, claudeLoading, userName }: StartupModalProps) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export function StartupModal({ data, setActiveView, claudeSummary, claudeLoading
           <div className="absolute -top-12 -right-12 h-32 w-32 rounded-full bg-brand-green/5 blur-2xl" />
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-semibold text-brand-green">{saudacao}, Gustavo 👋</p>
+              <p className="text-sm font-semibold text-brand-green">{saudacao}, {userName} 👋</p>
               <h2 className="mt-1 text-xl font-black text-white">Briefing do Agente</h2>
               <p className="mt-1 text-sm text-brand-muted">Aqui está o resumo operacional antes de começar.</p>
             </div>
