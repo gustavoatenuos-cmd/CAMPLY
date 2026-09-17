@@ -97,7 +97,7 @@ export function runAgentEngine(data: CamplyData): {
     }
   });
 
-  // 4 & 6: CLIENTE ESTRATÉGICO / MUITAS PENDÊNCIAS
+  // 4 & 6: CLIENTE ESTRATÉGICO / MUITAS PENDÊNCIAS / VERBAS DE MÍDIA
   data.clients.forEach((client) => {
     if (client.status !== 'active') return;
 
@@ -107,6 +107,17 @@ export function runAgentEngine(data: CamplyData): {
     
     if (criticalCount >= 3) {
       addAlert(client.id, 'client', client.id, 'Atenção Crítica', `O cliente possui ${criticalCount} pendências críticas acumuladas.`, 'critical', 'Realizar força-tarefa para resolver pendências.');
+    }
+
+    // Smart Rule 7: Verba de mídia R$ 0
+    const totalVerba = (client.adInvestmentMeta || 0) + (client.adInvestmentGoogle || 0) + (client.adInvestmentYoutube || 0) + (client.adInvestmentTikTok || 0);
+    if (totalVerba === 0) {
+      addAlert(client.id, 'client', client.id, 'Verba Não Alocada', `O cliente está ativo, mas não possui verba de mídia configurada.`, 'warning', 'Definir investimentos na aba Verbas de Mídia.');
+    }
+
+    // Smart Rule 8: Sem conta de anúncio Meta vinculada
+    if (!client.metaAdAccountId) {
+      addAlert(client.id, 'client', client.id, 'Meta Não Vinculada', `Cliente sem conta de anúncio Meta vinculada ao sistema.`, 'warning', 'Vincular conta de anúncios na aba Integração Meta.');
     }
   });
 
