@@ -414,7 +414,7 @@ export default function App() {
               )}
               {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
               {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
-              {activeView === 'mediaFinance' && <FinanceView data={data} />}
+              {activeView === 'mediaFinance' && <FinanceView data={data} updateData={updateData} />}
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
               {activeView === 'personalFinance' && <PersonalFinanceView data={data} updateData={updateData} />}
               {activeView === 'activity' && <ActivityView data={data} />}
