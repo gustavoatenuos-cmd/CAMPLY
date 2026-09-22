@@ -110,7 +110,7 @@ export function ClientAnalyticsDetailDrawer({ isOpen, onClose, performance, peri
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm transition-all" onClick={onClose}>
       <div
-        className="w-full max-w-2xl h-full bg-white shadow-2xl flex flex-col transform transition-transform border-l border-gray-200"
+        className="w-full max-w-2xl h-full bg-white text-gray-900 shadow-2xl flex flex-col transform transition-transform border-l border-gray-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header / Identificação */}

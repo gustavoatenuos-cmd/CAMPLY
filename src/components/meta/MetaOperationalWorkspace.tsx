@@ -17,6 +17,18 @@ import { MetaHierarchyExplorer } from './MetaHierarchyExplorer';
 import { TargetSettingsDrawer } from './TargetSettingsDrawer';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { SearchableSelect } from '../ui/SearchableSelect';
+import { isClientOperationallyActive } from '../../data/receivablesForecast';
+
+// Clientes ativos primeiro: abrir a Central Meta Ads num cliente inativo ou de
+// projeto arquivado (ex.: o primeiro da lista) escondia os clientes em operação.
+function orderClientsForSelection(data: CamplyData) {
+  const isActive = (client: CamplyData['clients'][number]) => isClientOperationallyActive(
+    client,
+    (data.projects ?? []).find((project) => project.id === client.projectId),
+  );
+  const clients = data.clients ?? [];
+  return [...clients.filter(isActive), ...clients.filter((client) => !isActive(client))];
+}
 
 function savedSnapshotLabel(account: ClientMetaAccount): string {
   const run = account.lastSuccess;
@@ -58,7 +70,8 @@ export function MetaOperationalWorkspace({
   onPeriodChange?: (period: DashboardPeriod) => void;
   onDataChanged?: () => void;
 }) {
-  const [clientId, setClientId] = useState(initialClientId || data.clients[0]?.id || '');
+  const orderedClients = useMemo(() => orderClientsForSelection(data), [data]);
+  const [clientId, setClientId] = useState(initialClientId || orderedClients[0]?.id || '');
   const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
   const [accountId, setAccountId] = useState('');
   const [linkAssetId, setLinkAssetId] = useState('');
@@ -80,9 +93,9 @@ export function MetaOperationalWorkspace({
     setClientId((current) => {
       if (initialClientId && data.clients.some((client) => client.id === initialClientId)) return initialClientId;
       if (data.clients.some((client) => client.id === current)) return current;
-      return data.clients[0]?.id || '';
+      return orderedClients[0]?.id || '';
     });
-  }, [data.clients, initialClientId]);
+  }, [data.clients, initialClientId, orderedClients]);
 
   const refresh = useCallback(async () => {
     if (!clientId) {
@@ -179,7 +192,7 @@ export function MetaOperationalWorkspace({
                 data-testid="meta-client-select"
                 value={clientId}
                 onChange={(val) => setClientId(val)}
-                options={data.clients.map((client) => ({ value: client.id, label: client.company || client.name }))}
+                options={orderedClients.map((client) => ({ value: client.id, label: client.company || client.name }))}
                 className="w-full"
               />
             </div>

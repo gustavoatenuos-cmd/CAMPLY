@@ -15,9 +15,15 @@ interface ClientAnalyticsCardProps {
   period: DashboardPeriod;
   onOpenCampaigns: (performance: EnrichedGlobalClientPerformance) => void;
   onOpenDetails: (performance: EnrichedGlobalClientPerformance) => void;
+  /** Leva à Integração Meta, onde vincular e sincronizar de fato acontecem. */
+  onOpenMetaIntegration?: () => void;
 }
 
-export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOpenDetails }: ClientAnalyticsCardProps) {
+// Ações do bloqueio que só se resolvem na Integração Meta. Antes, todas abriam o
+// drawer de detalhes - o botão "Sincronizar Meta" não sincronizava nada.
+const META_INTEGRATION_ACTION = /^(Vincular conta Meta|Sincronizar Meta|Corrigir falha de sincronização|Revisar sincronização parcial)/;
+
+export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOpenDetails, onOpenMetaIntegration }: ClientAnalyticsCardProps) {
   const { client, metrics, analysisProfile } = performance;
   // client é o registro local do workspace (sem perfil analítico); o perfil
   // comercial de fato vem do nível superior, populado a partir de
@@ -98,7 +104,7 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
   const hasDataIssues = readiness.analytics.status === 'blocked';
 
   return (
-    <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white text-gray-900 rounded-xl border border-gray-200 overflow-hidden">
       <div className="pb-3 border-b bg-gray-50/50 p-4">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
@@ -137,7 +143,11 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
             {readiness.analytics.action && (
               <button
                 className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-                onClick={() => onOpenDetails(performance)}
+                onClick={() => (
+                  onOpenMetaIntegration && META_INTEGRATION_ACTION.test(readiness.analytics.action)
+                    ? onOpenMetaIntegration()
+                    : onOpenDetails(performance)
+                )}
               >
                 {readiness.analytics.action}
               </button>

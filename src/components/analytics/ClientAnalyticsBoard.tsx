@@ -12,11 +12,12 @@ interface ClientAnalyticsBoardProps {
   period: DashboardPeriod;
   loading: boolean;
   onEditClient?: (clientId: string) => void;
+  onOpenMetaIntegration?: () => void;
 }
 
 type FilterStatus = 'ALL' | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NO_DATA' | 'NO_ACCOUNT';
 
-export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }: ClientAnalyticsBoardProps) {
+export function ClientAnalyticsBoard({ clients, period, loading, onEditClient, onOpenMetaIntegration }: ClientAnalyticsBoardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
 
@@ -79,7 +80,7 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }:
   return (
     <div className="flex flex-col h-full bg-gray-50/30">
       {/* Header section with filters */}
-      <div className="bg-white border-b px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+      <div className="bg-white text-gray-900 border-b px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Analytics por Cliente</h2>
           <p className="text-sm text-gray-500">Acompanhamento de orçamento e performance</p>
@@ -136,6 +137,7 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient }:
                 period={period}
                 onOpenCampaigns={handleOpenCampaigns}
                 onOpenDetails={handleOpenDetails}
+                onOpenMetaIntegration={onOpenMetaIntegration}
               />
             ))}
           </div>
