@@ -246,7 +246,10 @@ assert_js 'document.querySelector("[data-testid=meta-period-select]")?.value ===
 assert_js 'document.body.innerText.includes("Base operacional e Meta Ads") && document.querySelectorAll("[data-testid=meta-operational-workspace]").length === 1' 'Clients did not reuse the official workspace'
 "${BROWSER[@]}" find role button click --name "Campanhas"
 "${BROWSER[@]}" wait 400
-assert_js '(() => { const text=document.body.innerText.toLocaleLowerCase("pt-BR"); return text.includes("performance meta e operação") && text.includes("quadro operacional") && text.includes("planejamento interno"); })()' 'Campaigns did not separate official and operational data'
+assert_js 'document.body.innerText.includes("Quadro Kanban de Campanhas") && document.body.innerText.toLocaleLowerCase("pt-BR").includes("gestão operacional")' 'Campaigns did not render the operational Kanban'
+"${BROWSER[@]}" find role button click --name "Analytics"
+"${BROWSER[@]}" wait 400
+assert_js 'document.body.innerText.includes("Analytics por Cliente")' 'Analytics did not render the separate official client performance view'
 
 assert_js 'Object.keys(localStorage).some(key => key.includes("00000000-0000-0000-0000-00000000e2e0"))' 'user-scoped cache was not created'
 "${BROWSER[@]}" find role button click --name "Sair"
