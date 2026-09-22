@@ -83,7 +83,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
         {cells.map((cell) => (
           <div key={cell.label} className="bg-gray-50 p-2 rounded flex flex-col">
             <span className="text-xs text-gray-500">{cell.label}</span>
-            <span className="font-semibold">{cell.value}</span>
+            <span className="font-semibold text-gray-900">{cell.value}</span>
           </div>
         ))}
       </div>
