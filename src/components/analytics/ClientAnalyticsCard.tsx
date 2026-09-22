@@ -173,11 +173,11 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Planejado</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
+                    <span className="font-semibold text-sm text-gray-900">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
                   </div>
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Gasto</span>
-                    <span className="font-semibold text-sm">{formatCurrency(budgetPacing.actualSpend)}</span>
+                    <span className="font-semibold text-sm text-gray-900">{formatCurrency(budgetPacing.actualSpend)}</span>
                   </div>
                   <div className="bg-gray-50 p-2 rounded flex flex-col">
                     <span className="text-[10px] uppercase tracking-wider text-gray-500">Restante</span>
