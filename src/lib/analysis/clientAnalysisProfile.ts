@@ -284,7 +284,7 @@ export async function upsertClientAnalysisProfile(profile: ClientAnalysisProfile
     window.sessionStorage.setItem('camply:meta-e2e:analysis-profiles', JSON.stringify({ ...profiles, [profile.clientId]: persisted }));
     return persisted;
   }
-  if (!supabaseData) return profile;
+  if (!supabaseData) throw new Error('Backend analítico não configurado. O perfil não foi salvo.');
   const { data, error } = await supabaseData.rpc('upsert_client_analysis_profile', {
     p_client_id: profile.clientId,
     p_vertical: profile.vertical,
