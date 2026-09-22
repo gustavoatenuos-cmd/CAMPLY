@@ -1667,7 +1667,8 @@ export async function handleRequest(req: Request) {
       throw new HttpError(`Failed to persist run context: ${contextError.message}`, 500);
     }
 
-    // CALL THE ATOMIC RPC WITH FALLBACK!
+    // The RPC persists metrics and finalizes the run in one transaction. A
+    // status-only fallback would report a sync without the data it promises.
     const { error: rpcError } = await supabaseClient.rpc('persist_meta_sync_run', {
         p_run_id: usedRunId,
         p_user_id: userId,
@@ -1687,19 +1688,7 @@ export async function handleRequest(req: Request) {
     });
 
     if (rpcError) {
-       console.warn("RPC persist_meta_sync_run notice (falling back to direct update):", rpcError);
-       try {
-         await supabaseClient.from('meta_sync_runs').update({
-           status: syncStatus,
-           finished_at: new Date().toISOString(),
-           records_fetched: totalRecordsFetched,
-           pages_fetched: totalPagesFetched,
-           termination_reason: terminationReason,
-           metadata: p_metadata,
-         }).match({ id: usedRunId, user_id: userId });
-       } catch (fallbackErr) {
-         console.warn("Direct update fallback notice:", fallbackErr);
-       }
+      throw new HttpError(`Database persistence failed: ${rpcError.message}`, 500);
     }
 
     const dashboardQualificationRequired = runScope === 'full_account'
@@ -1707,12 +1696,12 @@ export async function handleRequest(req: Request) {
       && accountMetricRows.length > 0;
 
     let persisted: PersistedSyncVerification | null = null;
-    try {
-      if (syncStatus === 'success') {
-        persisted = await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0]);
+    if (syncStatus === 'success') {
+      persisted = await verifyPersistedSyncRun(supabaseClient, usedRunId, userId, periods[0]);
+      if (persisted.status !== 'success' || !persisted.finishedAt
+        || (dashboardQualificationRequired && !persisted.dashboardQualified)) {
+        throw new HttpError('Database persistence verification failed: the completed run or its account metrics were not found.', 500);
       }
-    } catch (verifyErr) {
-      console.warn("Persisted sync verification notice:", verifyErr);
     }
 
     return new Response(JSON.stringify({
