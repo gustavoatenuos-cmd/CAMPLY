@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { loadGlobalPerformanceDashboard, type GlobalClientPerformance } from './globalPerformanceDashboard';
 import { loadAnalyticsCapabilities, type DashboardPeriod } from './analyticsCapabilities';
+import { isClientOperationallyActive } from '../../data/receivablesForecast';
 import type { CamplyData } from '../../types';
 
 export interface EnrichedGlobalClientPerformance extends GlobalClientPerformance {
@@ -14,6 +15,23 @@ export interface UsePerformanceDashboardResult {
   period: DashboardPeriod;
   setPeriod: (period: DashboardPeriod) => void;
   reload: () => Promise<void>;
+}
+
+export function selectOperationalDashboardClients(
+  result: GlobalClientPerformance[],
+  workspaceData: CamplyData
+): EnrichedGlobalClientPerformance[] {
+  return result.filter(c => {
+    const workspaceClient = workspaceData.clients.find(w => w.id === c.clientId);
+    if (!workspaceClient) return true;
+    const project = workspaceData.projects.find(item => item.id === workspaceClient.projectId);
+    return isClientOperationallyActive(workspaceClient, project);
+  }).map(c => {
+    const workspaceClient = workspaceData.clients.find(w => w.id === c.clientId);
+    return workspaceClient
+      ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName, client: workspaceClient }
+      : { ...c, client: undefined };
+  });
 }
 
 export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod: DashboardPeriod = 'last_30d'): UsePerformanceDashboardResult {
@@ -38,14 +56,7 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
         dashboardRpc: (capabilities.mode === 'analytics' ? capabilities.capabilities.dashboardRpc : '') as any,
       });
 
-      const enrichedResult = result.map(c => {
-        const workspaceClient = workspaceData.clients.find(w => w.id === c.clientId);
-        return workspaceClient 
-          ? { ...c, clientName: workspaceClient.company || workspaceClient.name || c.clientName, client: workspaceClient }
-          : { ...c, client: undefined };
-      });
-
-      setClients(enrichedResult);
+      setClients(selectOperationalDashboardClients(result, workspaceData));
     } catch (err) {
       console.error('[usePerformanceDashboard] Erro ao carregar dashboard:', err);
       setError('Falha ao carregar métricas de performance.');

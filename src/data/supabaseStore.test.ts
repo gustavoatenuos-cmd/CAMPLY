@@ -8,6 +8,8 @@ const mockState = vi.hoisted(() => ({
   selectQueue: [] as SelectResponse[],
   rpcQueue: [] as RpcResponse[],
   rpcCalls: [] as Array<Record<string, unknown>>,
+  upsertCalls: [] as Array<Record<string, unknown>>,
+  rpcHandler: null as null | (() => Promise<RpcResponse>),
 }));
 
 vi.mock('../lib/supabase', () => ({
@@ -15,15 +17,22 @@ vi.mock('../lib/supabase', () => ({
   getSupabaseSessionUserId: () => mockState.userId,
   supabaseData: {
     from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () =>
-            mockState.selectQueue.shift() ?? { data: null, error: null },
-        }),
-      }),
+      select: () => {
+        const query = {
+          eq: () => query,
+          is: () => query,
+          maybeSingle: async () => mockState.selectQueue.shift() ?? { data: null, error: null },
+        };
+        return query;
+      },
+      upsert: (value: Record<string, unknown>) => {
+        mockState.upsertCalls.push(value);
+        return Promise.resolve({ error: null });
+      },
     }),
     rpc: (_name: string, args: Record<string, unknown>) => {
       mockState.rpcCalls.push(args);
+      if (mockState.rpcHandler) return mockState.rpcHandler();
       return Promise.resolve(
         mockState.rpcQueue.shift() ?? { data: null, error: { message: 'rpc queue empty' } }
       );
@@ -38,6 +47,7 @@ import {
   loadRemoteData,
   resetRemoteWorkspaceState,
   saveRemoteData,
+  saveRemoteDataAndConfirmClient,
 } from './supabaseStore';
 
 const workspaceFixture = { ...initialData, notes: [] };
@@ -48,6 +58,8 @@ beforeEach(() => {
   mockState.selectQueue = [];
   mockState.rpcQueue = [];
   mockState.rpcCalls = [];
+  mockState.upsertCalls = [];
+  mockState.rpcHandler = null;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -120,6 +132,35 @@ describe('saveRemoteData', () => {
     mockState.rpcQueue.push({ data: null, error: { message: 'permission denied' } });
     const result = await saveRemoteData({ ...workspaceFixture, fakeData: 1 } as unknown as CamplyData);
     expect(result).toEqual({ status: 'error', message: 'permission denied' });
+    expect(mockState.upsertCalls).toHaveLength(0);
+  });
+
+  it('returns the same pending result instead of reporting an unconfirmed save as skipped', async () => {
+    let completeRpc!: (response: RpcResponse) => void;
+    mockState.rpcHandler = () => new Promise<RpcResponse>((resolve) => { completeRpc = resolve; });
+    const payload = { ...workspaceFixture, fakeData: 1 } as unknown as CamplyData;
+    const first = saveRemoteData(payload);
+    const second = saveRemoteData(payload);
+    await vi.waitFor(() => expect(mockState.rpcCalls).toHaveLength(1));
+    completeRpc({ data: null, error: { message: 'database unavailable' } });
+    expect(await first).toEqual({ status: 'error', message: 'database unavailable' });
+    expect(await second).toEqual({ status: 'error', message: 'database unavailable' });
+    expect(mockState.upsertCalls).toHaveLength(0);
+  });
+
+  it('does not confirm a client when its transactional save failed', async () => {
+    mockState.rpcQueue.push({ data: null, error: { message: 'database unavailable' } });
+    await expect(saveRemoteDataAndConfirmClient(workspaceFixture, 'client-1'))
+      .rejects.toThrow('Não foi possível confirmar a gravação do cliente no banco');
+    expect(mockState.upsertCalls).toHaveLength(0);
+  });
+
+  it('does not fabricate client identity if the saved registry row cannot be confirmed', async () => {
+    mockState.rpcQueue.push({ data: { status: 'saved', version: 1 }, error: null });
+    mockState.selectQueue.push({ data: null, error: null });
+    await expect(saveRemoteDataAndConfirmClient(workspaceFixture, 'client-1'))
+      .rejects.toThrow('vínculo no banco não pôde ser confirmado');
+    expect(mockState.upsertCalls).toHaveLength(0);
   });
 
   it('skips saving if payload is identical to last successfully saved payload', async () => {
