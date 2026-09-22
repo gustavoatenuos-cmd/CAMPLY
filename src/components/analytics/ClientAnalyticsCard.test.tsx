@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ClientAnalyticsCard } from './ClientAnalyticsCard';
 import type { EnrichedGlobalClientPerformance } from '../../lib/performance/usePerformanceDashboard';
 
@@ -139,16 +139,22 @@ describe('ClientAnalyticsCard', () => {
       client: { id: 'c3', name: 'Cliente Nunca Sincronizado' },
     } as unknown as EnrichedGlobalClientPerformance;
 
+    const onOpenDetails = vi.fn();
+    const onOpenMetaIntegration = vi.fn();
     render(
       <ClientAnalyticsCard
         performance={mockPerformance}
         period="last_30d"
         onOpenCampaigns={vi.fn()}
-        onOpenDetails={vi.fn()}
+        onOpenDetails={onOpenDetails}
+        onOpenMetaIntegration={onOpenMetaIntegration}
       />
     );
 
-    expect(screen.getByText('Sincronizar Meta')).toBeInTheDocument();
+    // O botão precisa levar para onde a sincronização acontece, não abrir o drawer.
+    fireEvent.click(screen.getByText('Sincronizar Meta'));
+    expect(onOpenMetaIntegration).toHaveBeenCalledTimes(1);
+    expect(onOpenDetails).not.toHaveBeenCalled();
   });
 
   it('surfaces a partial-sync warning instead of hiding it when data is only partially available', () => {
