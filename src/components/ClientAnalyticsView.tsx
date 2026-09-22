@@ -39,6 +39,7 @@ export function ClientAnalyticsView({ data, updateData, setActiveView }: { data:
         period={period}
         loading={loading}
         onEditClient={handleEditClient}
+        onOpenMetaIntegration={setActiveView ? () => setActiveView('metaIntegration') : undefined}
       />
     </div>
   );
