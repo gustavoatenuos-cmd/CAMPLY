@@ -46,6 +46,10 @@ BEGIN
   ) VALUES (
     v_run, v_user, v_integration, 'act_slices', 'camp_sales',
     'Vendas', 'OUTCOME_SALES', 'SALES', 'ACTIVE', 'ACTIVE'
+  ), (
+    -- ACTIVE in Meta but no delivery: sorts first by name, must be listed last.
+    v_run, v_user, v_integration, 'act_slices', 'camp_idle',
+    'AAA Sem entrega', 'OUTCOME_SALES', 'SALES', 'ACTIVE', 'ACTIVE'
   );
 
   -- Two delivery days: yesterday (inside every slice but today) and 40 days ago
@@ -68,8 +72,13 @@ BEGIN
   -- last_30d: previously period_not_synced because no run had requested_period = last_30d.
   v_h := public.get_meta_performance_hierarchy(v_link, 'last_30d', 'campaign', NULL, 1, 25);
   v_m := v_h->'items'->0->'metrics';
-  IF v_h->>'state' <> 'ready' OR (v_h->>'total')::int <> 1 THEN
+  IF v_h->>'state' <> 'ready' OR (v_h->>'total')::int <> 2 THEN
     RAISE EXCEPTION 'last_30d must read the last_90d base: %', v_h;
+  END IF;
+  IF v_h->'items'->0->>'id' <> 'camp_sales' OR v_h->'items'->1->>'id' <> 'camp_idle'
+     OR (v_h->'items'->1->'metrics'->'spend'->>'value')::numeric <> 0
+  THEN
+    RAISE EXCEPTION 'campaigns that delivered in the slice must come first: %', v_h->'items';
   END IF;
   IF (v_m->'spend'->>'value')::numeric <> 10
      OR (v_m->'purchases'->>'value')::numeric <> 2
