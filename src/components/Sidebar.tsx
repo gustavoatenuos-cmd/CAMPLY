@@ -66,7 +66,7 @@ export function Sidebar({ activeView, setActiveView, alertCount, onSignOut }: Si
       </div>
 
       {/* Nav com grupos */}
-      <nav className="relative z-10 flex gap-1 overflow-x-auto p-3 xl:block xl:min-h-0 xl:flex-1 xl:overflow-x-visible xl:overflow-y-auto xl:overscroll-contain xl:p-4">
+      <nav className="relative z-10 flex gap-1 overflow-x-auto p-3 xl:block xl:min-h-0 xl:flex-1 xl:overflow-x-hidden xl:overflow-y-auto xl:overscroll-contain xl:p-4">
         {navGroups.map((group, groupIndex) => (
           <div
             key={groupIndex}

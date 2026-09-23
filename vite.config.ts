@@ -29,6 +29,7 @@ export default defineConfig({
       '**/.agents/**',
       '**/scratch/**',
       '**/supabase/.temp/**',
+      '**/e2e/**',
     ],
   },
 });
