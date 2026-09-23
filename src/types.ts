@@ -121,6 +121,8 @@ export interface Client {
   metaAdAccountId?: string;
   metaAdAccountName?: string;
   logoUrl?: string | null;
+  /** Identification colour (hex from CLIENT_COLOR_PALETTE) used on boards and cards. */
+  color?: string;
   // Analytics & categorization (Phase 1)
   category?: ClientCategory;
   benchmarks?: ClientBenchmarks;

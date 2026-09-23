@@ -5,13 +5,18 @@ import { campaignPlatforms, metaCampaignObjectives } from '../data/options';
 import type { Campaign, CampaignStatus, CamplyData, Priority } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
 import { Modal } from './ui/Modal';
+import { MetaCampaignsBoard } from './campaigns/MetaCampaignsBoard';
 
 interface CampaignsViewProps {
   data: CamplyData;
   updateData: (updater: (data: CamplyData) => CamplyData) => void;
+  onOpenMetaIntegration?: () => void;
 }
 
-export function CampaignsView({ data, updateData }: CampaignsViewProps) {
+type CampaignsTab = 'meta' | 'kanban';
+
+export function CampaignsView({ data, updateData, onOpenMetaIntegration }: CampaignsViewProps) {
+  const [tab, setTab] = useState<CampaignsTab>('meta');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string>('all');
@@ -110,20 +115,41 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
               <Megaphone size={17} />
               <p className="text-xs font-bold uppercase tracking-[0.2em]">Gestão Operacional</p>
             </div>
-            <h1 className="mt-2 text-3xl font-black text-white">Quadro Kanban de Campanhas</h1>
+            <h1 className="mt-2 text-3xl font-black text-white">Campanhas</h1>
             <p className="mt-1 text-sm text-brand-muted">
-              Acompanhamento de execução e otimização das contas ativas na sua base de clientes ({activeClients.length} clientes ativos).
+              {tab === 'meta'
+                ? `Campanhas reais da Meta dos ${activeClients.length} clientes ativos, organizadas pelo objetivo definido no Gerenciador de Anúncios.`
+                : `Acompanhamento de execução e otimização das contas ativas na sua base de clientes (${activeClients.length} clientes ativos).`}
             </p>
+            <div role="tablist" aria-label="Visão de campanhas" className="mt-4 inline-flex rounded-xl border border-brand-line bg-brand-ink p-1">
+              {([['meta', 'Campanhas Meta'], ['kanban', 'Kanban operacional']] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`rounded-lg px-4 py-1.5 text-xs font-bold transition ${tab === id ? 'bg-brand-green text-brand-ink' : 'text-brand-muted hover:text-white'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => { setEditingId(null); setModalOpen(true); }}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-3 text-sm font-black text-brand-ink transition hover:bg-brand-green/90"
-          >
-            <Plus size={17} /> Nova Campanha
-          </button>
+          {tab === 'kanban' && (
+            <button
+              type="button"
+              onClick={() => { setEditingId(null); setModalOpen(true); }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-3 text-sm font-black text-brand-ink transition hover:bg-brand-green/90"
+            >
+              <Plus size={17} /> Nova Campanha
+            </button>
+          )}
         </header>
 
+        {tab === 'meta' && <MetaCampaignsBoard data={data} onOpenMetaIntegration={onOpenMetaIntegration} />}
+
+        {tab === 'kanban' && (<>
         {/* Filtros da operação */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-brand-line bg-brand-surface p-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -256,6 +282,7 @@ export function CampaignsView({ data, updateData }: CampaignsViewProps) {
             );
           })}
         </div>
+        </>)}
 
         {/* Modal de Criação / Edição */}
         <Modal
