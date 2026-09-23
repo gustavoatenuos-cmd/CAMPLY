@@ -4,6 +4,7 @@ import { CamplyData, Client, BillingType, InvestmentPeriod, ClientStatus, Client
 import { createActivityLog, makeId } from '../data/camplyStore';
 import React from 'react';
 import { Modal } from './ui/Modal';
+import { CLIENT_COLOR_PALETTE, clientColor } from '../lib/clientColors';
 import {
   analysisVerticals,
   operationTypes,
@@ -56,6 +57,7 @@ export function ClientFormModal({
   const [templateId, setTemplateId] = useState('custom');
   // Analytics & alertas
   const [category, setCategory] = useState<ClientCategory | ''>(() => editingClient?.category ?? '');
+  const [color, setColor] = useState<string>(() => clientColor(editingClient ?? null));
   const [benchmarks, setBenchmarks] = useState<ClientBenchmarks>(() => editingClient?.benchmarks ?? {});
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState<string>(() =>
     editingClient?.monthlyBudgetLimit ? String(editingClient.monthlyBudgetLimit) : ''
@@ -75,6 +77,7 @@ export function ClientFormModal({
     setProfileDraft(fallback);
     // Reset analytics fields
     setCategory(editingClient?.category ?? '');
+    setColor(clientColor(editingClient ?? null));
     setBenchmarks(editingClient?.benchmarks ?? {});
     setMonthlyBudgetLimit(editingClient?.monthlyBudgetLimit ? String(editingClient.monthlyBudgetLimit) : '');
     setAlertBudgetAt(editingClient?.alertBudgetAt ? String(editingClient.alertBudgetAt) : '80');
@@ -132,6 +135,7 @@ export function ClientFormModal({
       name,
       company: String(form.get('company') ?? ''),
       logoUrl: String(form.get('logoUrl') ?? '') || null,
+      color,
       segment: String(profileDraft.vertical || form.get('segment') || ''),
       structure: String(form.get('structure') ?? ''),
       hasProject: form.get('hasProject') === 'on',
@@ -222,6 +226,29 @@ export function ClientFormModal({
           <Field label="Logo do cliente (URL)" name="logoUrl" type="url" placeholder="Ex: https://dominio.com/logo.png" defaultValue={editingClient?.logoUrl || ''} />
           <Field label="Contato principal" name="contact" defaultValue={editingClient?.contact} placeholder="E-mail, telefone ou WhatsApp" />
         </div>
+
+        <fieldset>
+          <legend className="mb-2 block text-sm font-semibold text-brand-soft">Cor de identificação</legend>
+          <p className="mb-3 text-xs text-brand-muted">Usada para reconhecer o cliente no quadro de campanhas.</p>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Cor de identificação do cliente">
+            {CLIENT_COLOR_PALETTE.map((option) => {
+              const selected = option.value === color;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={option.label}
+                  title={option.label}
+                  onClick={() => setColor(option.value)}
+                  className={`h-8 w-8 rounded-full border-2 transition ${selected ? 'border-white scale-110' : 'border-transparent opacity-80 hover:opacity-100'}`}
+                  style={{ backgroundColor: option.value }}
+                />
+              );
+            })}
+          </div>
+        </fieldset>
 
         <section className="rounded-2xl border border-brand-line bg-brand-surface/70 p-4">
           <div className="mb-4">
