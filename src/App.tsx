@@ -412,7 +412,7 @@ export default function App() {
                   setActiveView={setActiveView}
                 />
               )}
-              {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} />}
+              {activeView === 'campaigns' && <CampaignsView data={data} updateData={updateData} onOpenMetaIntegration={() => setActiveView('metaIntegration')} />}
               {activeView === 'clients' && <ClientsView data={data} updateData={updateData} persistClientData={persistClientData} />}
               {activeView === 'mediaFinance' && <FinanceView data={data} updateData={updateData} />}
               {activeView === 'projects' && <ProjectsView data={data} updateData={updateData} />}
