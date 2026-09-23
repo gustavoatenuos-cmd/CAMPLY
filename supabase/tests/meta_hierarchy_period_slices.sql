@@ -50,6 +50,14 @@ BEGIN
     -- ACTIVE in Meta but no delivery: sorts first by name, must be listed last.
     v_run, v_user, v_integration, 'act_slices', 'camp_idle',
     'AAA Sem entrega', 'OUTCOME_SALES', 'SALES', 'ACTIVE', 'ACTIVE'
+  ), (
+    -- Paused now, but spent 40 days ago: only inside last_90d.
+    v_run, v_user, v_integration, 'act_slices', 'camp_paused',
+    'Pausada com entrega', 'OUTCOME_TRAFFIC', 'TRAFFIC', 'PAUSED', 'PAUSED'
+  ), (
+    -- Paused and never delivered: never listed.
+    v_run, v_user, v_integration, 'act_slices', 'camp_dead',
+    'Pausada sem entrega', 'OUTCOME_TRAFFIC', 'TRAFFIC', 'PAUSED', 'PAUSED'
   );
 
   -- Two delivery days: yesterday (inside every slice but today) and 40 days ago
@@ -68,6 +76,14 @@ BEGIN
     ('purchases', 3::numeric, v_today - 40), ('purchase_value', 150::numeric, v_today - 40),
     ('reach', 3000::numeric, v_today - 40)
   ) AS d(metric_id, value, day);
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id, campaign_id,
+    metric_id, metric_value, date_start, date_stop, timezone, source_level, completeness_status
+  ) VALUES (
+    v_user, v_run, v_integration, 'act_slices', 'camp_paused',
+    'spend', 7, v_today - 40, v_today - 40, 'America/Sao_Paulo', 'campaign', 'complete'
+  );
 
   -- last_30d: previously period_not_synced because no run had requested_period = last_30d.
   v_h := public.get_meta_performance_hierarchy(v_link, 'last_30d', 'campaign', NULL, 1, 25);
@@ -95,6 +111,14 @@ BEGIN
   -- last_90d sums both delivery days (the legacy reader returned a single row).
   v_h := public.get_meta_performance_hierarchy(v_link, 'last_90d', 'campaign', NULL, 1, 25);
   v_m := v_h->'items'->0->'metrics';
+  -- Paused campaign that spent inside the slice is listed after the delivering
+  -- active one; the paused one without delivery never is.
+  IF (v_h->>'total')::int <> 3
+     OR v_h->'items'->1->>'id' <> 'camp_paused'
+     OR v_h->'items'->2->>'id' <> 'camp_idle'
+  THEN
+    RAISE EXCEPTION 'last_90d must list paused campaigns with delivery: %', v_h->'items';
+  END IF;
   IF (v_m->'spend'->>'value')::numeric <> 110
      OR (v_m->'purchases'->>'value')::numeric <> 5
      OR (v_m->'cpa'->>'value')::numeric <> 22
