@@ -7,6 +7,18 @@ import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
 export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'inactive';
 
+export interface CreativeLabClientMediaSummary {
+  clientId: string;
+  clientMetaAssetId: string;
+  accountId: string;
+  accountName: string;
+  activeCampaigns: number;
+  activeAdSets: number;
+  activeAds: number;
+  hasActiveMedia: boolean;
+  lastSyncedAt: string | null;
+}
+
 export interface CreativeLabClientRow {
   client: Client;
   accounts: ClientMetaAccount[];
@@ -127,7 +139,8 @@ function campaignStructureIsActive(campaign: Campaign): boolean {
 
 export function buildCreativeLabClientRows(
   data: CamplyData,
-  accountMap: Map<string, ClientMetaAccount[]>
+  accountMap: Map<string, ClientMetaAccount[]>,
+  mediaSummaryMap: Map<string, CreativeLabClientMediaSummary[]> = new Map()
 ): CreativeLabClientRow[] {
   return data.clients.map((client) => {
     const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id && campaign.platform === 'Meta Ads');
@@ -147,7 +160,14 @@ export function buildCreativeLabClientRows(
       }
     }
 
-    const hasActiveMedia = campaigns.some(campaignStructureIsActive);
+    const official = mediaSummaryMap.get(client.id) || [];
+    const officialAvailable = official.length > 0;
+    const officialActiveCampaigns = official.reduce((sum, item) => sum + item.activeCampaigns, 0);
+    const officialActiveAdSets = official.reduce((sum, item) => sum + item.activeAdSets, 0);
+    const officialActiveAds = official.reduce((sum, item) => sum + item.activeAds, 0);
+    const hasActiveMedia = officialAvailable
+      ? official.some((item) => item.hasActiveMedia)
+      : campaigns.some(campaignStructureIsActive);
     const state: CreativeLabClientState = client.status !== 'active'
       ? 'inactive'
       : hasActiveMedia ? 'active_media' : 'no_active_media';
@@ -156,9 +176,9 @@ export function buildCreativeLabClientRows(
       client,
       accounts: accountMap.get(client.id) || [],
       state,
-      activeCampaigns,
-      activeAdSets,
-      activeAds,
+      activeCampaigns: officialAvailable ? officialActiveCampaigns : activeCampaigns,
+      activeAdSets: officialAvailable ? officialActiveAdSets : activeAdSets,
+      activeAds: officialAvailable ? officialActiveAds : activeAds,
     };
   });
 }
@@ -335,6 +355,31 @@ export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLab
     if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
     return b.spend - a.spend;
   });
+}
+
+
+export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLabClientMediaSummary[]> {
+  if (isMetaE2EMode) {
+    return [{
+      clientId: 'client-e2e',
+      clientMetaAssetId: 'link-e2e',
+      accountId: 'act_e2e',
+      accountName: 'Conta Meta Mock',
+      activeCampaigns: 1,
+      activeAdSets: 1,
+      activeAds: 1,
+      hasActiveMedia: true,
+      lastSyncedAt: '2026-06-30T18:00:00.000Z',
+    }];
+  }
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('get_meta_creative_lab_account_summary');
+  if (error) {
+    console.warn('[CreativeLab] Não foi possível carregar o resumo oficial de mídia ativa.', error);
+    return [];
+  }
+  const payload = data as unknown as { state?: string; items?: CreativeLabClientMediaSummary[] };
+  return Array.isArray(payload?.items) ? payload.items : [];
 }
 
 async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPeriod): Promise<{
