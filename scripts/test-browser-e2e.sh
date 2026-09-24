@@ -131,8 +131,10 @@ step "Meta link and official metrics"
 assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment filter did not reset before Meta navigation'
 "${BROWSER[@]}" find role button click --name "Integração Meta"
 "${BROWSER[@]}" wait 300
+"${BROWSER[@]}" wait '[data-testid=meta-link-button]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
+"${BROWSER[@]}" wait '[data-testid=meta-sync-linked-clients]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-linked-clients]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 350
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'official Meta synchronization did not persist a reliable snapshot'
@@ -175,6 +177,7 @@ assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performa
 "${BROWSER[@]}" wait 100
 assert_js 'document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1' 'mobile has structural horizontal overflow'
 assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performance-mobile]")).display !== "none" && getComputedStyle(document.querySelector("[data-testid=client-performance-desktop]")).display === "none"' 'mobile must use performance cards'
+"${BROWSER[@]}" wait '[data-testid=client-performance-details-toggle]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=client-performance-details-toggle]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const button=document.querySelector("[data-testid=client-performance-details-toggle]"); const details=document.querySelector("[data-testid=client-performance-details]"); const text=details?.innerText.toLocaleLowerCase("pt-BR") || ""; return Boolean(button && details && button.getAttribute("aria-expanded") === "true" && text.includes("metas e realizado") && text.includes("campanhas da conta")); })()' 'mobile performance accordion did not expose details'
@@ -201,6 +204,7 @@ assert_js 'document.body.innerText.includes("Criativo Mock")' 'creative hierarch
 step "creative hierarchy opened"
 assert_js 'document.body.innerText.includes("Criativo Mock") && document.body.innerText.includes("Agende sua avaliação")' 'creative drill-down did not render'
 
+"${BROWSER[@]}" wait '[data-testid=meta-target-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 step "target drawer opened"
 "${BROWSER[@]}" fill 'input[name="targetValue"]' "15"
@@ -224,12 +228,14 @@ assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'official Meta a
 "${BROWSER[@]}" find role button click --name "Integração Meta"
 "${BROWSER[@]}" wait 350
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText === sessionStorage.getItem("camply-e2e-snapshot-label")' 'saved Meta snapshot changed or disappeared after reload without an explicit synchronization'
+"${BROWSER[@]}" wait '[data-testid=meta-target-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 200
 assert_js 'document.body.innerText.includes("Meta: 15")' 'performance target did not survive reload'
 "${BROWSER[@]}" find role button click --name "Fechar metas"
 
 step "reconciliation period refresh and navigation"
+"${BROWSER[@]}" wait '[data-testid=meta-reconcile-campaign-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-reconcile-campaign-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" fill 'input[aria-label="Referência Investimento"]' "350"
 "${BROWSER[@]}" fill 'input[aria-label="Referência Impressões"]' "11800"
