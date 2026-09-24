@@ -120,7 +120,8 @@ assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles"
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile did not survive reload'
-"${BROWSER[@]}" find role button click --name "Cancelar"
+assert_js '(() => { const form=[...document.querySelectorAll("form")].find((item) => item.innerText.includes("Salvar alterações")); const button=[...(form?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Cancelar"); if (!button) return false; button.click(); return true; })()' 'client analysis profile editor could not be cancelled'
+assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile editor stayed open after cancelling'
 "${BROWSER[@]}" find role button click --name "Dashboard"
 "${BROWSER[@]}" wait 300
 assert_js 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]")?.getAttribute("aria-pressed") === "true"' 'segment filter did not survive profile navigation and reload'
