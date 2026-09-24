@@ -133,17 +133,22 @@ describe('creative lab client state', () => {
     const data = baseData();
     data.projects = [{
       id: 'project-1',
+      projectType: 'traffic',
       clientId: 'client-1',
-      name: 'Projeto arquivado',
-      company: 'Donatellus',
       ownerName: '',
-      services: [],
-      status: 'archived',
+      company: 'Donatellus',
       billingType: 'recurring',
+      name: 'Projeto arquivado',
+      role: '',
+      status: 'archived',
+      progress: 0,
+      dueDate: '',
       amountCharged: 0,
       amountReceived: 0,
       paymentStatus: 'pending',
-      dueDate: '',
+      deliveredUrl: '',
+      visibility: 'private',
+      nextAction: '',
     }];
     data.clients[0].projectId = 'project-1';
     expect(buildCreativeLabClientRows(data, new Map())).toEqual([]);
