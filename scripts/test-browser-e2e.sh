@@ -40,7 +40,7 @@ assert_js() {
   done
   echo "Browser E2E failed: $message (received ${actual:-evaluation error})"
   "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
-  "${BROWSER[@]}" eval 'JSON.stringify({dialog:document.querySelector("[role=dialog]")?.innerText.slice(-1200),invalid:[...document.querySelectorAll("[role=dialog] input:invalid")].map((input)=>({name:input.name,value:input.value,message:input.validationMessage}))})' || true
+  "${BROWSER[@]}" eval 'JSON.stringify({tail:document.body.innerText.slice(-2400),forms:[...document.querySelectorAll("form")].map((form)=>({valid:form.checkValidity(),invalid:[...form.querySelectorAll(":invalid")].map((input)=>({name:input.name,value:input.value,message:input.validationMessage}))}))})' || true
   exit 1
 }
 
