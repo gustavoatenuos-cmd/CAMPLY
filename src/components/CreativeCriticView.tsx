@@ -23,6 +23,7 @@ import {
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
   loadCreativeLabClientMediaSummaries,
+  loadCreativeLabClientMediaSummariesFromHierarchy,
   type CreativeLabClientMediaSummary,
   type CreativeLabClientResult,
   type CreativeLabClientRow,
@@ -269,39 +270,49 @@ export function CreativeCriticView({ data }: Props) {
     setMediaSummaryError(null);
     setMediaSummaryLoaded(false);
 
-    Promise.allSettled([
-      loadClientMetaAssetCatalog(),
-      loadCreativeLabClientMediaSummaries(),
-    ]).then(([catalogResult, summaryResult]) => {
-      if (!active) return;
+    void (async () => {
+      try {
+        const catalogResult = await loadClientMetaAssetCatalog();
+        if (!active) return;
+        setCatalog(catalogResult);
 
-      if (catalogResult.status === 'fulfilled') {
-        setCatalog(catalogResult.value);
-      } else {
-        setCatalogError(
-          catalogResult.reason instanceof Error
-            ? catalogResult.reason.message
-            : 'Não foi possível carregar os vínculos Meta.'
-        );
+        try {
+          const summaries = await loadCreativeLabClientMediaSummaries();
+          if (!active) return;
+          setMediaSummaries(summaries);
+          setMediaSummaryLoaded(true);
+        } catch (summaryError) {
+          const fallbackMap = new Map(
+            (catalogResult.clients || []).map((item) => [item.clientId, item.accounts] as const)
+          );
+          try {
+            const fallback = await loadCreativeLabClientMediaSummariesFromHierarchy(data, fallbackMap);
+            if (!active) return;
+            setMediaSummaries(fallback);
+            setMediaSummaryLoaded(true);
+            setMediaSummaryError('O resumo dedicado do Lab não respondeu; usando a hierarquia oficial da Meta como fallback.');
+          } catch (fallbackError) {
+            if (!active) return;
+            setMediaSummaries([]);
+            setMediaSummaryError(
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : summaryError instanceof Error
+                  ? summaryError.message
+                  : 'Não foi possível carregar a estrutura Meta.'
+            );
+          }
+        }
+      } catch (error) {
+        if (!active) return;
+        setCatalogError(error instanceof Error ? error.message : 'Não foi possível carregar os vínculos Meta.');
+      } finally {
+        if (active) setCatalogLoading(false);
       }
-
-      if (summaryResult.status === 'fulfilled') {
-        setMediaSummaries(summaryResult.value);
-        setMediaSummaryLoaded(true);
-      } else {
-        setMediaSummaries([]);
-        setMediaSummaryError(
-          summaryResult.reason instanceof Error
-            ? summaryResult.reason.message
-            : 'Não foi possível carregar o resumo de mídia da Meta.'
-        );
-      }
-
-      setCatalogLoading(false);
-    });
+    })();
 
     return () => { active = false; };
-  }, []);
+  }, [data]);
 
   const accountMap = useMemo(() => new Map(
     (catalog?.clients || []).map((item) => [item.clientId, item.accounts] as const)
@@ -597,9 +608,11 @@ export function CreativeCriticView({ data }: Props) {
           </div>
         )}
         {mediaSummaryError && (
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <div className={`rounded-xl border p-4 text-sm ${mediaSummaryLoaded
+            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+            : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
             <strong>Dados Meta:</strong> {mediaSummaryError}
-            <span className="ml-1">Os cards não exibem zero quando o resumo oficial não pôde ser lido.</span>
+            {!mediaSummaryLoaded && <span className="ml-1">Os cards não exibem zero quando a fonte não pôde ser lida.</span>}
           </div>
         )}
 
