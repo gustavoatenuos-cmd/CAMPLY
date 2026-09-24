@@ -246,7 +246,13 @@ assert_js 'document.querySelector("[data-testid=meta-period-select]")?.value ===
 assert_js 'document.body.innerText.includes("Base operacional e Meta Ads") && document.querySelectorAll("[data-testid=meta-operational-workspace]").length === 1' 'Clients did not reuse the official workspace'
 "${BROWSER[@]}" find role button click --name "Campanhas"
 "${BROWSER[@]}" wait 400
-assert_js 'document.body.innerText.includes("Quadro Kanban de Campanhas") && document.body.innerText.toLocaleLowerCase("pt-BR").includes("gestão operacional")' 'Campaigns did not render the operational Kanban'
+assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("Campanhas Meta") && document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Não foi possível ler: Clínica Mock")' 'Meta campaign board did not load the synced official campaign'
+"${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("button")].find((item) => item.innerText.includes("Campanha ativa mock")); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 250
+assert_js 'document.querySelector("[role=dialog]")?.innerText.includes("Conjunto ativo com leads")' 'Meta campaign detail did not load the synced ad set'
+"${BROWSER[@]}" find role button click --name "Fechar"
+"${BROWSER[@]}" find role tab click --name "Kanban operacional"
+assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("Kanban operacional") && document.body.innerText.includes("FILTROS:") && document.body.innerText.includes("SETUP")' 'Campaigns did not render the operational Kanban'
 "${BROWSER[@]}" find role button click --name "Analytics"
 "${BROWSER[@]}" wait 400
 assert_js 'document.body.innerText.includes("Analytics por Cliente")' 'Analytics did not render the separate official client performance view'
