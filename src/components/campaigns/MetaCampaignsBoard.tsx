@@ -26,7 +26,7 @@ export function MetaCampaignsBoard({ data, onOpenMetaIntegration }: MetaCampaign
   const [period, setPeriod] = useState<DashboardPeriod>('last_90d');
   const [selectedClientId, setSelectedClientId] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showIdle, setShowIdle] = useState(false);
+  const [showIdle, setShowIdle] = useState(true);
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [selected, setSelected] = useState<MetaBoardCampaign | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -224,8 +224,10 @@ function BoardNotices({ result, onOpenMetaIntegration }: { result: MetaBoardResu
       {notSynced.length > 0 && <p>Sem sincronização Meta: {names(notSynced.map((issue) => issue.client))}.</p>}
       {failed.length > 0 && <p>Não foi possível ler: {names(failed.map((issue) => issue.client))}.</p>}
       {result.clientsWithoutAccount.length > 0 && <p>Sem conta de anúncios vinculada: {names(result.clientsWithoutAccount)}.</p>}
-      {result.truncatedAccounts.map(({ client, account, total }) => (
-        <p key={account.clientMetaAssetId}>{clientDisplayName(client)} ({account.accountName}): {total} campanhas; exibindo as 100 com mais gasto.</p>
+      {result.truncatedAccounts.map(({ client, account, activeTotal, loadedActive }) => (
+        <p key={account.clientMetaAssetId}>
+          {clientDisplayName(client)} ({account.accountName}): {activeTotal} campanhas ativas; o CAMPLY conseguiu carregar {loadedActive}. Tente recarregar.
+        </p>
       ))}
       {onOpenMetaIntegration && (notSynced.length > 0 || result.clientsWithoutAccount.length > 0) && (
         <button type="button" onClick={onOpenMetaIntegration} className="font-bold text-amber-300 underline">Abrir Integração Meta</button>

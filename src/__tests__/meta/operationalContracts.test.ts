@@ -71,6 +71,11 @@ const appSource = readFileSync(
   'utf8'
 );
 
+const workspaceSource = readFileSync(
+  new URL('../../hooks/useCamplyWorkspace.ts', import.meta.url),
+  'utf8'
+);
+
 const supabaseStoreSource = readFileSync(
   new URL('../../data/supabaseStore.ts', import.meta.url),
   'utf8'
@@ -180,8 +185,9 @@ describe('operational analytics contracts', () => {
 
     expect(clientsViewSource).toContain('metaWorkspaceKey');
     expect(clientsViewSource).toContain('onClientPersisted');
-    expect(appSource).toContain('saveRemoteDataAndConfirmClient');
-    expect(appSource).toContain('skipNextRemoteSaveRef');
+    expect(appSource).toContain('useCamplyWorkspace');
+    expect(workspaceSource).toContain('saveRemoteDataAndConfirmClient');
+    expect(workspaceSource).toContain('skipRemoteSaveDataRef');
     expect(supabaseStoreSource).toContain('confirmClientIdentity');
     expect(supabaseStoreSource).toContain('saveRemoteDataAndConfirmClient');
   });

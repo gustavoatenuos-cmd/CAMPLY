@@ -115,6 +115,7 @@ BEGIN
   -- Paused campaign that spent inside the slice is listed after the delivering
   -- active one; the paused one without delivery never is.
   IF (v_h->>'total')::int <> 3
+     OR (v_h->>'activeTotal')::int <> 2
      OR v_h->'items'->1->>'id' <> 'camp_paused'
      OR v_h->'items'->2->>'id' <> 'camp_idle'
   THEN

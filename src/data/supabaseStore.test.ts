@@ -159,7 +159,7 @@ describe('saveRemoteData', () => {
     mockState.rpcQueue.push({ data: { status: 'saved', version: 1 }, error: null });
     mockState.selectQueue.push({ data: null, error: null });
     await expect(saveRemoteDataAndConfirmClient(workspaceFixture, 'client-1'))
-      .rejects.toThrow('vínculo no banco não pôde ser confirmado');
+      .rejects.toThrow('ainda não apareceu no índice analítico');
     expect(mockState.upsertCalls).toHaveLength(0);
   });
 

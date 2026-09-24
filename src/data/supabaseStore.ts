@@ -9,38 +9,67 @@ type WorkspaceRow = {
 };
 
 export type RemoteLoadResult =
-  | { status: 'ok'; data: CamplyData }
-  | { status: 'empty' }
+  | { status: 'ok'; data: CamplyData; version: number }
+  | { status: 'empty'; version: number | null }
   | { status: 'unavailable' }
   | { status: 'error'; message: string };
 
 export type RemoteSaveResult =
-  | { status: 'saved' }
+  | { status: 'saved'; version: number }
   | { status: 'skipped' }
-  | { status: 'conflict'; remoteData: CamplyData | null }
+  | { status: 'conflict'; remoteData: CamplyData | null; remoteVersion: number | null }
   | { status: 'error'; message: string };
+
+export type WorkspacePersistenceErrorCode =
+  | 'WORKSPACE_CONFLICT'
+  | 'WORKSPACE_SAVE_FAILED'
+  | 'CLIENT_IDENTITY_NOT_CONFIRMED';
+
+export class WorkspacePersistenceError extends Error {
+  constructor(
+    public readonly code: WorkspacePersistenceErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = 'WorkspacePersistenceError';
+  }
+}
 
 const LOAD_TIMEOUT_MS = 12_000;
 const SAVE_TIMEOUT_MS = 15_000;
 const CONFIRM_TIMEOUT_MS = 10_000;
 
 let remoteVersion: number | null = null;
+let remoteUserId: string | null = null;
 let saveQueue: Promise<unknown> = Promise.resolve();
 let lastSavedPayloadStr: string | null = null;
 let pendingPayloadStr: string | null = null;
 let pendingSavePromise: Promise<RemoteSaveResult> | null = null;
 
 export const resetRemoteWorkspaceState = (): void => {
+  remoteUserId = null;
   remoteVersion = null;
   lastSavedPayloadStr = null;
   pendingPayloadStr = null;
   pendingSavePromise = null;
+  saveQueue = Promise.resolve();
+};
+
+const bindRemoteWorkspaceToUser = (userId: string): void => {
+  if (remoteUserId === userId) return;
+  remoteUserId = userId;
+  remoteVersion = null;
+  lastSavedPayloadStr = null;
+  pendingPayloadStr = null;
+  pendingSavePromise = null;
+  saveQueue = Promise.resolve();
 };
 
 export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
   if (!isSupabaseConfigured || !supabaseData) return { status: 'unavailable' };
   const userId = getSupabaseSessionUserId();
   if (!userId) return { status: 'unavailable' };
+  bindRemoteWorkspaceToUser(userId);
 
   let response;
   try {
@@ -58,6 +87,9 @@ export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
     console.warn('Camply Supabase load failed:', message);
     return { status: 'error', message };
   }
+  if (getSupabaseSessionUserId() !== userId || remoteUserId !== userId) {
+    return { status: 'unavailable' };
+  }
   const { data, error } = response;
 
   if (error) {
@@ -67,13 +99,13 @@ export const loadRemoteData = async (): Promise<RemoteLoadResult> => {
 
   if (!data?.data) {
     remoteVersion = data?.version ?? null;
-    return { status: 'empty' };
+    return { status: 'empty', version: remoteVersion };
   }
 
   remoteVersion = data.version;
   const normalized = normalizeData(data.data);
   lastSavedPayloadStr = JSON.stringify(sanitizeWorkspaceData(normalized));
-  return { status: 'ok', data: normalized };
+  return { status: 'ok', data: normalized, version: data.version };
 };
 
 // Consulta leve usada ao voltar o foco para a aba: compara apenas a versão,
@@ -82,6 +114,7 @@ export const hasNewerRemoteVersion = async (): Promise<boolean> => {
   if (!isSupabaseConfigured || !supabaseData) return false;
   const userId = getSupabaseSessionUserId();
   if (!userId) return false;
+  bindRemoteWorkspaceToUser(userId);
 
   let response;
   try {
@@ -97,12 +130,18 @@ export const hasNewerRemoteVersion = async (): Promise<boolean> => {
   } catch {
     return false;
   }
+  if (getSupabaseSessionUserId() !== userId || remoteUserId !== userId) return false;
   const { data, error } = response;
   if (error || !data) return false;
   return remoteVersion === null || data.version > remoteVersion;
 };
 
 export const saveRemoteData = async (data: CamplyData): Promise<RemoteSaveResult> => {
+  if (!isSupabaseConfigured || !supabaseData) return { status: 'skipped' };
+  const userId = getSupabaseSessionUserId();
+  if (!userId) return { status: 'skipped' };
+  bindRemoteWorkspaceToUser(userId);
+
   const payload = sanitizeWorkspaceData(data);
   const payloadStr = JSON.stringify(payload);
 
@@ -115,7 +154,7 @@ export const saveRemoteData = async (data: CamplyData): Promise<RemoteSaveResult
 
   pendingPayloadStr = payloadStr;
 
-  const operation = saveQueue.then(() => saveRemoteDataNow(payload, payloadStr));
+  const operation = saveQueue.then(() => saveRemoteDataNow(payload, payloadStr, userId));
   pendingSavePromise = operation;
   const clearPending = () => {
     if (pendingSavePromise === operation) pendingSavePromise = null;
@@ -136,13 +175,12 @@ const fetchRemoteWorkspaceRow = async (userId: string): Promise<WorkspaceRow | n
   return data;
 };
 
-const saveRemoteDataNow = async (payload: any, payloadStr: string): Promise<RemoteSaveResult> => {
-  if (!isSupabaseConfigured || !supabaseData) {
-    if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
-    return { status: 'skipped' };
-  }
-  const userId = getSupabaseSessionUserId();
-  if (!userId) {
+const saveRemoteDataNow = async (
+  payload: any,
+  payloadStr: string,
+  userId: string
+): Promise<RemoteSaveResult> => {
+  if (!supabaseData || getSupabaseSessionUserId() !== userId || remoteUserId !== userId) {
     if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
     return { status: 'skipped' };
   }
@@ -164,6 +202,9 @@ const saveRemoteDataNow = async (payload: any, payloadStr: string): Promise<Remo
   }
   
   if (pendingPayloadStr === payloadStr) pendingPayloadStr = null;
+  if (getSupabaseSessionUserId() !== userId || remoteUserId !== userId) {
+    return { status: 'skipped' };
+  }
 
   const { data: rpcResult, error } = response;
 
@@ -176,21 +217,33 @@ const saveRemoteDataNow = async (payload: any, payloadStr: string): Promise<Remo
       console.warn('Camply Supabase conflict, adopting remote version', rpcResult.current_version);
     }
     const row = await fetchRemoteWorkspaceRow(userId);
+    if (getSupabaseSessionUserId() !== userId || remoteUserId !== userId) {
+      return { status: 'skipped' };
+    }
     if (row) {
       remoteVersion = row.version;
       const normalized = row.data ? normalizeData(row.data) : null;
       if (normalized) {
         lastSavedPayloadStr = JSON.stringify(sanitizeWorkspaceData(normalized));
       }
-      return { status: 'conflict', remoteData: normalized };
+      return { status: 'conflict', remoteData: normalized, remoteVersion: row.version };
     }
-    return { status: 'conflict', remoteData: null };
+    const currentVersion = Number(rpcResult.current_version);
+    return {
+      status: 'conflict',
+      remoteData: null,
+      remoteVersion: Number.isFinite(currentVersion) ? currentVersion : null,
+    };
   }
 
   if (rpcResult?.status === 'saved') {
-    remoteVersion = Number(rpcResult.version);
+    const savedVersion = Number(rpcResult.version);
+    if (!Number.isFinite(savedVersion)) {
+      return { status: 'error', message: 'RPC returned an invalid workspace version' };
+    }
+    remoteVersion = savedVersion;
     lastSavedPayloadStr = payloadStr;
-    return { status: 'saved' };
+    return { status: 'saved', version: savedVersion };
   }
 
   return { status: 'error', message: 'Unknown RPC result' };
@@ -200,6 +253,7 @@ export const confirmClientIdentity = async (clientId: string): Promise<boolean> 
   if (!isSupabaseConfigured || !supabaseData) return false;
   const userId = getSupabaseSessionUserId();
   if (!userId) return false;
+  bindRemoteWorkspaceToUser(userId);
 
   let response;
   try {
@@ -219,6 +273,7 @@ export const confirmClientIdentity = async (clientId: string): Promise<boolean> 
     return false;
   }
   
+  if (getSupabaseSessionUserId() !== userId || remoteUserId !== userId) return false;
   const data = response?.data;
   return !response?.error && data?.client_id === clientId;
 };
@@ -229,14 +284,23 @@ export const saveRemoteDataAndConfirmClient = async (
 ): Promise<void> => {
   const result = await saveRemoteData(data);
   if (result.status === 'conflict') {
-    throw new Error('Os dados foram alterados em outro dispositivo. Recarregue a página antes de salvar o cliente.');
+    throw new WorkspacePersistenceError(
+      'WORKSPACE_CONFLICT',
+      'Os dados foram alterados em outro dispositivo. Recarregue a página antes de salvar o cliente.'
+    );
   }
-  if (result.status === 'error' || result.status === 'skipped' && !lastSavedPayloadStr) {
-    throw new Error('Não foi possível confirmar a gravação do cliente no banco. Recarregue a página e tente novamente.');
+  if (result.status === 'error' || (result.status === 'skipped' && !lastSavedPayloadStr)) {
+    throw new WorkspacePersistenceError(
+      'WORKSPACE_SAVE_FAILED',
+      'Não foi possível confirmar a gravação do cliente no banco. Recarregue a página e tente novamente.'
+    );
   }
 
   const confirmed = await confirmClientIdentity(clientId);
   if (!confirmed) {
-    throw new Error('O cliente foi gravado, mas seu vínculo no banco não pôde ser confirmado. Recarregue antes de vincular uma conta Meta.');
+    throw new WorkspacePersistenceError(
+      'CLIENT_IDENTITY_NOT_CONFIRMED',
+      'O cliente foi salvo, mas ainda não apareceu no índice analítico. Tente novamente antes de vincular uma conta Meta.'
+    );
   }
 };

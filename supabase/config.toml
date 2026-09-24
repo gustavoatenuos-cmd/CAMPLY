@@ -9,6 +9,9 @@ verify_jwt = true
 [functions.meta-client-catalog]
 verify_jwt = true
 
+[functions.meta-client-assets]
+verify_jwt = true
+
 [functions.meta-disconnect]
 verify_jwt = true
 
@@ -16,6 +19,9 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.meta-list-assets]
+verify_jwt = true
+
+[functions.meta-hierarchy]
 verify_jwt = true
 
 [functions.meta-oauth-start]
@@ -37,3 +43,5 @@ verify_jwt = true
 [functions.analytics-dashboard]
 verify_jwt = true
 
+[functions.cost-alert-engine]
+verify_jwt = true
