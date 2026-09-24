@@ -102,19 +102,38 @@ describe('buildMetaBoard', () => {
 
   it('merges every client account, sorts by spend and reports gaps', () => {
     const result = buildMetaBoard(clients, catalog, [
-      { clientId: 'c1', account: account('l1'), response: { state: 'ready', total: 3, items: [
+      { clientId: 'c1', account: account('l1'), response: { state: 'ready', total: 3, activeTotal: 1, items: [
         node('idle', 0),
         node('paused_spent', 50, { status: 'PAUSED', effectiveStatus: 'PAUSED', objective: 'OUTCOME_TRAFFIC', classifiedObjective: 'TRAFFIC' }),
       ] } },
       { clientId: 'c2', account: account('l2'), response: { state: 'period_not_synced', total: 0, items: [] } },
     ]);
 
-    expect(result.campaigns.map((c) => c.campaign.id)).toEqual(['paused_spent', 'idle']);
-    expect(result.campaigns[0]).toMatchObject({ group: 'traffic', isActive: false, hasDelivery: true, spend: 50 });
-    expect(result.campaigns[1]).toMatchObject({ group: 'sales', isActive: true, hasDelivery: false });
+    expect(result.campaigns.map((c) => c.campaign.id)).toEqual(['idle']);
+    expect(result.campaigns[0]).toMatchObject({ group: 'sales', isActive: true, hasDelivery: false });
     expect(result.issues).toEqual([expect.objectContaining({ kind: 'period_not_synced', client: clients[1] })]);
     expect(result.clientsWithoutAccount).toEqual([clients[2]]);
-    expect(result.truncatedAccounts).toEqual([expect.objectContaining({ total: 3 })]);
+    expect(result.truncatedAccounts).toEqual([]);
+  });
+
+  it('reports only when current active campaigns are incomplete, not because historical campaigns were truncated', () => {
+    const result = buildMetaBoard(clients, catalog, [
+      { clientId: 'c1', account: account('l1'), response: {
+        state: 'ready',
+        total: 219,
+        activeTotal: 4,
+        items: [
+          node('active-1', 100),
+          node('active-2', 50),
+          node('paused-history', 500, { status: 'PAUSED', effectiveStatus: 'PAUSED' }),
+        ],
+      } },
+    ]);
+
+    expect(result.campaigns.map((item) => item.campaign.id)).toEqual(['active-1', 'active-2']);
+    expect(result.truncatedAccounts).toEqual([
+      expect.objectContaining({ activeTotal: 4, loadedActive: 2 }),
+    ]);
   });
 
   it('turns a failed or malformed response into an issue instead of crashing', () => {
