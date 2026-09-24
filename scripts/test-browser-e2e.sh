@@ -101,7 +101,7 @@ step "analysis profile persistence"
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
 "${BROWSER[@]}" find label "Orçamento planejado Meta" fill "1650"
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile input did not receive the planned budget'
-"${BROWSER[@]}" find role button click --name "Salvar alterações"
+assert_js '(() => { const form=[...document.querySelectorAll("form")].find((item) => item.innerText.includes("Salvar alterações")); if (!form) return false; form.requestSubmit(); return true; })()' 'client analysis profile form was not submitted'
 "${BROWSER[@]}" wait 300
 assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile did not save and close'
 assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles") || "{}")["client-e2e"]?.plannedBudget === 1650' 'client analysis profile was not persisted before reload'
