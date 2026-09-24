@@ -128,6 +128,31 @@ describe('creative lab client state', () => {
     data.campaigns[0].activeAdSets![0].effective_status = 'ACTIVE';
     expect(buildCreativeLabClientRows(data, new Map())[0].state).toBe('inactive');
   });
+
+  it('prefers the official synced Meta structure over the workspace fallback', () => {
+    const data = baseData();
+    data.campaigns[0].activeAdSets![0].status = 'ACTIVE';
+    data.campaigns[0].activeAdSets![0].effective_status = 'ACTIVE';
+
+    const official = new Map([['client-1', [{
+      clientId: 'client-1',
+      clientMetaAssetId: 'link-1',
+      accountId: 'act_1',
+      accountName: 'Conta',
+      activeCampaigns: 4,
+      activeAdSets: 0,
+      activeAds: 0,
+      hasActiveMedia: false,
+      lastSyncedAt: '2026-09-24T18:00:00Z',
+    }]]]);
+
+    expect(buildCreativeLabClientRows(data, new Map(), official)[0]).toMatchObject({
+      state: 'no_active_media',
+      activeCampaigns: 4,
+      activeAdSets: 0,
+      activeAds: 0,
+    });
+  });
 });
 
 describe('creative lab aggregation', () => {
