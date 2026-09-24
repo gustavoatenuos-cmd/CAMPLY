@@ -263,6 +263,18 @@ assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.i
 "${BROWSER[@]}" wait 400
 assert_js 'document.body.innerText.includes("Analytics por Cliente")' 'Analytics did not render the separate official client performance view'
 
+step "Creative Lab client-first flow"
+"${BROWSER[@]}" find role button click --name "Lab. Criativo"
+"${BROWSER[@]}" wait 350
+assert_js 'document.querySelector("main h1")?.innerText.includes("Laboratório de Criativos") === true && document.body.innerText.includes("Clínica Mock")' 'Creative Lab did not open with the synced client list'
+"${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("main button")].find((item) => item.innerText.includes("Clínica Mock")); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 350
+assert_js 'document.body.innerText.includes("Ranking de criativos") && document.body.innerText.includes("Criativo Mock")' 'Creative Lab did not load verified creative ranking'
+"${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("main button")].find((item) => item.innerText.includes("Criativo Mock")); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 200
+assert_js 'document.querySelector("[role=dialog]")?.innerText.includes("Criativo Mock") && document.querySelector("[role=dialog]")?.innerText.includes("CPL")' 'Creative Lab detail did not expose creative metrics'
+"${BROWSER[@]}" find role button click --name "Fechar"
+
 assert_js 'Object.keys(localStorage).some(key => key.includes("00000000-0000-0000-0000-00000000e2e0"))' 'user-scoped cache was not created'
 "${BROWSER[@]}" find role button click --name "Sair"
 "${BROWSER[@]}" wait 200

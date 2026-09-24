@@ -11,6 +11,8 @@ DECLARE
   v_today DATE := (timezone('America/Sao_Paulo', now()))::date;
   v_h JSONB;
   v_m JSONB;
+  v_lab JSONB;
+  v_lab_summary JSONB;
 BEGIN
   INSERT INTO auth.users (id, email, raw_user_meta_data)
   VALUES (v_user, 'hierarchy-slices@camply.test', '{}');
@@ -86,6 +88,54 @@ BEGIN
     'spend', 7, v_today - 40, v_today - 40, 'America/Sao_Paulo', 'campaign', 'complete'
   );
 
+  -- Creative Lab fixtures: campaign can be ACTIVE while the ad set controls
+  -- whether media is really active. Metrics come from the same ad-level daily
+  -- rows used by the hierarchy/Analytics contract.
+  INSERT INTO public.meta_adset_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, adset_name, optimization_goal, destination_type,
+    promoted_object, attribution_setting, meta_status, effective_status
+  ) VALUES (
+    v_run, v_user, v_integration, 'act_slices', 'camp_sales',
+    'set_sales', 'Conjunto vendas', 'OFFSITE_CONVERSIONS', 'WEBSITE',
+    '{}'::jsonb, '7d_click_1d_view', 'ACTIVE', 'ACTIVE'
+  );
+
+  INSERT INTO public.meta_ad_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, ad_id, ad_name, creative_id, meta_status, effective_status
+  ) VALUES (
+    v_run, v_user, v_integration, 'act_slices', 'camp_sales',
+    'set_sales', 'ad_sales', 'Anúncio vendas', 'creative_sales', 'ACTIVE', 'ACTIVE'
+  );
+
+  INSERT INTO public.meta_creative_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, creative_id,
+    creative_name, title, body, thumbnail_url, image_url, object_story_spec, asset_payload
+  ) VALUES (
+    v_run, v_user, v_integration, 'act_slices', 'creative_sales',
+    'Criativo vencedor', 'Título', 'Corpo', 'https://example.com/thumb.jpg', NULL,
+    '{"format":"IMAGE"}'::jsonb, '{"updated_time":"2026-09-24T12:00:00Z"}'::jsonb
+  );
+
+  INSERT INTO public.meta_normalized_metrics (
+    user_id, sync_run_id, integration_id, ad_account_id,
+    campaign_id, adset_id, ad_id, creative_id,
+    metric_id, metric_value, date_start, date_stop, timezone,
+    source_level, completeness_status
+  )
+  SELECT v_user, v_run, v_integration, 'act_slices',
+         'camp_sales', 'set_sales', 'ad_sales', 'creative_sales',
+         d.metric_id, d.value, v_today - 1, v_today - 1, 'America/Sao_Paulo',
+         'ad', 'complete'
+  FROM (VALUES
+    ('spend', 10::numeric),
+    ('impressions', 1000::numeric),
+    ('link_clicks', 20::numeric),
+    ('purchases', 2::numeric),
+    ('purchase_value', 50::numeric)
+  ) AS d(metric_id, value);
+
   -- last_30d: previously period_not_synced because no run had requested_period = last_30d.
   v_h := public.get_meta_performance_hierarchy(v_link, 'last_30d', 'campaign', NULL, 1, 25);
   v_m := v_h->'items'->0->'metrics';
@@ -151,6 +201,46 @@ BEGIN
   v_h := public.get_meta_performance_hierarchy(v_link, 'this_month', 'campaign', NULL, 1, 25);
   IF v_h->>'state' <> 'period_not_synced' THEN
     RAISE EXCEPTION 'this_month has no exact run and must stay period_not_synced: %', v_h;
+  END IF;
+
+
+  -- Creative Lab must reuse the official date-sliced ad metrics and expose the
+  -- whole active structure, not infer activity from the campaign alone.
+  v_lab := public.get_meta_creative_lab(v_link, 'last_30d', 1, 100);
+  IF v_lab->>'state' <> 'ready'
+     OR (v_lab->>'total')::int <> 1
+     OR v_lab->'items'->0->>'creativeId' <> 'creative_sales'
+     OR v_lab->'items'->0->>'campaignEffectiveStatus' <> 'ACTIVE'
+     OR v_lab->'items'->0->>'adsetEffectiveStatus' <> 'ACTIVE'
+     OR v_lab->'items'->0->>'adEffectiveStatus' <> 'ACTIVE'
+     OR (v_lab->'items'->0->'metrics'->'spend'->>'value')::numeric <> 10
+     OR (v_lab->'items'->0->'metrics'->'purchases'->>'value')::numeric <> 2
+     OR (v_lab->'items'->0->'metrics'->'purchase_roas'->>'value')::numeric <> 5
+  THEN
+    RAISE EXCEPTION 'creative lab contract is wrong: %', v_lab;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_meta_creative_lab(UUID,TEXT,INTEGER,INTEGER)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab(UUID,TEXT,INTEGER,INTEGER)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'creative lab RPC privileges are wrong';
+  END IF;
+
+  v_lab_summary := public.get_meta_creative_lab_account_summary();
+  IF v_lab_summary->>'state' <> 'ready'
+     OR v_lab_summary->'items'->0->>'clientId' <> 'client_slices'
+     OR (v_lab_summary->'items'->0->>'activeCampaigns')::int <> 2
+     OR (v_lab_summary->'items'->0->>'activeAdSets')::int <> 1
+     OR (v_lab_summary->'items'->0->>'activeAds')::int <> 1
+     OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT TRUE
+  THEN
+    RAISE EXCEPTION 'creative lab account summary is wrong: %', v_lab_summary;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_meta_creative_lab_account_summary()', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab_account_summary()', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'creative lab summary RPC privileges are wrong';
   END IF;
 
   -- A base that does not cover the slice is not used.
