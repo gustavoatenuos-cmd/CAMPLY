@@ -155,7 +155,7 @@ BEGIN
         COALESCE(v_run.timezone, v_link.timezone_name),
         'ad',
         row.campaign_id, row.adset_id, row.ad_id, row.creative_id,
-        row.classified_objective, row.destination_type, row.attribution_setting
+        row.classified_objective::text, row.destination_type, row.attribution_setting
       )
     )
     ORDER BY row.structure_rank, row.creative_name NULLS LAST, row.ad_name
