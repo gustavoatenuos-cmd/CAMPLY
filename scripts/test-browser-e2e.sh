@@ -129,8 +129,9 @@ step "Meta link and official metrics"
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=segment-filter-all]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 100
 assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment filter did not reset before Meta navigation'
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 300
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not open from Dashboard'
 assert_js 'document.querySelector("[data-testid=meta-link-button]") !== null' 'Meta link control did not render after navigating to the integration'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
@@ -187,8 +188,9 @@ assert_js '(() => { const button=document.querySelector("[data-testid=client-per
 "${BROWSER[@]}" set viewport 1440 900
 "${BROWSER[@]}" wait 100
 step "hierarchy target and persistence"
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 300
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not reopen after responsive checks'
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'explicit Meta synchronization did not persist a reliable snapshot'
 
 assert_js 'document.querySelector("[data-testid=meta-campaign-campaign-active-e2e] button[aria-label^=\"Abrir Campanha\"]") !== null' 'active campaign hierarchy node did not render'
@@ -225,8 +227,9 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'official Meta account link did not survive reload'
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 350
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not reopen after reload'
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText === sessionStorage.getItem("camply-e2e-snapshot-label")' 'saved Meta snapshot changed or disappeared after reload without an explicit synchronization'
 "${BROWSER[@]}" wait '[data-testid=meta-target-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
