@@ -2,6 +2,7 @@ import type { Campaign, CamplyData, Client } from '../../types';
 import type { DashboardPeriod, MetricContract } from '../performance/globalPerformanceDashboard';
 import { supabase } from '../supabase';
 import type { ClientMetaAccount } from './clientMetaAssetService';
+import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
 
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
 export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'inactive';
@@ -340,6 +341,48 @@ async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPe
   state: CreativeLabRpcResponse['state'];
   rows: CreativeLabRawRow[];
 }> {
+  if (isMetaE2EMode) {
+    const ids = { campaignId: 'campaign-active-e2e', adsetId: 'adset-active-e2e', adId: 'ad-active-e2e' };
+    return {
+      state: 'ready',
+      rows: [{
+        accountId: account.adAccountId,
+        accountName: account.accountName,
+        currency: account.currency,
+        campaignId: ids.campaignId,
+        campaignName: 'Campanha ativa mock',
+        campaignStatus: 'ACTIVE',
+        campaignEffectiveStatus: 'ACTIVE',
+        classifiedObjective: 'LEADS',
+        adsetId: ids.adsetId,
+        adsetName: 'Conjunto ativo com leads',
+        adsetStatus: 'ACTIVE',
+        adsetEffectiveStatus: 'ACTIVE',
+        adId: ids.adId,
+        adName: 'Anúncio ativo com compra',
+        adStatus: 'ACTIVE',
+        adEffectiveStatus: 'ACTIVE',
+        creativeId: 'creative-e2e',
+        creativeName: 'Criativo Mock',
+        title: 'Agende sua avaliação',
+        body: 'Atendimento especializado pelo WhatsApp.',
+        thumbnailUrl: null,
+        imageUrl: null,
+        objectStorySpec: { format: 'IMAGE' },
+        updatedAt: '2026-06-29T12:00:00.000Z',
+        metrics: {
+          spend: e2eMetric('spend', 120, 'ad', ids),
+          impressions: e2eMetric('impressions', 5000, 'ad', ids),
+          link_clicks: e2eMetric('link_clicks', 180, 'ad', ids),
+          landing_page_views: e2eMetric('landing_page_views', 130, 'ad', ids),
+          messaging_conversations_started_total: e2eMetric('messaging_conversations_started_total', 12, 'ad', ids),
+          leads: e2eMetric('leads', 12, 'ad', ids),
+          purchases: e2eMetric('purchases', 2, 'ad', ids),
+          purchase_value: e2eMetric('purchase_value', 480, 'ad', ids),
+        },
+      }],
+    };
+  }
   if (!supabase) throw new Error('Supabase não configurado.');
   const pageSize = 100;
   let page = 1;
