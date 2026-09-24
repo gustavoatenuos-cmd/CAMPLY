@@ -29,23 +29,18 @@ trap cleanup EXIT INT TERM
 assert_js() {
   local expression="$1"
   local message="$2"
-  local actual
-  if ! actual=$("${BROWSER[@]}" eval "$expression"); then
-    "${BROWSER[@]}" wait 150 >/dev/null
-    if ! actual=$("${BROWSER[@]}" eval "$expression"); then
-      echo "Browser E2E failed: browser evaluation could not run for: $message"
-      exit 1
+  local actual="" attempt
+  # React state and the E2E persistence layer can settle after the click on
+  # slower CI runners. Poll for at most 3 seconds instead of testing one frame.
+  for attempt in $(seq 1 12); do
+    if actual=$("${BROWSER[@]}" eval "$expression") && [[ "$actual" == "true" ]]; then
+      return 0
     fi
-  fi
-  if [[ "$actual" != "true" ]]; then
-    "${BROWSER[@]}" wait 300 >/dev/null
-    actual=$("${BROWSER[@]}" eval "$expression")
-    if [[ "$actual" != "true" ]]; then
-      echo "Browser E2E failed: $message (received $actual)"
-      "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
-      exit 1
-    fi
-  fi
+    sleep 0.25
+  done
+  echo "Browser E2E failed: $message (received ${actual:-evaluation error})"
+  "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
+  exit 1
 }
 
 step() {
