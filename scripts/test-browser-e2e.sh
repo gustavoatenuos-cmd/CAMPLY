@@ -40,6 +40,7 @@ assert_js() {
   done
   echo "Browser E2E failed: $message (received ${actual:-evaluation error})"
   "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
+  "${BROWSER[@]}" eval 'JSON.stringify({dialog:document.querySelector("[role=dialog]")?.innerText.slice(-1200),invalid:[...document.querySelectorAll("[role=dialog] input:invalid")].map((input)=>({name:input.name,value:input.value,message:input.validationMessage}))})' || true
   exit 1
 }
 
@@ -98,7 +99,7 @@ step "analysis profile persistence"
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
-"${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); const input=label?.querySelector("input"); if (!input) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,"1650"); input.dispatchEvent(new Event("input",{bubbles:true})); return true; })()' >/dev/null
+"${BROWSER[@]}" find label "Orçamento planejado Meta" fill "1650"
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile input did not receive the planned budget'
 "${BROWSER[@]}" find role button click --name "Salvar alterações"
 "${BROWSER[@]}" wait 300
