@@ -131,7 +131,7 @@ step "Meta link and official metrics"
 assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment filter did not reset before Meta navigation'
 "${BROWSER[@]}" find role button click --name "Integração Meta"
 "${BROWSER[@]}" wait 300
-"${BROWSER[@]}" wait '[data-testid=meta-link-button]'
+assert_js 'document.querySelector("[data-testid=meta-link-button]") !== null' 'Meta link control did not render after navigating to the integration'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
 "${BROWSER[@]}" wait '[data-testid=meta-sync-linked-clients]'
