@@ -1,11 +1,12 @@
 import type { Campaign, CamplyData, Client } from '../../types';
+import { isClientOperationallyActive } from '../../data/receivablesForecast';
 import type { DashboardPeriod, MetricContract } from '../performance/globalPerformanceDashboard';
 import { supabase } from '../supabase';
 import type { ClientMetaAccount } from './clientMetaAssetService';
 import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
 
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
-export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'inactive';
+export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'data_unavailable';
 
 export interface CreativeLabClientMediaSummary {
   clientId: string;
@@ -23,9 +24,10 @@ export interface CreativeLabClientRow {
   client: Client;
   accounts: ClientMetaAccount[];
   state: CreativeLabClientState;
-  activeCampaigns: number;
-  activeAdSets: number;
-  activeAds: number;
+  activeCampaigns: number | null;
+  activeAdSets: number | null;
+  activeAds: number | null;
+  dataAvailable: boolean;
 }
 
 export interface CreativeLabRawRow {
@@ -140,9 +142,15 @@ function campaignStructureIsActive(campaign: Campaign): boolean {
 export function buildCreativeLabClientRows(
   data: CamplyData,
   accountMap: Map<string, ClientMetaAccount[]>,
-  mediaSummaryMap: Map<string, CreativeLabClientMediaSummary[]> = new Map()
+  mediaSummaryMap: Map<string, CreativeLabClientMediaSummary[]> = new Map(),
+  officialSummaryLoaded: boolean = true
 ): CreativeLabClientRow[] {
-  return data.clients.map((client) => {
+  return data.clients
+    .filter((client) => {
+      const project = data.projects.find((item) => item.id === client.projectId);
+      return isClientOperationallyActive(client, project);
+    })
+    .map((client) => {
     const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id && campaign.platform === 'Meta Ads');
     const activeCampaigns = campaigns.filter((campaign) => {
       const status = campaign.metaEffectiveStatus || campaign.metaStatus;
@@ -162,23 +170,31 @@ export function buildCreativeLabClientRows(
 
     const official = mediaSummaryMap.get(client.id) || [];
     const officialAvailable = official.length > 0;
+    const accounts = accountMap.get(client.id) || [];
+    const fallbackAvailable = campaigns.some((campaign) => (
+      Boolean(campaign.metaEffectiveStatus || campaign.metaStatus)
+      || (campaign.activeAdSets?.length || 0) > 0
+    ));
+    const dataAvailable = officialAvailable || fallbackAvailable;
     const officialActiveCampaigns = official.reduce((sum, item) => sum + item.activeCampaigns, 0);
     const officialActiveAdSets = official.reduce((sum, item) => sum + item.activeAdSets, 0);
     const officialActiveAds = official.reduce((sum, item) => sum + item.activeAds, 0);
     const hasActiveMedia = officialAvailable
       ? official.some((item) => item.hasActiveMedia)
-      : campaigns.some(campaignStructureIsActive);
-    const state: CreativeLabClientState = client.status !== 'active'
-      ? 'inactive'
+      : fallbackAvailable && campaigns.some(campaignStructureIsActive);
+
+    const state: CreativeLabClientState = accounts.length > 0 && !dataAvailable && !officialSummaryLoaded
+      ? 'data_unavailable'
       : hasActiveMedia ? 'active_media' : 'no_active_media';
 
     return {
       client,
-      accounts: accountMap.get(client.id) || [],
+      accounts,
       state,
-      activeCampaigns: officialAvailable ? officialActiveCampaigns : activeCampaigns,
-      activeAdSets: officialAvailable ? officialActiveAdSets : activeAdSets,
-      activeAds: officialAvailable ? officialActiveAds : activeAds,
+      dataAvailable,
+      activeCampaigns: dataAvailable ? (officialAvailable ? officialActiveCampaigns : activeCampaigns) : null,
+      activeAdSets: dataAvailable ? (officialAvailable ? officialActiveAdSets : activeAdSets) : null,
+      activeAds: dataAvailable ? (officialAvailable ? officialActiveAds : activeAds) : null,
     };
   });
 }
@@ -372,13 +388,16 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
       lastSyncedAt: '2026-06-30T18:00:00.000Z',
     }];
   }
-  if (!supabase) return [];
+  if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
   const { data, error } = await supabase.rpc('get_meta_creative_lab_account_summary');
   if (error) {
-    console.warn('[CreativeLab] Não foi possível carregar o resumo oficial de mídia ativa.', error);
-    return [];
+    console.error('[CreativeLab] Falha no resumo oficial de mídia ativa.', error);
+    throw new Error(`Resumo Meta indisponível: ${error.message}`);
   }
   const payload = data as unknown as { state?: string; items?: CreativeLabClientMediaSummary[] };
+  if (payload?.state && payload.state !== 'ready') {
+    throw new Error(`Resumo Meta indisponível: estado ${payload.state}.`);
+  }
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
