@@ -29,8 +29,8 @@ export interface MetaBoardResult {
   issues: MetaBoardAccountIssue[];
   /** Active clients that have no Meta ad account linked. */
   clientsWithoutAccount: Client[];
-  /** Accounts whose campaign list exceeded one page (only the top by spend is shown). */
-  truncatedAccounts: Array<{ client: Client; account: ClientMetaAccount; total: number }>;
+  /** Accounts where not every current ACTIVE campaign could be loaded. */
+  truncatedAccounts: Array<{ client: Client; account: ClientMetaAccount; activeTotal: number; loadedActive: number }>;
 }
 
 function metricNumber(node: HierarchicalMetricNode, metricId: string): number {
@@ -100,11 +100,15 @@ export function buildMetaBoard(
       continue;
     }
     const items = Array.isArray(response.items) ? response.items : [];
-    for (const campaign of items) {
+    const activeItems = items.filter(isCampaignActive);
+    for (const campaign of activeItems) {
       result.campaigns.push(toBoardCampaign(client, account, campaign));
     }
-    if ((response.total ?? 0) > items.length) {
-      result.truncatedAccounts.push({ client, account, total: response.total });
+    const activeTotal = typeof response.activeTotal === 'number' && Number.isFinite(response.activeTotal)
+      ? response.activeTotal
+      : activeItems.length;
+    if (activeTotal > activeItems.length) {
+      result.truncatedAccounts.push({ client, account, activeTotal, loadedActive: activeItems.length });
     }
   }
 
@@ -123,8 +127,43 @@ export async function loadMetaCampaignBoard(clients: Client[], period: Dashboard
 
   const responses = await Promise.all(jobs.map(async (job) => {
     try {
-      const response = await fetchMetaPerformanceHierarchy(job.account.clientMetaAssetId, period, 'campaign', null, 1, BOARD_PAGE_SIZE);
-      return { ...job, response };
+      const first = await fetchMetaPerformanceHierarchy(
+        job.account.clientMetaAssetId,
+        period,
+        'campaign',
+        null,
+        1,
+        BOARD_PAGE_SIZE,
+      );
+
+      if (first.state !== 'ready' || typeof first.activeTotal !== 'number') {
+        return { ...job, response: first };
+      }
+
+      const items = [...first.items];
+      let loadedActive = items.filter(isCampaignActive).length;
+      const maxPages = Math.max(1, Math.ceil(first.total / BOARD_PAGE_SIZE));
+
+      for (let page = 2; loadedActive < first.activeTotal && page <= maxPages; page += 1) {
+        try {
+          const next = await fetchMetaPerformanceHierarchy(
+            job.account.clientMetaAssetId,
+            period,
+            'campaign',
+            null,
+            page,
+            BOARD_PAGE_SIZE,
+          );
+          if (next.state !== 'ready' || next.items.length === 0) break;
+          items.push(...next.items);
+          loadedActive = items.filter(isCampaignActive).length;
+        } catch (pageError) {
+          console.warn('[MetaCampaignBoard] Falha ao completar campanhas ativas', job.account.adAccountId, pageError);
+          break;
+        }
+      }
+
+      return { ...job, response: { ...first, items } };
     } catch (error) {
       console.error('[MetaCampaignBoard] Falha ao carregar campanhas da conta', job.account.adAccountId, error);
       return { ...job, error };
