@@ -12,6 +12,7 @@ DECLARE
   v_h JSONB;
   v_m JSONB;
   v_lab JSONB;
+  v_lab_summary JSONB;
 BEGIN
   INSERT INTO auth.users (id, email, raw_user_meta_data)
   VALUES (v_user, 'hierarchy-slices@camply.test', '{}');
@@ -223,6 +224,23 @@ BEGIN
      OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab(UUID,TEXT,INTEGER,INTEGER)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'creative lab RPC privileges are wrong';
+  END IF;
+
+  v_lab_summary := public.get_meta_creative_lab_account_summary();
+  IF v_lab_summary->>'state' <> 'ready'
+     OR v_lab_summary->'items'->0->>'clientId' <> 'client_slices'
+     OR (v_lab_summary->'items'->0->>'activeCampaigns')::int <> 2
+     OR (v_lab_summary->'items'->0->>'activeAdSets')::int <> 1
+     OR (v_lab_summary->'items'->0->>'activeAds')::int <> 1
+     OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT TRUE
+  THEN
+    RAISE EXCEPTION 'creative lab account summary is wrong: %', v_lab_summary;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_meta_creative_lab_account_summary()', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab_account_summary()', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'creative lab summary RPC privileges are wrong';
   END IF;
 
   -- A base that does not cover the slice is not used.
