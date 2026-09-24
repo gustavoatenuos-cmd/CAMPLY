@@ -6,6 +6,7 @@ import type { Campaign, CampaignStatus, CamplyData, Priority } from '../types';
 import { clientDisplayName, clientOptionLabel } from './ClientsView';
 import { Modal } from './ui/Modal';
 import { MetaCampaignsBoard } from './campaigns/MetaCampaignsBoard';
+import { isClientOperationallyActive } from '../data/receivablesForecast';
 
 interface CampaignsViewProps {
   data: CamplyData;
@@ -23,10 +24,13 @@ export function CampaignsView({ data, updateData, onOpenMetaIntegration }: Campa
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Active clients in the database
+  // Use the same operational rule as Meta sync and the analytical board.
   const activeClients = useMemo(
-    () => data.clients.filter((client) => client.status === 'active'),
-    [data.clients]
+    () => data.clients.filter((client) => isClientOperationallyActive(
+      client,
+      data.projects.find((project) => project.id === client.projectId),
+    )),
+    [data.clients, data.projects]
   );
 
   const activeClientIds = useMemo(
@@ -355,4 +359,3 @@ function Field({ label, name, ...props }: InputHTMLAttributes<HTMLInputElement> 
     </label>
   );
 }
-

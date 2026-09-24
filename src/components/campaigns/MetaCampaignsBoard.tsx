@@ -23,7 +23,7 @@ type LoadState =
   | { kind: 'ready'; result: MetaBoardResult };
 
 export function MetaCampaignsBoard({ data, onOpenMetaIntegration }: MetaCampaignsBoardProps) {
-  const [period, setPeriod] = useState<DashboardPeriod>('last_7d');
+  const [period, setPeriod] = useState<DashboardPeriod>('last_90d');
   const [selectedClientId, setSelectedClientId] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showIdle, setShowIdle] = useState(false);
