@@ -1,11 +1,13 @@
 import type { Campaign, CamplyData, Client } from '../../types';
+import { isClientOperationallyActive } from '../../data/receivablesForecast';
 import type { DashboardPeriod, MetricContract } from '../performance/globalPerformanceDashboard';
 import { supabase } from '../supabase';
 import type { ClientMetaAccount } from './clientMetaAssetService';
 import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
+import { loadMetaHierarchy, type MetaHierarchyItem, type MetaHierarchyPage } from './performanceHierarchyService';
 
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
-export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'inactive';
+export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'data_unavailable';
 
 export interface CreativeLabClientMediaSummary {
   clientId: string;
@@ -17,15 +19,17 @@ export interface CreativeLabClientMediaSummary {
   activeAds: number;
   hasActiveMedia: boolean;
   lastSyncedAt: string | null;
+  dataAvailable?: boolean;
 }
 
 export interface CreativeLabClientRow {
   client: Client;
   accounts: ClientMetaAccount[];
   state: CreativeLabClientState;
-  activeCampaigns: number;
-  activeAdSets: number;
-  activeAds: number;
+  activeCampaigns: number | null;
+  activeAdSets: number | null;
+  activeAds: number | null;
+  dataAvailable: boolean;
 }
 
 export interface CreativeLabRawRow {
@@ -137,12 +141,139 @@ function campaignStructureIsActive(campaign: Campaign): boolean {
   ));
 }
 
+function hierarchyItemIsActive(item: Pick<MetaHierarchyItem, 'effectiveStatus' | 'status'>): boolean {
+  return isMetaActive(item.effectiveStatus || item.status);
+}
+
+async function loadAllHierarchyItems(input: {
+  clientMetaAssetId: string;
+  period: CreativeLabPeriod;
+  level: 'campaign' | 'adset' | 'ad' | 'creative';
+  parentId?: string;
+}): Promise<{ state: MetaHierarchyPage['state']; items: MetaHierarchyItem[] }> {
+  const pageSize = 100;
+  const items: MetaHierarchyItem[] = [];
+  let state: MetaHierarchyPage['state'] = 'empty';
+
+  for (let page = 1; page <= 10; page += 1) {
+    const response = await loadMetaHierarchy({
+      ...input,
+      page,
+      pageSize,
+    });
+    state = response.state;
+    if (state !== 'ready') break;
+    items.push(...response.items);
+    if (response.items.length < pageSize) break;
+  }
+
+  return { state, items };
+}
+
+async function loadAccountMediaSummaryFromHierarchy(
+  clientId: string,
+  account: ClientMetaAccount
+): Promise<CreativeLabClientMediaSummary> {
+  try {
+    const campaignPage = await loadAllHierarchyItems({
+      clientMetaAssetId: account.clientMetaAssetId,
+      period: 'last_90d',
+      level: 'campaign',
+    });
+
+    if (campaignPage.state === 'period_not_synced') {
+      return {
+        clientId,
+        clientMetaAssetId: account.clientMetaAssetId,
+        accountId: account.adAccountId,
+        accountName: account.accountName,
+        activeCampaigns: 0,
+        activeAdSets: 0,
+        activeAds: 0,
+        hasActiveMedia: false,
+        lastSyncedAt: account.lastSuccess?.finishedAt || null,
+        dataAvailable: false,
+      };
+    }
+
+    const activeCampaigns = campaignPage.items.filter(hierarchyItemIsActive);
+    const activeAdSets: MetaHierarchyItem[] = [];
+    for (const campaign of activeCampaigns) {
+      const adsetPage = await loadAllHierarchyItems({
+        clientMetaAssetId: account.clientMetaAssetId,
+        period: 'last_90d',
+        level: 'adset',
+        parentId: campaign.id,
+      });
+      activeAdSets.push(...adsetPage.items.filter(hierarchyItemIsActive));
+    }
+
+    const activeAds: MetaHierarchyItem[] = [];
+    for (const adset of activeAdSets) {
+      const adPage = await loadAllHierarchyItems({
+        clientMetaAssetId: account.clientMetaAssetId,
+        period: 'last_90d',
+        level: 'ad',
+        parentId: adset.id,
+      });
+      activeAds.push(...adPage.items.filter(hierarchyItemIsActive));
+    }
+
+    return {
+      clientId,
+      clientMetaAssetId: account.clientMetaAssetId,
+      accountId: account.adAccountId,
+      accountName: account.accountName,
+      activeCampaigns: activeCampaigns.length,
+      activeAdSets: activeAdSets.length,
+      activeAds: activeAds.length,
+      hasActiveMedia: activeAds.length > 0,
+      lastSyncedAt: account.lastSuccess?.finishedAt || null,
+      dataAvailable: true,
+    };
+  } catch (error) {
+    console.warn('[CreativeLab] Fallback de estrutura Meta falhou.', account.accountName, error);
+    return {
+      clientId,
+      clientMetaAssetId: account.clientMetaAssetId,
+      accountId: account.adAccountId,
+      accountName: account.accountName,
+      activeCampaigns: 0,
+      activeAdSets: 0,
+      activeAds: 0,
+      hasActiveMedia: false,
+      lastSyncedAt: account.lastSuccess?.finishedAt || null,
+      dataAvailable: false,
+    };
+  }
+}
+
+export async function loadCreativeLabClientMediaSummariesFromHierarchy(
+  data: CamplyData,
+  accountMap: Map<string, ClientMetaAccount[]>
+): Promise<CreativeLabClientMediaSummary[]> {
+  const jobs = data.clients
+    .filter((client) => {
+      const project = data.projects.find((item) => item.id === client.projectId);
+      return isClientOperationallyActive(client, project);
+    })
+    .flatMap((client) => (accountMap.get(client.id) || []).map((account) => ({ clientId: client.id, account })));
+
+  return Promise.all(jobs.map(({ clientId, account }) => loadAccountMediaSummaryFromHierarchy(clientId, account)));
+}
+
 export function buildCreativeLabClientRows(
   data: CamplyData,
   accountMap: Map<string, ClientMetaAccount[]>,
-  mediaSummaryMap: Map<string, CreativeLabClientMediaSummary[]> = new Map()
+  mediaSummaryMap: Map<string, CreativeLabClientMediaSummary[]> = new Map(),
+  officialSummaryLoaded: boolean = true
 ): CreativeLabClientRow[] {
-  return data.clients.map((client) => {
+  return data.clients
+    .filter((client) => {
+      const project = data.projects.find((item) => item.id === client.projectId);
+      return isClientOperationallyActive(client, project);
+    })
+    .map((client) => {
     const campaigns = data.campaigns.filter((campaign) => campaign.clientId === client.id && campaign.platform === 'Meta Ads');
     const activeCampaigns = campaigns.filter((campaign) => {
       const status = campaign.metaEffectiveStatus || campaign.metaStatus;
@@ -161,24 +292,33 @@ export function buildCreativeLabClientRows(
     }
 
     const official = mediaSummaryMap.get(client.id) || [];
-    const officialAvailable = official.length > 0;
+    const officialAvailable = official.some((item) => item.dataAvailable !== false);
+    const officialUnavailable = official.length > 0 && !officialAvailable;
+    const accounts = accountMap.get(client.id) || [];
+    const fallbackAvailable = campaigns.some((campaign) => (
+      Boolean(campaign.metaEffectiveStatus || campaign.metaStatus)
+      || (campaign.activeAdSets?.length || 0) > 0
+    ));
+    const dataAvailable = officialAvailable || fallbackAvailable;
     const officialActiveCampaigns = official.reduce((sum, item) => sum + item.activeCampaigns, 0);
     const officialActiveAdSets = official.reduce((sum, item) => sum + item.activeAdSets, 0);
     const officialActiveAds = official.reduce((sum, item) => sum + item.activeAds, 0);
     const hasActiveMedia = officialAvailable
       ? official.some((item) => item.hasActiveMedia)
-      : campaigns.some(campaignStructureIsActive);
-    const state: CreativeLabClientState = client.status !== 'active'
-      ? 'inactive'
+      : fallbackAvailable && campaigns.some(campaignStructureIsActive);
+
+    const state: CreativeLabClientState = accounts.length > 0 && !dataAvailable && (!officialSummaryLoaded || officialUnavailable)
+      ? 'data_unavailable'
       : hasActiveMedia ? 'active_media' : 'no_active_media';
 
     return {
       client,
-      accounts: accountMap.get(client.id) || [],
+      accounts,
       state,
-      activeCampaigns: officialAvailable ? officialActiveCampaigns : activeCampaigns,
-      activeAdSets: officialAvailable ? officialActiveAdSets : activeAdSets,
-      activeAds: officialAvailable ? officialActiveAds : activeAds,
+      dataAvailable,
+      activeCampaigns: dataAvailable ? (officialAvailable ? officialActiveCampaigns : activeCampaigns) : null,
+      activeAdSets: dataAvailable ? (officialAvailable ? officialActiveAdSets : activeAdSets) : null,
+      activeAds: dataAvailable ? (officialAvailable ? officialActiveAds : activeAds) : null,
     };
   });
 }
@@ -372,14 +512,94 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
       lastSyncedAt: '2026-06-30T18:00:00.000Z',
     }];
   }
-  if (!supabase) return [];
+  if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
   const { data, error } = await supabase.rpc('get_meta_creative_lab_account_summary');
   if (error) {
-    console.warn('[CreativeLab] Não foi possível carregar o resumo oficial de mídia ativa.', error);
-    return [];
+    console.error('[CreativeLab] Falha no resumo oficial de mídia ativa.', error);
+    throw new Error(`Resumo Meta indisponível: ${error.message}`);
   }
   const payload = data as unknown as { state?: string; items?: CreativeLabClientMediaSummary[] };
+  if (payload?.state && payload.state !== 'ready') {
+    throw new Error(`Resumo Meta indisponível: estado ${payload.state}.`);
+  }
   return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+async function loadAccountRowsFromHierarchy(
+  account: ClientMetaAccount,
+  period: CreativeLabPeriod
+): Promise<{ state: CreativeLabRpcResponse['state']; rows: CreativeLabRawRow[] }> {
+  const campaignPage = await loadAllHierarchyItems({
+    clientMetaAssetId: account.clientMetaAssetId,
+    period,
+    level: 'campaign',
+  });
+  if (campaignPage.state !== 'ready') return { state: campaignPage.state, rows: [] };
+
+  const rows: CreativeLabRawRow[] = [];
+  for (const campaign of campaignPage.items) {
+    const adsetPage = await loadAllHierarchyItems({
+      clientMetaAssetId: account.clientMetaAssetId,
+      period,
+      level: 'adset',
+      parentId: campaign.id,
+    });
+    for (const adset of adsetPage.items) {
+      const adPage = await loadAllHierarchyItems({
+        clientMetaAssetId: account.clientMetaAssetId,
+        period,
+        level: 'ad',
+        parentId: adset.id,
+      });
+      for (const ad of adPage.items) {
+        const creativePage = await loadAllHierarchyItems({
+          clientMetaAssetId: account.clientMetaAssetId,
+          period,
+          level: 'creative',
+          parentId: ad.id,
+        });
+        const creatives = creativePage.items.length > 0
+          ? creativePage.items
+          : ad.creativeId
+            ? [{ ...ad, id: ad.creativeId, creativeId: ad.creativeId }]
+            : [];
+
+        for (const creative of creatives) {
+          const creativeId = creative.creativeId || creative.id;
+          if (!creativeId) continue;
+          rows.push({
+            accountId: account.adAccountId,
+            accountName: account.accountName,
+            currency: account.currency,
+            campaignId: campaign.id,
+            campaignName: campaign.name || campaign.id,
+            campaignStatus: campaign.status || null,
+            campaignEffectiveStatus: campaign.effectiveStatus || null,
+            classifiedObjective: campaign.classifiedObjective || null,
+            adsetId: adset.id || null,
+            adsetName: adset.name || null,
+            adsetStatus: adset.status || null,
+            adsetEffectiveStatus: adset.effectiveStatus || null,
+            adId: ad.id,
+            adName: ad.name || ad.id,
+            adStatus: ad.status || null,
+            adEffectiveStatus: ad.effectiveStatus || null,
+            creativeId,
+            creativeName: creative.name || ad.name || creativeId,
+            title: creative.title || null,
+            body: creative.body || null,
+            thumbnailUrl: creative.thumbnailUrl || null,
+            imageUrl: creative.imageUrl || null,
+            objectStorySpec: creative.objectStorySpec || null,
+            updatedAt: creative.updatedAt || null,
+            metrics: ad.metrics as unknown as Record<string, MetricContract>,
+          });
+        }
+      }
+    }
+  }
+
+  return { state: rows.length > 0 ? 'ready' : 'empty', rows };
 }
 
 async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPeriod): Promise<{
@@ -442,7 +662,10 @@ async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPe
       p_page: page,
       p_page_size: pageSize,
     });
-    if (error) throw new Error(`Não foi possível carregar o laboratório de ${account.accountName}: ${error.message}`);
+    if (error) {
+      console.warn('[CreativeLab] RPC dedicado indisponível; usando hierarquia oficial.', account.accountName, error);
+      return loadAccountRowsFromHierarchy(account, period);
+    }
     const response = data as unknown as CreativeLabRpcResponse;
     state = response?.state || 'empty';
     total = Number(response?.total || 0);

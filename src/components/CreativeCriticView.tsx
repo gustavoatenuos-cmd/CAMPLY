@@ -23,6 +23,7 @@ import {
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
   loadCreativeLabClientMediaSummaries,
+  loadCreativeLabClientMediaSummariesFromHierarchy,
   type CreativeLabClientMediaSummary,
   type CreativeLabClientResult,
   type CreativeLabClientRow,
@@ -53,10 +54,10 @@ const clientStateCopy: Record<CreativeLabClientState, { label: string; className
     className: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
     dot: 'bg-amber-400',
   },
-  inactive: {
-    label: 'Cliente inativo',
-    className: 'border-white/10 bg-white/5 text-brand-muted',
-    dot: 'bg-brand-muted',
+  data_unavailable: {
+    label: 'Dados Meta indisponíveis',
+    className: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
+    dot: 'bg-rose-400',
   },
 };
 
@@ -77,7 +78,7 @@ function number(value: number | null, suffix = ''): string {
 function stateIcon(state: CreativeLabClientState) {
   if (state === 'active_media') return Activity;
   if (state === 'no_active_media') return PauseCircle;
-  return Users;
+  return AlertTriangle;
 }
 
 function stateOrder(state: CreativeLabClientState): number {
@@ -161,10 +162,10 @@ function ClientCard({ row, onOpen }: { row: CreativeLabClientRow; onOpen: () => 
   );
 }
 
-function ClientMiniMetric({ label, value }: { label: string; value: number }) {
+function ClientMiniMetric({ label, value }: { label: string; value: number | null }) {
   return (
     <div>
-      <p className="text-lg font-black text-white">{value}</p>
+      <p className="text-lg font-black text-white">{value === null ? '—' : value}</p>
       <p className="text-[10px] leading-tight text-brand-muted">{label}</p>
     </div>
   );
@@ -248,6 +249,8 @@ export function CreativeCriticView({ data }: Props) {
   const [mediaSummaries, setMediaSummaries] = useState<CreativeLabClientMediaSummary[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [mediaSummaryError, setMediaSummaryError] = useState<string | null>(null);
+  const [mediaSummaryLoaded, setMediaSummaryLoaded] = useState(false);
   const [clientFilter, setClientFilter] = useState<ClientFilter>('all');
   const [search, setSearch] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -263,25 +266,53 @@ export function CreativeCriticView({ data }: Props) {
   useEffect(() => {
     let active = true;
     setCatalogLoading(true);
-    Promise.all([
-      loadClientMetaAssetCatalog(),
-      loadCreativeLabClientMediaSummaries(),
-    ])
-      .then(([result, summaries]) => {
+    setCatalogError(null);
+    setMediaSummaryError(null);
+    setMediaSummaryLoaded(false);
+
+    void (async () => {
+      try {
+        const catalogResult = await loadClientMetaAssetCatalog();
         if (!active) return;
-        setCatalog(result);
-        setMediaSummaries(summaries);
-        setCatalogError(null);
-      })
-      .catch((error) => {
+        setCatalog(catalogResult);
+
+        try {
+          const summaries = await loadCreativeLabClientMediaSummaries();
+          if (!active) return;
+          setMediaSummaries(summaries);
+          setMediaSummaryLoaded(true);
+        } catch (summaryError) {
+          const fallbackMap = new Map(
+            (catalogResult.clients || []).map((item) => [item.clientId, item.accounts] as const)
+          );
+          try {
+            const fallback = await loadCreativeLabClientMediaSummariesFromHierarchy(data, fallbackMap);
+            if (!active) return;
+            setMediaSummaries(fallback);
+            setMediaSummaryLoaded(true);
+            setMediaSummaryError('O resumo dedicado do Lab não respondeu; usando a hierarquia oficial da Meta como fallback.');
+          } catch (fallbackError) {
+            if (!active) return;
+            setMediaSummaries([]);
+            setMediaSummaryError(
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : summaryError instanceof Error
+                  ? summaryError.message
+                  : 'Não foi possível carregar a estrutura Meta.'
+            );
+          }
+        }
+      } catch (error) {
         if (!active) return;
         setCatalogError(error instanceof Error ? error.message : 'Não foi possível carregar os vínculos Meta.');
-      })
-      .finally(() => {
+      } finally {
         if (active) setCatalogLoading(false);
-      });
+      }
+    })();
+
     return () => { active = false; };
-  }, []);
+  }, [data]);
 
   const accountMap = useMemo(() => new Map(
     (catalog?.clients || []).map((item) => [item.clientId, item.accounts] as const)
@@ -298,11 +329,11 @@ export function CreativeCriticView({ data }: Props) {
   }, [mediaSummaries]);
 
   const clientRows = useMemo(
-    () => buildCreativeLabClientRows(data, accountMap, mediaSummaryMap).sort((a, b) => (
+    () => buildCreativeLabClientRows(data, accountMap, mediaSummaryMap, mediaSummaryLoaded).sort((a, b) => (
       stateOrder(a.state) - stateOrder(b.state)
       || (a.client.company || a.client.name).localeCompare(b.client.company || b.client.name, 'pt-BR')
     )),
-    [data, accountMap, mediaSummaryMap]
+    [data, accountMap, mediaSummaryMap, mediaSummaryLoaded]
   );
 
   const visibleClients = useMemo(() => {
@@ -555,7 +586,7 @@ export function CreativeCriticView({ data }: Props) {
     all: clientRows.length,
     active_media: clientRows.filter((row) => row.state === 'active_media').length,
     no_active_media: clientRows.filter((row) => row.state === 'no_active_media').length,
-    inactive: clientRows.filter((row) => row.state === 'inactive').length,
+    data_unavailable: clientRows.filter((row) => row.state === 'data_unavailable').length,
   };
 
   return (
@@ -576,6 +607,14 @@ export function CreativeCriticView({ data }: Props) {
             <strong>Vínculos Meta:</strong> {catalogError}
           </div>
         )}
+        {mediaSummaryError && (
+          <div className={`rounded-xl border p-4 text-sm ${mediaSummaryLoaded
+            ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+            : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
+            <strong>Dados Meta:</strong> {mediaSummaryError}
+            {!mediaSummaryLoaded && <span className="ml-1">Os cards não exibem zero quando a fonte não pôde ser lida.</span>}
+          </div>
+        )}
 
         <section className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-sm">
@@ -592,7 +631,7 @@ export function CreativeCriticView({ data }: Props) {
               ['all', 'Todos'],
               ['active_media', 'Mídia ativa'],
               ['no_active_media', 'Sem mídia ativa'],
-              ['inactive', 'Inativos'],
+              ['data_unavailable', 'Dados pendentes'],
             ] as Array<[ClientFilter, string]>).map(([value, label]) => (
               <button
                 key={value}
@@ -625,7 +664,7 @@ export function CreativeCriticView({ data }: Props) {
         )}
 
         <p className="text-xs text-brand-muted">
-          “Mídia ativa” exige campanha, conjunto e anúncio em estrutura ativa na última sincronização. Campanha ligada com conjuntos pausados não é tratada como mídia ativa.
+          O Lab lista somente clientes operacionalmente ativos. “Mídia ativa” exige campanha, conjunto e anúncio em estrutura ativa na última sincronização; falha de leitura da Meta aparece como dado indisponível, nunca como zero.
         </p>
       </div>
     </div>

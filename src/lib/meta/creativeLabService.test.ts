@@ -121,12 +121,64 @@ describe('creative lab client state', () => {
     });
   });
 
-  it('keeps the CRM client status separate from media status', () => {
+  it('does not include clients outside the active CAMPLY operation', () => {
     const data = baseData();
     data.clients[0].status = 'paused';
     data.campaigns[0].activeAdSets![0].status = 'ACTIVE';
     data.campaigns[0].activeAdSets![0].effective_status = 'ACTIVE';
-    expect(buildCreativeLabClientRows(data, new Map())[0].state).toBe('inactive');
+    expect(buildCreativeLabClientRows(data, new Map())).toEqual([]);
+  });
+
+  it('does not include a client whose linked project is archived', () => {
+    const data = baseData();
+    data.projects = [{
+      id: 'project-1',
+      projectType: 'traffic',
+      clientId: 'client-1',
+      ownerName: '',
+      company: 'Donatellus',
+      billingType: 'recurring',
+      name: 'Projeto arquivado',
+      role: '',
+      status: 'archived',
+      progress: 0,
+      dueDate: '',
+      amountCharged: 0,
+      amountReceived: 0,
+      paymentStatus: 'pending',
+      deliveredUrl: '',
+      visibility: 'private',
+      nextAction: '',
+    }];
+    data.clients[0].projectId = 'project-1';
+    expect(buildCreativeLabClientRows(data, new Map())).toEqual([]);
+  });
+
+  it('marks linked clients as data unavailable when the official summary failed and there is no structural fallback', () => {
+    const data = baseData();
+    data.campaigns = [];
+    const accounts = new Map([['client-1', [{
+      clientMetaAssetId: 'link-1',
+      metaAssetId: 'asset-1',
+      integrationId: 'integration-1',
+      adAccountId: 'act_1',
+      accountName: 'Conta',
+      currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
+      assetStatus: 'ACTIVE',
+      linkedAt: '2026-09-24T18:00:00Z',
+      availablePeriods: [],
+      lastAttempt: null,
+      lastSuccess: null,
+    }]]]);
+
+    expect(buildCreativeLabClientRows(data, accounts, new Map(), false)[0]).toMatchObject({
+      state: 'data_unavailable',
+      dataAvailable: false,
+      activeCampaigns: null,
+      activeAdSets: null,
+      activeAds: null,
+    });
   });
 
   it('prefers the official synced Meta structure over the workspace fallback', () => {
