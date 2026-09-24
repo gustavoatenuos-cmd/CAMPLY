@@ -22,6 +22,8 @@ import { invokeFunction } from '../lib/invokeFunction';
 import {
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
+  loadCreativeLabClientMediaSummaries,
+  type CreativeLabClientMediaSummary,
   type CreativeLabClientResult,
   type CreativeLabClientRow,
   type CreativeLabClientState,
@@ -243,6 +245,7 @@ function CreativeRow({
 
 export function CreativeCriticView({ data }: Props) {
   const [catalog, setCatalog] = useState<ClientMetaAssetCatalog | null>(null);
+  const [mediaSummaries, setMediaSummaries] = useState<CreativeLabClientMediaSummary[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [clientFilter, setClientFilter] = useState<ClientFilter>('all');
@@ -260,10 +263,14 @@ export function CreativeCriticView({ data }: Props) {
   useEffect(() => {
     let active = true;
     setCatalogLoading(true);
-    loadClientMetaAssetCatalog()
-      .then((result) => {
+    Promise.all([
+      loadClientMetaAssetCatalog(),
+      loadCreativeLabClientMediaSummaries(),
+    ])
+      .then(([result, summaries]) => {
         if (!active) return;
         setCatalog(result);
+        setMediaSummaries(summaries);
         setCatalogError(null);
       })
       .catch((error) => {
@@ -280,12 +287,22 @@ export function CreativeCriticView({ data }: Props) {
     (catalog?.clients || []).map((item) => [item.clientId, item.accounts] as const)
   ), [catalog]);
 
+  const mediaSummaryMap = useMemo(() => {
+    const map = new Map<string, CreativeLabClientMediaSummary[]>();
+    for (const summary of mediaSummaries) {
+      const items = map.get(summary.clientId) || [];
+      items.push(summary);
+      map.set(summary.clientId, items);
+    }
+    return map;
+  }, [mediaSummaries]);
+
   const clientRows = useMemo(
-    () => buildCreativeLabClientRows(data, accountMap).sort((a, b) => (
+    () => buildCreativeLabClientRows(data, accountMap, mediaSummaryMap).sort((a, b) => (
       stateOrder(a.state) - stateOrder(b.state)
       || (a.client.company || a.client.name).localeCompare(b.client.company || b.client.name, 'pt-BR')
     )),
-    [data, accountMap]
+    [data, accountMap, mediaSummaryMap]
   );
 
   const visibleClients = useMemo(() => {
