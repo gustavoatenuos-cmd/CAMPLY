@@ -23,6 +23,8 @@ export interface HierarchyResponse {
   state: 'empty' | 'ready' | 'period_not_synced' | 'unauthorized';
   items: HierarchicalMetricNode[];
   total: number;
+  /** Current ACTIVE campaigns when level=campaign. Optional for backward compatibility. */
+  activeTotal?: number;
 }
 
 export async function fetchMetaPerformanceHierarchy(
