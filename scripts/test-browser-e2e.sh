@@ -29,23 +29,19 @@ trap cleanup EXIT INT TERM
 assert_js() {
   local expression="$1"
   local message="$2"
-  local actual
-  if ! actual=$("${BROWSER[@]}" eval "$expression"); then
-    "${BROWSER[@]}" wait 150 >/dev/null
-    if ! actual=$("${BROWSER[@]}" eval "$expression"); then
-      echo "Browser E2E failed: browser evaluation could not run for: $message"
-      exit 1
+  local actual="" attempt
+  # React state and the E2E persistence layer can settle after the click on
+  # slower CI runners. Poll for at most 3 seconds instead of testing one frame.
+  for attempt in $(seq 1 12); do
+    if actual=$("${BROWSER[@]}" eval "$expression") && [[ "$actual" == "true" ]]; then
+      return 0
     fi
-  fi
-  if [[ "$actual" != "true" ]]; then
-    "${BROWSER[@]}" wait 300 >/dev/null
-    actual=$("${BROWSER[@]}" eval "$expression")
-    if [[ "$actual" != "true" ]]; then
-      echo "Browser E2E failed: $message (received $actual)"
-      "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
-      exit 1
-    fi
-  fi
+    sleep 0.25
+  done
+  echo "Browser E2E failed: $message (received ${actual:-evaluation error})"
+  "${BROWSER[@]}" eval 'document.body.innerText.slice(0,1200)' || true
+  "${BROWSER[@]}" eval 'JSON.stringify({tail:document.body.innerText.slice(-2400),forms:[...document.querySelectorAll("form")].map((form)=>({valid:form.checkValidity(),invalid:[...form.querySelectorAll(":invalid")].map((input)=>({name:input.name,value:input.value,message:input.validationMessage}))}))})' || true
+  exit 1
 }
 
 step() {
@@ -103,9 +99,9 @@ step "analysis profile persistence"
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js 'document.body.innerText.includes("Editar cliente")' 'client analysis profile editor did not open'
-"${BROWSER[@]}" eval '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); const input=label?.querySelector("input"); if (!input) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; setter.call(input,"1650"); input.dispatchEvent(new Event("input",{bubbles:true})); return true; })()' >/dev/null
+"${BROWSER[@]}" find label "Orçamento planejado Meta" fill "1650"
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile input did not receive the planned budget'
-"${BROWSER[@]}" find role button click --name "Salvar alterações"
+assert_js '(() => { const form=[...document.querySelectorAll("form")].find((item) => item.innerText.includes("Salvar alterações")); if (!form) return false; form.requestSubmit(); return true; })()' 'client analysis profile form was not submitted'
 "${BROWSER[@]}" wait 300
 assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile did not save and close'
 assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles") || "{}")["client-e2e"]?.plannedBudget === 1650' 'client analysis profile was not persisted before reload'
@@ -124,7 +120,8 @@ assert_js 'JSON.parse(sessionStorage.getItem("camply:meta-e2e:analysis-profiles"
 "${BROWSER[@]}" eval '(() => { const card=[...document.querySelectorAll("article")].find((item) => item.innerText.includes("Clínica Mock")); const button=[...(card?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Editar"); button?.click(); return Boolean(button); })()' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const label=[...document.querySelectorAll("label")].find((item) => item.innerText.includes("Orçamento planejado Meta")); return label?.querySelector("input")?.value === "1650"; })()' 'client analysis profile did not survive reload'
-"${BROWSER[@]}" find role button click --name "Cancelar"
+assert_js '(() => { const form=[...document.querySelectorAll("form")].find((item) => item.innerText.includes("Salvar alterações")); const button=[...(form?.querySelectorAll("button") || [])].find((item) => item.innerText.trim() === "Cancelar"); if (!button) return false; button.click(); return true; })()' 'client analysis profile editor could not be cancelled'
+assert_js '!document.body.innerText.includes("Editar cliente")' 'client analysis profile editor stayed open after cancelling'
 "${BROWSER[@]}" find role button click --name "Dashboard"
 "${BROWSER[@]}" wait 300
 assert_js 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]")?.getAttribute("aria-pressed") === "true"' 'segment filter did not survive profile navigation and reload'
@@ -132,10 +129,13 @@ step "Meta link and official metrics"
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=segment-filter-all]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 100
 assert_js 'document.querySelector("[data-testid=segment-filter-all]")?.getAttribute("aria-pressed") === "true"' 'dashboard segment filter did not reset before Meta navigation'
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 300
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not open from Dashboard'
+assert_js 'document.querySelector("[data-testid=meta-link-button]") !== null' 'Meta link control did not render after navigating to the integration'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
+"${BROWSER[@]}" wait '[data-testid=meta-sync-linked-clients]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-linked-clients]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 350
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'official Meta synchronization did not persist a reliable snapshot'
@@ -178,6 +178,7 @@ assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performa
 "${BROWSER[@]}" wait 100
 assert_js 'document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1' 'mobile has structural horizontal overflow'
 assert_js 'getComputedStyle(document.querySelector("[data-testid=client-performance-mobile]")).display !== "none" && getComputedStyle(document.querySelector("[data-testid=client-performance-desktop]")).display === "none"' 'mobile must use performance cards'
+"${BROWSER[@]}" wait '[data-testid=client-performance-details-toggle]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=client-performance-details-toggle]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
 assert_js '(() => { const button=document.querySelector("[data-testid=client-performance-details-toggle]"); const details=document.querySelector("[data-testid=client-performance-details]"); const text=details?.innerText.toLocaleLowerCase("pt-BR") || ""; return Boolean(button && details && button.getAttribute("aria-expanded") === "true" && text.includes("metas e realizado") && text.includes("campanhas da conta")); })()' 'mobile performance accordion did not expose details'
@@ -187,8 +188,9 @@ assert_js '(() => { const button=document.querySelector("[data-testid=client-per
 "${BROWSER[@]}" set viewport 1440 900
 "${BROWSER[@]}" wait 100
 step "hierarchy target and persistence"
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 300
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not reopen after responsive checks'
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText.toLocaleLowerCase("pt-BR").includes("snapshot salvo em") === true' 'explicit Meta synchronization did not persist a reliable snapshot'
 
 assert_js 'document.querySelector("[data-testid=meta-campaign-campaign-active-e2e] button[aria-label^=\"Abrir Campanha\"]") !== null' 'active campaign hierarchy node did not render'
@@ -204,6 +206,7 @@ assert_js 'document.body.innerText.includes("Criativo Mock")' 'creative hierarch
 step "creative hierarchy opened"
 assert_js 'document.body.innerText.includes("Criativo Mock") && document.body.innerText.includes("Agende sua avaliação")' 'creative drill-down did not render'
 
+"${BROWSER[@]}" wait '[data-testid=meta-target-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 step "target drawer opened"
 "${BROWSER[@]}" fill 'input[name="targetValue"]' "15"
@@ -224,15 +227,18 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
   "${BROWSER[@]}" wait 150
 fi
 assert_js 'document.body.innerText.includes("Conta Meta Mock")' 'official Meta account link did not survive reload'
-"${BROWSER[@]}" find role button click --name "Integração Meta"
+assert_js '(() => { const button=[...document.querySelectorAll("aside button")].find((item) => item.innerText.trim() === "Integração Meta"); if (!button) return false; button.click(); return true; })()' 'Meta sidebar button was unavailable'
 "${BROWSER[@]}" wait 350
+assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta Ads"' 'Meta integration view did not reopen after reload'
 assert_js 'document.querySelector("[data-testid=meta-last-snapshot]")?.innerText === sessionStorage.getItem("camply-e2e-snapshot-label")' 'saved Meta snapshot changed or disappeared after reload without an explicit synchronization'
+"${BROWSER[@]}" wait '[data-testid=meta-target-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-target-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 200
 assert_js 'document.body.innerText.includes("Meta: 15")' 'performance target did not survive reload'
 "${BROWSER[@]}" find role button click --name "Fechar metas"
 
 step "reconciliation period refresh and navigation"
+"${BROWSER[@]}" wait '[data-testid=meta-reconcile-campaign-campaign-active-e2e]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-reconcile-campaign-campaign-active-e2e]").click(); true' >/dev/null
 "${BROWSER[@]}" fill 'input[aria-label="Referência Investimento"]' "350"
 "${BROWSER[@]}" fill 'input[aria-label="Referência Impressões"]' "11800"
@@ -246,7 +252,13 @@ assert_js 'document.querySelector("[data-testid=meta-period-select]")?.value ===
 assert_js 'document.body.innerText.includes("Base operacional e Meta Ads") && document.querySelectorAll("[data-testid=meta-operational-workspace]").length === 1' 'Clients did not reuse the official workspace'
 "${BROWSER[@]}" find role button click --name "Campanhas"
 "${BROWSER[@]}" wait 400
-assert_js 'document.body.innerText.includes("Quadro Kanban de Campanhas") && document.body.innerText.toLocaleLowerCase("pt-BR").includes("gestão operacional")' 'Campaigns did not render the operational Kanban'
+assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("Campanhas Meta") && document.body.innerText.includes("Campanha ativa mock") && !document.body.innerText.includes("Não foi possível ler: Clínica Mock")' 'Meta campaign board did not load the synced official campaign'
+"${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("button")].find((item) => item.innerText.includes("Campanha ativa mock")); button?.click(); return Boolean(button); })()' >/dev/null
+"${BROWSER[@]}" wait 250
+assert_js 'document.querySelector("[role=dialog]")?.innerText.includes("Conjunto ativo com leads")' 'Meta campaign detail did not load the synced ad set'
+"${BROWSER[@]}" find role button click --name "Fechar"
+"${BROWSER[@]}" find role tab click --name "Kanban operacional"
+assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("Kanban operacional") && document.body.innerText.includes("FILTROS:") && document.body.innerText.includes("SETUP")' 'Campaigns did not render the operational Kanban'
 "${BROWSER[@]}" find role button click --name "Analytics"
 "${BROWSER[@]}" wait 400
 assert_js 'document.body.innerText.includes("Analytics por Cliente")' 'Analytics did not render the separate official client performance view'

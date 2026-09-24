@@ -1,5 +1,6 @@
 -- Campaign drill-down must read dashboard periods as slices of the single
 -- last_90d sync base, and aggregate daily entity metrics over the slice.
+BEGIN;
 DO $$
 DECLARE
   v_user UUID := '20000000-0000-0000-0000-000000000901';
@@ -167,3 +168,4 @@ END;
 $$;
 
 SELECT 'meta_hierarchy_period_slices_ok' AS result;
+ROLLBACK;

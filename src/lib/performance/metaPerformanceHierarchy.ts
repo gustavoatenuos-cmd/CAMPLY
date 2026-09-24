@@ -1,4 +1,6 @@
 import { supabase } from '../supabase';
+import { isMetaE2EMode } from '../meta/metaE2ERuntime';
+import { loadMetaHierarchy } from '../meta/performanceHierarchyService';
 import type { DashboardPeriod } from './analyticsCapabilities';
 import type { MetricContract } from './globalPerformanceDashboard';
 
@@ -31,6 +33,32 @@ export async function fetchMetaPerformanceHierarchy(
   page: number = 1,
   pageSize: number = 50
 ): Promise<HierarchyResponse> {
+  if (isMetaE2EMode) {
+    const pageResult = await loadMetaHierarchy({
+      clientMetaAssetId,
+      period,
+      level,
+      parentId: parentId ?? undefined,
+      page,
+      pageSize,
+    });
+    return {
+      state: pageResult.state,
+      total: pageResult.total,
+      items: pageResult.items.map((item) => ({
+        id: item.id,
+        name: item.name ?? '',
+        status: item.status ?? '',
+        effectiveStatus: item.effectiveStatus ?? '',
+        objective: item.objective ?? null,
+        classifiedObjective: item.classifiedObjective ?? null,
+        destinationType: item.destinationType ?? null,
+        attributionSetting: item.attributionSetting ?? null,
+        creativeId: item.creativeId ?? null,
+        metrics: item.metrics,
+      })),
+    };
+  }
   if (!supabase) {
     throw new Error('Supabase client not initialized');
   }

@@ -195,6 +195,7 @@ mv /tmp/camply_migrations/*.sql supabase/migrations/ 2>/dev/null || true
 # 7. Executar smoke test (RLS, constraints, etc sem usar GRANT ALL na psql)
 echo "7. Executando Smoke Test SQL..."
 PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/meta_analytics_smoke.sql
+PGPASSWORD=postgres docker exec -i supabase_db_camply psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/meta_hierarchy_period_slices.sql
 
 # 8. E2E: Iniciar Mock Container
 echo "8. E2E HTTP Edge Function..."

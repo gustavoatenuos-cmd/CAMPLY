@@ -82,6 +82,7 @@ jobs:
             exit 1
           }
           psql "$STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/meta_analytics_smoke.sql
+          psql "$STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/meta_hierarchy_period_slices.sql
 
       - name: Staging gate summary
         shell: bash

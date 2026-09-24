@@ -1,4 +1,4 @@
-import type { DashboardPeriod } from '../performance/analyticsCapabilities';
+import { dashboardPeriods, type DashboardPeriod } from '../performance/analyticsCapabilities';
 import { normalizeTraceableMetric, type TraceableMetric } from '../performance/traceableMetrics';
 import { invokeFunction } from '../invokeFunction';
 import { e2eMetric, isMetaE2EMode, metaE2EState } from './metaE2ERuntime';
@@ -122,7 +122,10 @@ export async function loadMetaHierarchy(input: {
   pageSize?: number;
 }): Promise<MetaHierarchyPage> {
   if (isMetaE2EMode) {
-    if (!metaE2EState.syncedPeriods.has(input.period)) {
+    // A base oficial de 90 dias atende os recortes menores sem nova coleta.
+    const coveredBy90DayBase = dashboardPeriods.some((period) => period === input.period)
+      && metaE2EState.syncedPeriods.has('last_90d');
+    if (!metaE2EState.syncedPeriods.has(input.period) && !coveredBy90DayBase) {
       return { state: 'period_not_synced', level: input.level, period: input.period, page: 1, pageSize: 25, total: 0, items: [] };
     }
     const items = fixtureItems(input.level, input.parentId);
