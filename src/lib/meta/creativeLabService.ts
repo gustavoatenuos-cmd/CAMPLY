@@ -7,7 +7,7 @@ import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
 import { loadMetaHierarchy, type MetaHierarchyItem, type MetaHierarchyPage } from './performanceHierarchyService';
 
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
-export type CreativeLabClientState = 'active_media' | 'no_active_media' | 'data_unavailable';
+export type CreativeLabClientState = 'active_media' | 'active_structure' | 'no_active_media' | 'data_unavailable';
 
 export interface CreativeLabClientMediaSummary {
   clientId: string;
@@ -20,6 +20,7 @@ export interface CreativeLabClientMediaSummary {
   hasActiveMedia: boolean;
   lastSyncedAt: string | null;
   dataAvailable?: boolean;
+  adDataAvailable?: boolean;
 }
 
 export interface CreativeLabClientRow {
@@ -30,6 +31,7 @@ export interface CreativeLabClientRow {
   activeAdSets: number | null;
   activeAds: number | null;
   dataAvailable: boolean;
+  creativeDepthAvailable: boolean;
 }
 
 export interface CreativeLabRawRow {
@@ -145,6 +147,11 @@ function hierarchyItemIsActive(item: Pick<MetaHierarchyItem, 'effectiveStatus' |
   return isMetaActive(item.effectiveStatus || item.status);
 }
 
+export function accountHasCreativeDepth(account: ClientMetaAccount): boolean {
+  const level = String(account.lastSuccess?.level || '').toLowerCase();
+  return level === 'ad' || level === 'creative';
+}
+
 async function loadAllHierarchyItems(input: {
   clientMetaAssetId: string;
   period: CreativeLabPeriod;
@@ -208,15 +215,18 @@ async function loadAccountMediaSummaryFromHierarchy(
       activeAdSets.push(...adsetPage.items.filter(hierarchyItemIsActive));
     }
 
+    const adDataAvailable = accountHasCreativeDepth(account);
     const activeAds: MetaHierarchyItem[] = [];
-    for (const adset of activeAdSets) {
-      const adPage = await loadAllHierarchyItems({
-        clientMetaAssetId: account.clientMetaAssetId,
-        period: 'last_90d',
-        level: 'ad',
-        parentId: adset.id,
-      });
-      activeAds.push(...adPage.items.filter(hierarchyItemIsActive));
+    if (adDataAvailable) {
+      for (const adset of activeAdSets) {
+        const adPage = await loadAllHierarchyItems({
+          clientMetaAssetId: account.clientMetaAssetId,
+          period: 'last_90d',
+          level: 'ad',
+          parentId: adset.id,
+        });
+        activeAds.push(...adPage.items.filter(hierarchyItemIsActive));
+      }
     }
 
     return {
@@ -227,9 +237,10 @@ async function loadAccountMediaSummaryFromHierarchy(
       activeCampaigns: activeCampaigns.length,
       activeAdSets: activeAdSets.length,
       activeAds: activeAds.length,
-      hasActiveMedia: activeAds.length > 0,
+      hasActiveMedia: adDataAvailable && activeAds.length > 0,
       lastSyncedAt: account.lastSuccess?.finishedAt || null,
       dataAvailable: true,
+      adDataAvailable,
     };
   } catch (error) {
     console.warn('[CreativeLab] Fallback de estrutura Meta falhou.', account.accountName, error);
@@ -244,6 +255,7 @@ async function loadAccountMediaSummaryFromHierarchy(
       hasActiveMedia: false,
       lastSyncedAt: account.lastSuccess?.finishedAt || null,
       dataAvailable: false,
+      adDataAvailable: false,
     };
   }
 }
@@ -303,22 +315,34 @@ export function buildCreativeLabClientRows(
     const officialActiveCampaigns = official.reduce((sum, item) => sum + item.activeCampaigns, 0);
     const officialActiveAdSets = official.reduce((sum, item) => sum + item.activeAdSets, 0);
     const officialActiveAds = official.reduce((sum, item) => sum + item.activeAds, 0);
+    const fallbackCreativeDepthAvailable = campaigns.some((campaign) =>
+      (campaign.activeAdSets || []).some((adset) => Array.isArray(adset.ads) && adset.ads.length > 0)
+    );
+    const creativeDepthAvailable = officialAvailable
+      ? official.some((item) => item.adDataAvailable !== false)
+      : fallbackCreativeDepthAvailable;
     const hasActiveMedia = officialAvailable
-      ? official.some((item) => item.hasActiveMedia)
-      : fallbackAvailable && campaigns.some(campaignStructureIsActive);
+      ? creativeDepthAvailable && official.some((item) => item.hasActiveMedia)
+      : fallbackCreativeDepthAvailable && campaigns.some(campaignStructureIsActive);
+    const activeStructureExists = officialAvailable
+      ? officialActiveAdSets > 0
+      : activeAdSets > 0;
 
     const state: CreativeLabClientState = accounts.length > 0 && !dataAvailable && (!officialSummaryLoaded || officialUnavailable)
       ? 'data_unavailable'
-      : hasActiveMedia ? 'active_media' : 'no_active_media';
+      : !creativeDepthAvailable && activeStructureExists
+        ? 'active_structure'
+        : hasActiveMedia ? 'active_media' : 'no_active_media';
 
     return {
       client,
       accounts,
       state,
       dataAvailable,
+      creativeDepthAvailable,
       activeCampaigns: dataAvailable ? (officialAvailable ? officialActiveCampaigns : activeCampaigns) : null,
       activeAdSets: dataAvailable ? (officialAvailable ? officialActiveAdSets : activeAdSets) : null,
-      activeAds: dataAvailable ? (officialAvailable ? officialActiveAds : activeAds) : null,
+      activeAds: dataAvailable && creativeDepthAvailable ? (officialAvailable ? officialActiveAds : activeAds) : null,
     };
   });
 }
@@ -522,7 +546,9 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
   if (payload?.state && payload.state !== 'ready') {
     throw new Error(`Resumo Meta indisponível: estado ${payload.state}.`);
   }
-  return Array.isArray(payload?.items) ? payload.items : [];
+  return Array.isArray(payload?.items)
+    ? payload.items.map((item) => ({ ...item, dataAvailable: true, adDataAvailable: true }))
+    : [];
 }
 
 async function loadAccountRowsFromHierarchy(
