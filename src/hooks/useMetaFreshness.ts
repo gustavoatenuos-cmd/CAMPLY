@@ -34,7 +34,7 @@ export function useMetaFreshness(enabled: boolean, userId?: string | null): Meta
       return;
     }
 
-    const key = \`\${userId}:\${new Date().toISOString().slice(0, 10)}\`;
+    const key = `${userId}:${new Date().toISOString().slice(0, 10)}`;
     if (runKeyRef.current === key) return;
     runKeyRef.current = key;
 
