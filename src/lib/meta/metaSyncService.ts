@@ -10,6 +10,7 @@ export const OFFICIAL_META_SYNC_PERIOD: DashboardPeriod = 'last_90d';
 
 export interface MetaSyncOptions {
   metaAssetId?: string;
+  refreshMode?: 'official' | 'fresh';
   adAccountId?: string;
   periods?: MetaSyncPeriod[];
   requestedLevel?: MetaSyncLevel;
@@ -48,6 +49,7 @@ export interface OperationalMetaSyncInput {
   clientMetaAssetId: string;
   period: DashboardPeriod;
   requestedLevel?: MetaSyncLevel;
+  refreshMode?: 'official' | 'fresh';
   campaignIds?: string[];
   adsetIds?: string[];
   adIds?: string[];
@@ -75,8 +77,9 @@ async function syncOperationalMetaAsset(
   try {
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
       clientMetaAssetId: input.clientMetaAssetId,
-      periods: [OFFICIAL_META_SYNC_PERIOD],
+      periods: [input.refreshMode === 'fresh' ? 'today' : OFFICIAL_META_SYNC_PERIOD],
       requestedLevel: input.requestedLevel || 'creative',
+      refreshMode: input.refreshMode || 'official',
       selectedEntityIds: {
         campaign_ids: input.campaignIds || [],
         adset_ids: input.adsetIds || [],
@@ -118,8 +121,9 @@ export async function syncClientMeta(
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
       metaAssetId: options.metaAssetId,
       adAccountId: options.adAccountId,
-      periods: options.periods,
+      periods: options.refreshMode === 'fresh' ? ['today'] : options.periods,
       requestedLevel: options.requestedLevel,
+      refreshMode: options.refreshMode || 'official',
       selectedCampaigns: options.selectedCampaigns,
       selectedAdSets: options.selectedAdSets,
       selectedAds: options.selectedAds,
