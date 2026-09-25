@@ -98,9 +98,11 @@ BEGIN
         AND r.requested_period = 'last_90d'
         AND r.run_scope = 'full_account'
         AND r.status IN ('success', 'partial')
-        AND lower(COALESCE(r.requested_level, '')) IN ('ad', 'creative')
         AND (
-          r.status = 'success'
+          (
+            r.status = 'success'
+            AND lower(COALESCE(r.requested_level, '')) IN ('ad', 'creative')
+          )
           OR EXISTS (
             SELECT 1
             FROM public.meta_ad_snapshots a
@@ -208,9 +210,11 @@ BEGIN
         AND r.requested_period = 'last_90d'
         AND r.run_scope = 'full_account'
         AND r.status IN ('success', 'partial')
-        AND lower(COALESCE(r.requested_level, '')) IN ('ad', 'creative')
         AND (
-          r.status = 'success'
+          (
+            r.status = 'success'
+            AND lower(COALESCE(r.requested_level, '')) IN ('ad', 'creative')
+          )
           OR EXISTS (
             SELECT 1
             FROM public.meta_ad_snapshots a
