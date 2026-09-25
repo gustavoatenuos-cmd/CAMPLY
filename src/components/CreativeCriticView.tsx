@@ -270,6 +270,8 @@ export function CreativeCriticView({ data }: Props) {
   const [labSyncing, setLabSyncing] = useState(false);
   const [labSyncNote, setLabSyncNote] = useState<string | null>(null);
   const [labRefreshKey, setLabRefreshKey] = useState(0);
+  const [bulkCreativeSyncing, setBulkCreativeSyncing] = useState(false);
+  const [bulkCreativeProgress, setBulkCreativeProgress] = useState({ done: 0, total: 0 });
   const deepSyncedClientIdsRef = useRef<Set<string>>(new Set());
   const [selectedCreative, setSelectedCreative] = useState<CreativeLabCreative | null>(null);
   const [analysis, setAnalysis] = useState<CreativeCriticResponse | null>(null);
@@ -356,6 +358,67 @@ export function CreativeCriticView({ data }: Props) {
       && (!query || `${row.client.company} ${row.client.name} ${row.client.segment}`.toLocaleLowerCase('pt-BR').includes(query))
     ));
   }, [clientRows, clientFilter, search]);
+
+  const accountsNeedingCreativeDepth = useMemo(() => {
+    const unique = new Map<string, (typeof clientRows)[number]['accounts'][number]>();
+    for (const row of clientRows) {
+      for (const account of row.accounts) {
+        if (!accountHasCreativeDepth(account)) unique.set(account.clientMetaAssetId, account);
+      }
+    }
+    return [...unique.values()];
+  }, [clientRows]);
+
+  const syncCreativeLab = async () => {
+    if (bulkCreativeSyncing || accountsNeedingCreativeDepth.length === 0) return;
+
+    setBulkCreativeSyncing(true);
+    setBulkCreativeProgress({ done: 0, total: accountsNeedingCreativeDepth.length });
+    setMediaSummaryError(null);
+    const failures: string[] = [];
+
+    for (let index = 0; index < accountsNeedingCreativeDepth.length; index += 1) {
+      const account = accountsNeedingCreativeDepth[index];
+      try {
+        const result = await syncMetaAsset({
+          clientMetaAssetId: account.clientMetaAssetId,
+          period: OFFICIAL_META_SYNC_PERIOD,
+          requestedLevel: 'creative',
+        });
+        if (result.status === 'failed') failures.push(`${account.accountName}: falha na sincronização.`);
+        if (result.status === 'running') failures.push(`${account.accountName}: já existe uma sincronização em andamento.`);
+      } catch (error) {
+        failures.push(`${account.accountName}: ${error instanceof Error ? error.message : 'falha na sincronização'}`);
+      } finally {
+        setBulkCreativeProgress({ done: index + 1, total: accountsNeedingCreativeDepth.length });
+      }
+    }
+
+    try {
+      const freshCatalog = await loadClientMetaAssetCatalog();
+      setCatalog(freshCatalog);
+      const freshMap = new Map(
+        (freshCatalog.clients || []).map((item) => [item.clientId, item.accounts] as const)
+      );
+
+      try {
+        const summaries = await loadCreativeLabClientMediaSummaries();
+        setMediaSummaries(summaries);
+        setMediaSummaryLoaded(true);
+      } catch {
+        const fallback = await loadCreativeLabClientMediaSummariesFromHierarchy(data, freshMap);
+        setMediaSummaries(fallback);
+        setMediaSummaryLoaded(true);
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : 'Não foi possível atualizar o catálogo após a sincronização.');
+    } finally {
+      setBulkCreativeSyncing(false);
+      if (failures.length > 0) {
+        setMediaSummaryError(failures.join(' '));
+      }
+    }
+  };
 
   const selectedClient = useMemo(
     () => clientRows.find((row) => row.client.id === selectedClientId) || null,
@@ -719,14 +782,29 @@ export function CreativeCriticView({ data }: Props) {
   return (
     <div className="min-h-full bg-brand-ink p-4 text-white sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <header>
-          <div className="flex items-center gap-2">
-            <Sparkles className="text-brand-green" size={22} />
-            <h1 className="text-2xl font-black sm:text-3xl">Laboratório de Criativos</h1>
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="text-brand-green" size={22} />
+              <h1 className="text-2xl font-black sm:text-3xl">Laboratório de Criativos</h1>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-muted">
+              Comece pelo cliente. O CAMPLY usa a base persistida do Analytics para relacionar campanhas, anúncios, criativos e resultados.
+            </p>
           </div>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-muted">
-            Comece pelo cliente. O CAMPLY separa cliente ativo de mídia realmente ativa e usa a mesma base de métricas do Analytics para encontrar os melhores criativos.
-          </p>
+          <button
+            type="button"
+            onClick={() => void syncCreativeLab()}
+            disabled={bulkCreativeSyncing || catalogLoading || accountsNeedingCreativeDepth.length === 0}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-xs font-black text-brand-ink transition disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={bulkCreativeSyncing ? 'animate-spin' : ''} />
+            {bulkCreativeSyncing
+              ? `Sincronizando ${bulkCreativeProgress.done}/${bulkCreativeProgress.total}`
+              : accountsNeedingCreativeDepth.length > 0
+                ? `Sincronizar laboratório (${accountsNeedingCreativeDepth.length})`
+                : 'Laboratório sincronizado'}
+          </button>
         </header>
 
         {catalogError && (
@@ -792,7 +870,7 @@ export function CreativeCriticView({ data }: Props) {
         )}
 
         <p className="text-xs text-brand-muted">
-          O Lab lista somente clientes operacionalmente ativos. “Estrutura ativa” significa que campanhas e conjuntos estão ativos, mas o nível de anúncio ainda não foi aprofundado; ao abrir o cliente, o CAMPLY sincroniza anúncios e criativos daquele vínculo.
+          O Lab lista somente clientes operacionalmente ativos. Quando houver “Estrutura ativa”, use “Sincronizar laboratório” para aprofundar as contas até anúncio/criativo; depois disso o status passa a refletir a mídia real.
         </p>
       </div>
     </div>
