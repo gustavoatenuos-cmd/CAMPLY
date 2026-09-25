@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
 import type { CamplyData, CreativeCriticResponse } from '../types';
 import { invokeFunction } from '../lib/invokeFunction';
 import {
+  accountHasCreativeDepth,
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
   loadCreativeLabClientMediaSummaries,
@@ -35,6 +36,7 @@ import {
   loadClientMetaAssetCatalog,
   type ClientMetaAssetCatalog,
 } from '../lib/meta/clientMetaAssetService';
+import { OFFICIAL_META_SYNC_PERIOD, syncMetaAsset } from '../lib/meta/metaSyncService';
 
 interface Props {
   data: CamplyData;
@@ -48,6 +50,11 @@ const clientStateCopy: Record<CreativeLabClientState, { label: string; className
     label: 'Mídia ativa',
     className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
     dot: 'bg-emerald-400',
+  },
+  active_structure: {
+    label: 'Estrutura ativa',
+    className: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+    dot: 'bg-sky-400',
   },
   no_active_media: {
     label: 'Sem mídia ativa',
@@ -77,14 +84,16 @@ function number(value: number | null, suffix = ''): string {
 
 function stateIcon(state: CreativeLabClientState) {
   if (state === 'active_media') return Activity;
+  if (state === 'active_structure') return Layers3;
   if (state === 'no_active_media') return PauseCircle;
   return AlertTriangle;
 }
 
 function stateOrder(state: CreativeLabClientState): number {
   if (state === 'active_media') return 0;
-  if (state === 'no_active_media') return 1;
-  return 2;
+  if (state === 'active_structure') return 1;
+  if (state === 'no_active_media') return 2;
+  return 3;
 }
 
 function objectiveLabel(value: string | null): string {
@@ -258,6 +267,10 @@ export function CreativeCriticView({ data }: Props) {
   const [creativeFilter, setCreativeFilter] = useState<CreativeFilter>('all');
   const [labResult, setLabResult] = useState<CreativeLabClientResult | null>(null);
   const [labLoading, setLabLoading] = useState(false);
+  const [labSyncing, setLabSyncing] = useState(false);
+  const [labSyncNote, setLabSyncNote] = useState<string | null>(null);
+  const [labRefreshKey, setLabRefreshKey] = useState(0);
+  const deepSyncedClientIdsRef = useRef<Set<string>>(new Set());
   const [selectedCreative, setSelectedCreative] = useState<CreativeLabCreative | null>(null);
   const [analysis, setAnalysis] = useState<CreativeCriticResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -290,7 +303,7 @@ export function CreativeCriticView({ data }: Props) {
             if (!active) return;
             setMediaSummaries(fallback);
             setMediaSummaryLoaded(true);
-            setMediaSummaryError('O resumo dedicado do Lab não respondeu; usando a hierarquia oficial da Meta como fallback.');
+            setMediaSummaryError(null);
           } catch (fallbackError) {
             if (!active) return;
             setMediaSummaries([]);
@@ -352,23 +365,109 @@ export function CreativeCriticView({ data }: Props) {
   useEffect(() => {
     if (!selectedClient) {
       setLabResult(null);
+      setLabSyncNote(null);
       return;
     }
+
     let active = true;
     setLabLoading(true);
     setLabResult(null);
     setSelectedCreative(null);
     setAnalysis(null);
     setAnalysisError(null);
-    loadCreativeLabForClient(selectedClient.accounts, period)
-      .then((result) => {
-        if (active) setLabResult(result);
+    setLabSyncNote(null);
+
+    void (async () => {
+      let accounts = selectedClient.accounts;
+      const clientId = selectedClient.client.id;
+      const shouldDeepSync = !deepSyncedClientIdsRef.current.has(clientId)
+        && accounts.some((account) => !accountHasCreativeDepth(account));
+
+      if (shouldDeepSync && accounts.length > 0) {
+        setLabSyncing(true);
+        const warnings: string[] = [];
+
+        for (const account of accounts) {
+          try {
+            const result = await syncMetaAsset({
+              clientMetaAssetId: account.clientMetaAssetId,
+              period: OFFICIAL_META_SYNC_PERIOD,
+              requestedLevel: 'creative',
+            });
+            if (result.status === 'failed') {
+              warnings.push(`${account.accountName}: sincronização de criativos falhou.`);
+            } else if (result.status === 'running') {
+              warnings.push(`${account.accountName}: já existe uma sincronização em andamento.`);
+            }
+          } catch (error) {
+            warnings.push(`${account.accountName}: ${error instanceof Error ? error.message : 'falha ao aprofundar a sincronização'}`);
+          }
+        }
+
+        if (!active) return;
+        setLabSyncing(false);
+        deepSyncedClientIdsRef.current.add(clientId);
+        if (warnings.length > 0) setLabSyncNote(warnings.join(' '));
+
+        try {
+          const freshCatalog = await loadClientMetaAssetCatalog(clientId);
+          if (!active) return;
+          const freshAccounts = freshCatalog.clients.find((item) => item.clientId === clientId)?.accounts || accounts;
+          accounts = freshAccounts;
+
+          setCatalog((current) => {
+            if (!current) return freshCatalog;
+            const replacement = freshCatalog.clients.find((item) => item.clientId === clientId);
+            if (!replacement) return current;
+            return {
+              ...current,
+              clients: current.clients.map((item) => item.clientId === clientId ? replacement : item),
+            };
+          });
+
+          const refreshedSummary = await loadCreativeLabClientMediaSummariesFromHierarchy(
+            data,
+            new Map([[clientId, accounts]])
+          );
+          if (!active) return;
+          setMediaSummaries((current) => [
+            ...current.filter((item) => item.clientId !== clientId),
+            ...refreshedSummary,
+          ]);
+          setMediaSummaryLoaded(true);
+        } catch (error) {
+          if (!active) return;
+          setLabSyncNote((current) => current || (
+            error instanceof Error
+              ? error.message
+              : 'A sincronização terminou, mas o Lab não conseguiu atualizar o catálogo.'
+          ));
+        }
+      } else {
+        setLabSyncing(false);
+      }
+
+      const result = await loadCreativeLabForClient(accounts, period);
+      if (active) setLabResult(result);
+    })()
+      .catch((error) => {
+        if (!active) return;
+        setLabResult({
+          state: 'error',
+          creatives: [],
+          rawRows: [],
+          message: error instanceof Error ? error.message : 'Não foi possível montar o laboratório.',
+        });
       })
       .finally(() => {
-        if (active) setLabLoading(false);
+        if (active) {
+          setLabSyncing(false);
+          setLabLoading(false);
+        }
       });
+
     return () => { active = false; };
-  }, [selectedClient?.client.id, selectedClient?.accounts, period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedClient?.client.id, selectedClient?.accounts, period, labRefreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const creatives = labResult?.creatives || [];
   const visibleCreatives = useMemo(() => creatives.filter((creative) => {
@@ -470,7 +569,20 @@ export function CreativeCriticView({ data }: Props) {
                   Ranking baseado nas métricas persistidas do Analytics. A IA só interpreta depois que você abre um criativo.
                 </p>
               </div>
-              <div className="flex rounded-xl border border-brand-line bg-brand-surface p-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    deepSyncedClientIdsRef.current.delete(selectedClient.client.id);
+                    setLabRefreshKey((value) => value + 1);
+                  }}
+                  disabled={labLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-brand-line bg-brand-surface px-3 py-2 text-xs font-bold text-brand-muted transition hover:text-white disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={labSyncing ? 'animate-spin' : ''} />
+                  Atualizar criativos
+                </button>
+                <div className="flex rounded-xl border border-brand-line bg-brand-surface p-1">
                 {([
                   ['last_7d', '7 dias'],
                   ['last_30d', '30 dias'],
@@ -487,9 +599,16 @@ export function CreativeCriticView({ data }: Props) {
                     {label}
                   </button>
                 ))}
+                </div>
               </div>
             </div>
           </header>
+
+          {labSyncNote && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              {labSyncNote}
+            </div>
+          )}
 
           {selectedClient.accounts.length === 0 ? (
             <EmptyState
@@ -498,7 +617,14 @@ export function CreativeCriticView({ data }: Props) {
               description="Vincule a conta em Integração Meta para o laboratório usar os snapshots oficiais."
             />
           ) : labLoading ? (
-            <EmptyState icon={RefreshCw} spin title="Montando o laboratório" description="Carregando criativos e métricas verificadas do período..." />
+            <EmptyState
+              icon={RefreshCw}
+              spin
+              title={labSyncing ? 'Sincronizando anúncios e criativos' : 'Montando o laboratório'}
+              description={labSyncing
+                ? 'Aprofundando esta conta até o nível de anúncio/criativo. Isso acontece apenas para o cliente aberto.'
+                : 'Carregando criativos e métricas verificadas do período...'}
+            />
           ) : labResult?.state !== 'ready' ? (
             <EmptyState
               icon={AlertTriangle}
@@ -585,6 +711,7 @@ export function CreativeCriticView({ data }: Props) {
   const counts = {
     all: clientRows.length,
     active_media: clientRows.filter((row) => row.state === 'active_media').length,
+    active_structure: clientRows.filter((row) => row.state === 'active_structure').length,
     no_active_media: clientRows.filter((row) => row.state === 'no_active_media').length,
     data_unavailable: clientRows.filter((row) => row.state === 'data_unavailable').length,
   };
@@ -630,6 +757,7 @@ export function CreativeCriticView({ data }: Props) {
             {([
               ['all', 'Todos'],
               ['active_media', 'Mídia ativa'],
+              ['active_structure', 'Estrutura ativa'],
               ['no_active_media', 'Sem mídia ativa'],
               ['data_unavailable', 'Dados pendentes'],
             ] as Array<[ClientFilter, string]>).map(([value, label]) => (
@@ -664,7 +792,7 @@ export function CreativeCriticView({ data }: Props) {
         )}
 
         <p className="text-xs text-brand-muted">
-          O Lab lista somente clientes operacionalmente ativos. “Mídia ativa” exige campanha, conjunto e anúncio em estrutura ativa na última sincronização; falha de leitura da Meta aparece como dado indisponível, nunca como zero.
+          O Lab lista somente clientes operacionalmente ativos. “Estrutura ativa” significa que campanhas e conjuntos estão ativos, mas o nível de anúncio ainda não foi aprofundado; ao abrir o cliente, o CAMPLY sincroniza anúncios e criativos daquele vínculo.
         </p>
       </div>
     </div>
