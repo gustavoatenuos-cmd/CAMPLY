@@ -13,6 +13,7 @@ DECLARE
   v_h JSONB;
   v_m JSONB;
   v_lab JSONB;
+  v_lab_dashboard JSONB;
   v_lab_summary JSONB;
 BEGIN
   INSERT INTO auth.users (id, email, raw_user_meta_data)
@@ -225,6 +226,36 @@ BEGIN
      OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab(UUID,TEXT,INTEGER,INTEGER)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'creative lab RPC privileges are wrong';
+  END IF;
+
+  -- The backend engine must aggregate/classify the same official rows before
+  -- they reach the browser. With one eligible creative, it is the best
+  -- creative and receives the neutral single-peer score of 50.
+  v_lab_dashboard := public.get_meta_creative_lab_dashboard(ARRAY[v_link], 'last_30d', false);
+  IF v_lab_dashboard->>'state' <> 'ready'
+     OR (v_lab_dashboard->>'total')::int <> 1
+     OR v_lab_dashboard->'items'->0->>'creativeId' <> 'creative_sales'
+     OR v_lab_dashboard->'items'->0->>'performanceFlag' <> 'best'
+     OR (v_lab_dashboard->'items'->0->>'performanceScore')::int <> 50
+     OR v_lab_dashboard->'items'->0->>'resultLabel' <> 'Compras'
+     OR (v_lab_dashboard->'items'->0->>'resultValue')::numeric <> 2
+     OR (v_lab_dashboard->'items'->0->>'spend')::numeric <> 10
+     OR v_lab_dashboard->>'cache' <> 'miss'
+  THEN
+    RAISE EXCEPTION 'creative lab backend engine is wrong: %', v_lab_dashboard;
+  END IF;
+
+  v_lab_dashboard := public.get_meta_creative_lab_dashboard(ARRAY[v_link], 'last_30d', false);
+  IF v_lab_dashboard->>'cache' <> 'hit'
+     OR v_lab_dashboard->'items'->0->>'performanceFlag' <> 'best'
+  THEN
+    RAISE EXCEPTION 'creative lab backend cache is wrong: %', v_lab_dashboard;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_meta_creative_lab_dashboard(UUID[],TEXT,BOOLEAN)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_meta_creative_lab_dashboard(UUID[],TEXT,BOOLEAN)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'creative lab dashboard RPC privileges are wrong';
   END IF;
 
   v_lab_summary := public.get_meta_creative_lab_account_summary();

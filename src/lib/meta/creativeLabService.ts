@@ -77,6 +77,15 @@ interface CreativeLabRpcResponse {
   dateStop?: string | null;
 }
 
+interface CreativeLabDashboardRpcResponse {
+  state: 'ready' | 'empty' | 'period_not_synced' | 'unauthorized';
+  items: CreativeLabCreative[];
+  total: number;
+  counts?: Record<string, number>;
+  runKey?: string;
+  cache?: 'hit' | 'miss';
+}
+
 export interface CreativeLabAdDetail {
   adId: string;
   adName: string;
@@ -970,25 +979,87 @@ async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPe
   return { state, rows };
 }
 
+export async function loadCreativeLabCreativeRows(
+  accounts: ClientMetaAccount[],
+  period: CreativeLabPeriod,
+  creativeKey: string
+): Promise<CreativeLabRawRow[]> {
+  const account = accounts.find((item) => creativeKey.startsWith(`${item.adAccountId}:`));
+  if (!account) return [];
+
+  const result = await loadAccountRows(account, period);
+  if (result.state !== 'ready') return [];
+  return result.rows.filter((row) => `${row.accountId}:${row.creativeId}` === creativeKey);
+}
+
 export async function loadCreativeLabForClient(
   accounts: ClientMetaAccount[],
   period: CreativeLabPeriod
 ): Promise<CreativeLabClientResult> {
-  if (accounts.length === 0) return { state: 'empty', creatives: [], rawRows: [], message: 'Nenhuma conta Meta vinculada.' };
+  if (accounts.length === 0) {
+    return { state: 'empty', creatives: [], rawRows: [], message: 'Nenhuma conta Meta vinculada.' };
+  }
 
   try {
-    const accountResults = await Promise.all(accounts.map((account) => loadAccountRows(account, period)));
-    const rawRows = accountResults.flatMap((result) => result.rows);
-    if (rawRows.length > 0) {
-      return { state: 'ready', rawRows, creatives: aggregateCreativeLabRows(rawRows) };
+    // Browser E2E keeps its deterministic local fixture. Production uses the
+    // backend engine below and never aggregates/classifies creative performance
+    // in the browser.
+    if (isMetaE2EMode) {
+      const accountResults = await Promise.all(accounts.map((account) => loadAccountRows(account, period)));
+      const rawRows = accountResults.flatMap((result) => result.rows);
+      return rawRows.length > 0
+        ? { state: 'ready', rawRows, creatives: aggregateCreativeLabRows(rawRows) }
+        : { state: 'empty', rawRows: [], creatives: [], message: 'Nenhum criativo sincronizado para este cliente no período.' };
     }
-    if (accountResults.some((result) => result.state === 'period_not_synced')) {
-      return { state: 'period_not_synced', rawRows: [], creatives: [], message: 'Esse período ainda não está disponível na sincronização Meta.' };
+
+    if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
+
+    const { data, error } = await supabase.rpc('get_meta_creative_lab_dashboard', {
+      p_client_meta_asset_ids: accounts.map((account) => account.clientMetaAssetId),
+      p_period: period,
+      p_force_refresh: false,
+    });
+
+    if (error) {
+      console.error('[CreativeLab] Falha no motor backend do laboratório.', error);
+      throw new Error(`Motor do Lab indisponível: ${error.message}`);
     }
-    if (accountResults.some((result) => result.state === 'unauthorized')) {
-      return { state: 'unauthorized', rawRows: [], creatives: [], message: 'Sem permissão para acessar uma das contas Meta vinculadas.' };
+
+    const response = data as unknown as CreativeLabDashboardRpcResponse;
+    const state = response?.state || 'empty';
+
+    if (state === 'ready' && Array.isArray(response.items)) {
+      return {
+        state: 'ready',
+        creatives: response.items,
+        rawRows: [],
+      };
     }
-    return { state: 'empty', rawRows: [], creatives: [], message: 'Nenhum criativo sincronizado para este cliente no período.' };
+
+    if (state === 'period_not_synced') {
+      return {
+        state,
+        creatives: [],
+        rawRows: [],
+        message: 'Esse período ainda não está disponível na sincronização Meta.',
+      };
+    }
+
+    if (state === 'unauthorized') {
+      return {
+        state,
+        creatives: [],
+        rawRows: [],
+        message: 'Sem permissão para acessar uma das contas Meta vinculadas.',
+      };
+    }
+
+    return {
+      state: 'empty',
+      creatives: [],
+      rawRows: [],
+      message: 'Nenhum criativo sincronizado para este cliente no período.',
+    };
   } catch (error) {
     return {
       state: 'error',
