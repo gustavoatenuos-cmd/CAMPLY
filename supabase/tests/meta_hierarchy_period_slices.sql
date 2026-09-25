@@ -7,6 +7,7 @@ DECLARE
   v_integration UUID := '20000000-0000-0000-0000-000000000902';
   v_asset UUID := '20000000-0000-0000-0000-000000000903';
   v_run UUID := '20000000-0000-0000-0000-000000000904';
+  v_partial_run UUID := '20000000-0000-0000-0000-000000000905';
   v_link UUID;
   v_today DATE := (timezone('America/Sao_Paulo', now()))::date;
   v_h JSONB;
@@ -232,6 +233,8 @@ BEGIN
      OR (v_lab_summary->'items'->0->>'activeCampaigns')::int <> 2
      OR (v_lab_summary->'items'->0->>'activeAdSets')::int <> 1
      OR (v_lab_summary->'items'->0->>'activeAds')::int <> 1
+     OR COALESCE((v_lab_summary->'items'->0->>'dataAvailable')::boolean, false) IS NOT TRUE
+     OR COALESCE((v_lab_summary->'items'->0->>'adDataAvailable')::boolean, false) IS NOT TRUE
      OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT TRUE
   THEN
     RAISE EXCEPTION 'creative lab account summary is wrong: %', v_lab_summary;
@@ -254,6 +257,50 @@ BEGIN
      OR has_function_privilege('anon', 'public.get_hierarchy_entity_metrics(DATE, DATE, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'Internal metric helpers must not be callable by clients';
+  END IF;
+
+  -- A newer partial creative run may persist campaigns/ad sets before failing
+  -- at ad depth. It must not turn the missing ad snapshot into a verified zero.
+  INSERT INTO public.meta_sync_runs (
+    id, user_id, integration_id, ad_account_id, graph_api_version,
+    requested_period, requested_level, run_scope, request_fingerprint,
+    status, started_at, finished_at, termination_reason, currency, timezone,
+    date_start, date_stop
+  ) VALUES (
+    v_partial_run, v_user, v_integration, 'act_slices', 'v23.0',
+    'last_90d', 'creative', 'full_account', 'hierarchy-slices-partial',
+    'partial', now() + interval '1 minute', now() + interval '2 minutes', 'timeout', 'BRL', 'America/Sao_Paulo',
+    v_today - 89, v_today
+  );
+
+  INSERT INTO public.meta_campaign_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    campaign_name, raw_objective, classified_objective, meta_status, effective_status
+  ) VALUES (
+    v_partial_run, v_user, v_integration, 'act_slices', 'camp_partial',
+    'Campanha parcial', 'OUTCOME_SALES', 'SALES', 'ACTIVE', 'ACTIVE'
+  );
+
+  INSERT INTO public.meta_adset_snapshots (
+    sync_run_id, user_id, integration_id, ad_account_id, campaign_id,
+    adset_id, adset_name, optimization_goal, destination_type,
+    promoted_object, attribution_setting, meta_status, effective_status
+  ) VALUES (
+    v_partial_run, v_user, v_integration, 'act_slices', 'camp_partial',
+    'set_partial', 'Conjunto parcial', 'OFFSITE_CONVERSIONS', 'WEBSITE',
+    '{}'::jsonb, '7d_click_1d_view', 'ACTIVE', 'ACTIVE'
+  );
+
+  v_lab_summary := public.get_meta_creative_lab_account_summary();
+  IF v_lab_summary->>'state' <> 'ready'
+     OR COALESCE((v_lab_summary->'items'->0->>'dataAvailable')::boolean, false) IS NOT TRUE
+     OR COALESCE((v_lab_summary->'items'->0->>'adDataAvailable')::boolean, true) IS NOT FALSE
+     OR (v_lab_summary->'items'->0->>'activeCampaigns')::int <> 1
+     OR (v_lab_summary->'items'->0->>'activeAdSets')::int <> 1
+     OR (v_lab_summary->'items'->0->>'activeAds')::int <> 0
+     OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT FALSE
+  THEN
+    RAISE EXCEPTION 'partial creative run without ad snapshots must stay unverified: %', v_lab_summary;
   END IF;
 END;
 $$;
