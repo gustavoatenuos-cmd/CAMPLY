@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CamplyData } from '../../types';
 import {
+  accountHasCreativeDepth,
   aggregateCreativeLabRows,
   buildCreativeLabClientRows,
   type CreativeLabRawRow,
@@ -181,6 +182,32 @@ describe('creative lab client state', () => {
     });
   });
 
+  it('keeps active ad sets as active structure until ad depth has been synchronized', () => {
+    const data = baseData();
+    data.campaigns = [];
+    const official = new Map([['client-1', [{
+      clientId: 'client-1',
+      clientMetaAssetId: 'link-1',
+      accountId: 'act_1',
+      accountName: 'Conta',
+      activeCampaigns: 3,
+      activeAdSets: 4,
+      activeAds: 0,
+      hasActiveMedia: false,
+      lastSyncedAt: '2026-09-24T18:00:00Z',
+      dataAvailable: true,
+      adDataAvailable: false,
+    }]]]);
+
+    expect(buildCreativeLabClientRows(data, new Map(), official)[0]).toMatchObject({
+      state: 'active_structure',
+      activeCampaigns: 3,
+      activeAdSets: 4,
+      activeAds: null,
+      creativeDepthAvailable: false,
+    });
+  });
+
   it('prefers the official synced Meta structure over the workspace fallback', () => {
     const data = baseData();
     data.campaigns[0].activeAdSets![0].status = 'ACTIVE';
@@ -204,6 +231,53 @@ describe('creative lab client state', () => {
       activeAdSets: 0,
       activeAds: 0,
     });
+  });
+});
+
+describe('creative lab sync depth', () => {
+  const account = {
+    clientMetaAssetId: 'link-1',
+    metaAssetId: 'asset-1',
+    integrationId: 'integration-1',
+    adAccountId: 'act_1',
+    accountName: 'Conta',
+    currency: 'BRL',
+    timezone: 'America/Sao_Paulo',
+    assetStatus: 'ACTIVE',
+    linkedAt: '2026-09-24T18:00:00Z',
+    availablePeriods: ['last_90d'],
+    lastAttempt: null,
+    lastSuccess: null,
+  };
+
+  it('requires a deep sync after a campaign-level run', () => {
+    expect(accountHasCreativeDepth({
+      ...account,
+      lastSuccess: {
+        id: 'run-1',
+        period: 'last_90d',
+        level: 'campaign',
+        scope: 'full_account',
+        startedAt: '2026-09-24T18:00:00Z',
+        finishedAt: '2026-09-24T18:01:00Z',
+      },
+    })).toBe(false);
+  });
+
+  it('accepts ad or creative level as enough depth for the lab', () => {
+    for (const level of ['ad', 'creative']) {
+      expect(accountHasCreativeDepth({
+        ...account,
+        lastSuccess: {
+          id: 'run-1',
+          period: 'last_90d',
+          level,
+          scope: 'full_account',
+          startedAt: '2026-09-24T18:00:00Z',
+          finishedAt: '2026-09-24T18:01:00Z',
+        },
+      })).toBe(true);
+    }
   });
 });
 
