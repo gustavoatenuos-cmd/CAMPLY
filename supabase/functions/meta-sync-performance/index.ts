@@ -48,6 +48,7 @@ interface SyncRequestBody {
   };
   requestedLevel?: string;
   requested_level?: string;
+  refreshMode?: 'official' | 'fresh';
 }
 
 interface MetaCampaign {
@@ -102,7 +103,7 @@ interface OwnedClientMetaAsset {
 }
 
 const METRIC_DEFINITION_VERSION = '2026-07-01.1';
-const COLLECTION_CONTRACT_VERSION = '2026-09-25.1';
+const COLLECTION_CONTRACT_VERSION = '2026-09-25.2';
 const OFFICIAL_SYNC_PERIOD = 'last_90d';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
@@ -705,7 +706,8 @@ export async function handleRequest(req: Request) {
       );
     }
 
-    const periods = [OFFICIAL_SYNC_PERIOD];
+    const refreshMode = body.refreshMode === 'fresh' ? 'fresh' : 'official';
+    const periods = [refreshMode === 'fresh' ? 'today' : OFFICIAL_SYNC_PERIOD];
       
     const validPeriods = ['today', 'yesterday', 'this_week', 'this_month', 'last_month', 'this_quarter', 'maximum', 'last_3d', 'last_7d', 'last_14d', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year'];
     for (const p of periods) {
@@ -782,6 +784,7 @@ export async function handleRequest(req: Request) {
       adAccountId,
       requestedLevel,
       periods,
+      refreshMode,
       officialSyncPeriod: OFFICIAL_SYNC_PERIOD,
       timeIncrement: 1,
       runScope,
@@ -828,6 +831,7 @@ export async function handleRequest(req: Request) {
         collection_contract_version: COLLECTION_CONTRACT_VERSION,
         request_fingerprint: requestFingerprint,
         requested_level: requestedLevel,
+        refresh_mode: refreshMode,
         selected_entity_ids: selectedEntityIds,
       },
     });
@@ -1663,6 +1667,7 @@ export async function handleRequest(req: Request) {
         metaAssetId: resolvedMetaAssetId,
         adAccountId,
         periods,
+        refreshMode,
         timezone: timezone === 'UNKNOWN' ? null : timezone,
         currency: currency === 'UNKNOWN' ? null : currency,
         requestedLevel,
@@ -1678,15 +1683,15 @@ export async function handleRequest(req: Request) {
     const collectedRanges = p_normalized_metrics
       .filter((metric) => metric.source_level === 'account' && metric.date_start && metric.date_stop)
       .sort((left, right) => String(left.date_start).localeCompare(String(right.date_start)));
-    const officialRangeDiagnostics = rangeDiagnosticsByPeriod[OFFICIAL_SYNC_PERIOD] || {};
-    const officialDateStart = typeof officialRangeDiagnostics.expectedDateStart === 'string'
-      ? officialRangeDiagnostics.expectedDateStart
+    const requestedRangeDiagnostics = rangeDiagnosticsByPeriod[periods[0]] || {};
+    const requestedDateStart = typeof requestedRangeDiagnostics.expectedDateStart === 'string'
+      ? requestedRangeDiagnostics.expectedDateStart
       : null;
-    const officialDateStop = typeof officialRangeDiagnostics.expectedDateStop === 'string'
-      ? officialRangeDiagnostics.expectedDateStop
+    const requestedDateStop = typeof requestedRangeDiagnostics.expectedDateStop === 'string'
+      ? requestedRangeDiagnostics.expectedDateStop
       : null;
-    const dateStart = officialDateStart || collectedRanges[0]?.date_start || null;
-    const dateStop = officialDateStop || collectedRanges[collectedRanges.length - 1]?.date_stop || null;
+    const dateStart = requestedDateStart || collectedRanges[0]?.date_start || null;
+    const dateStop = requestedDateStop || collectedRanges[collectedRanges.length - 1]?.date_stop || null;
     const { error: contextError } = await supabaseClient.from('meta_sync_runs').update({
       date_start: dateStart,
       date_stop: dateStop,
