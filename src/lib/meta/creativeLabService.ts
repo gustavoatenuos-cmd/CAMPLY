@@ -8,6 +8,8 @@ import { loadMetaHierarchy, type MetaHierarchyItem, type MetaHierarchyPage } fro
 
 export type CreativeLabPeriod = Extract<DashboardPeriod, 'last_7d' | 'last_30d' | 'last_90d'>;
 export type CreativeLabClientState = 'active_media' | 'active_structure' | 'no_active_media' | 'data_unavailable';
+export type CreativePerformanceBand = 'strong' | 'average' | 'watch' | 'no_result' | 'insufficient';
+export type CreativePerformanceFlag = 'best' | 'worst' | null;
 
 export interface CreativeLabClientMediaSummary {
   clientId: string;
@@ -105,6 +107,7 @@ export interface CreativeLabCreative {
   adsets: string[];
   spend: number;
   impressions: number;
+  reach: number;
   linkClicks: number;
   landingPageViews: number;
   conversations: number;
@@ -120,6 +123,11 @@ export interface CreativeLabCreative {
   costLabel: string;
   costPerResult: number | null;
   rankScore: number;
+  performanceScore: number | null;
+  performanceBand: CreativePerformanceBand;
+  performanceFlag: CreativePerformanceFlag;
+  performanceReason: string;
+  evaluationThresholdSpend: number | null;
   ads: CreativeLabAdDetail[];
 }
 
@@ -452,6 +460,223 @@ function resultContract(objective: string | null, values: {
   };
 }
 
+
+function median(values: number[]): number | null {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+}
+
+function percentileScore(value: number | null, values: number[], higherIsBetter: boolean): number {
+  if (value === null || !Number.isFinite(value)) return 0;
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return 50;
+
+  const matchingIndexes = sorted
+    .map((item, index) => item === value ? index : -1)
+    .filter((index) => index >= 0);
+  const nearestIndex = matchingIndexes.length > 0
+    ? matchingIndexes.reduce((sum, index) => sum + index, 0) / matchingIndexes.length
+    : sorted.findIndex((item) => item >= value);
+  const normalizedIndex = nearestIndex < 0 ? sorted.length - 1 : nearestIndex;
+  const percentile = (normalizedIndex / (sorted.length - 1)) * 100;
+  return higherIsBetter ? percentile : 100 - percentile;
+}
+
+function performanceGroupKey(creative: CreativeLabCreative): string {
+  return [
+    creative.currency || 'BRL',
+    creative.resultLabel,
+    creative.costLabel,
+  ].join('|');
+}
+
+function deliveryEfficiency(creative: CreativeLabCreative): number | null {
+  if (creative.spend <= 0) return null;
+  const delivery = creative.reach > 0 ? creative.reach : creative.impressions;
+  return delivery > 0 ? delivery / creative.spend : null;
+}
+
+function performanceMoney(value: number, currency: string | null): string {
+  try {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: currency || 'BRL',
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  }
+}
+
+export function classifyCreativePerformance(creatives: CreativeLabCreative[]): CreativeLabCreative[] {
+  const byKey = new Map(creatives.map((creative) => [creative.key, {
+    ...creative,
+    performanceScore: null,
+    performanceBand: 'insufficient' as CreativePerformanceBand,
+    performanceFlag: null as CreativePerformanceFlag,
+    performanceReason: 'Ainda não há entrega suficiente para classificar este criativo.',
+    evaluationThresholdSpend: null,
+  }]));
+
+  const groups = new Map<string, CreativeLabCreative[]>();
+  for (const creative of creatives) {
+    const key = performanceGroupKey(creative);
+    const group = groups.get(key) || [];
+    group.push(creative);
+    groups.set(key, group);
+  }
+
+  for (const group of groups.values()) {
+    const delivered = group.filter((creative) => creative.spend > 0 && creative.impressions > 0);
+    const resultCosts = delivered
+      .filter((creative) => creative.resultValue > 0 && creative.costPerResult !== null && creative.costPerResult > 0)
+      .map((creative) => creative.costPerResult as number);
+    const spendValues = delivered.map((creative) => creative.spend).filter((value) => value > 0);
+    const threshold = Math.max(
+      resultCosts.length > 0 ? median(resultCosts) || 0 : median(spendValues) || 0,
+      0.01
+    );
+
+    const cpmValues = delivered.map((creative) => creative.cpm).filter((value): value is number => value !== null && value > 0);
+    const ctrValues = delivered.map((creative) => creative.ctr).filter((value): value is number => value !== null && value >= 0);
+    const deliveryValues = delivered
+      .map(deliveryEfficiency)
+      .filter((value): value is number => value !== null && value > 0);
+
+    for (const creative of group) {
+      const current = byKey.get(creative.key);
+      if (!current) continue;
+
+      current.evaluationThresholdSpend = threshold;
+
+      if (creative.spend <= 0 || (creative.resultValue === 0 && creative.impressions < 100)) {
+        current.performanceBand = 'insufficient';
+        current.performanceReason = creative.spend <= 0
+          ? 'Sem investimento no período; o CAMPLY não classifica sem entrega.'
+          : 'Volume de entrega ainda muito baixo para validar ou invalidar este criativo.';
+        continue;
+      }
+
+      if (creative.resultValue === 0 && creative.spend < threshold) {
+        current.performanceBand = 'watch';
+        current.performanceReason = `Sem resultado até agora, mas ainda abaixo da faixa mínima de avaliação (${performanceMoney(threshold, creative.currency)}).`;
+        continue;
+      }
+
+      const primaryScore = creative.resultValue > 0
+        ? percentileScore(creative.costPerResult, resultCosts, false)
+        : 0;
+      const cpmScore = percentileScore(creative.cpm, cpmValues, false);
+      const deliveryScore = percentileScore(deliveryEfficiency(creative), deliveryValues, true);
+      const ctrScore = percentileScore(creative.ctr, ctrValues, true);
+      const score = Math.round(
+        (primaryScore * 0.55)
+        + (cpmScore * 0.20)
+        + (deliveryScore * 0.15)
+        + (ctrScore * 0.10)
+      );
+
+      current.performanceScore = Math.max(0, Math.min(100, score));
+
+      if (creative.resultValue === 0) {
+        current.performanceBand = 'no_result';
+        current.performanceReason = 'Atingiu a faixa mínima de avaliação sem gerar o resultado principal do objetivo.';
+      } else if (score >= 70) {
+        current.performanceBand = 'strong';
+        current.performanceReason = 'Custo por resultado e eficiência de entrega acima da faixa central dos criativos comparáveis.';
+      } else if (score >= 45) {
+        current.performanceBand = 'average';
+        current.performanceReason = 'Desempenho próximo da faixa central dos criativos comparáveis no período.';
+      } else {
+        current.performanceBand = 'watch';
+        current.performanceReason = 'Tem resultado, mas custo e eficiência de entrega estão abaixo dos pares do período.';
+      }
+    }
+  }
+
+  const assessed = [...byKey.values()];
+  const best = assessed
+    .filter((creative) => creative.resultValue > 0 && creative.performanceScore !== null)
+    .sort((a, b) =>
+      (b.performanceScore || 0) - (a.performanceScore || 0)
+      || (a.costPerResult ?? Number.POSITIVE_INFINITY) - (b.costPerResult ?? Number.POSITIVE_INFINITY)
+      || b.resultValue - a.resultValue
+    )[0];
+
+  if (best) {
+    best.performanceFlag = 'best';
+    const peers = assessed.filter((creative) =>
+      performanceGroupKey(creative) === performanceGroupKey(best)
+      && creative.resultValue > 0
+      && creative.costPerResult !== null
+      && creative.costPerResult > 0
+    );
+    const peerMedian = median(peers.map((creative) => creative.costPerResult as number));
+    if (peerMedian && best.costPerResult && best.costPerResult < peerMedian) {
+      const improvement = Math.round(((peerMedian - best.costPerResult) / peerMedian) * 100);
+      best.performanceReason = `Melhor combinação do período: ${best.costLabel.toLowerCase()} ${improvement}% menor que a mediana, com CPM e entrega considerados no score.`;
+    } else {
+      best.performanceReason = 'Melhor combinação de custo por resultado, CPM, eficiência de alcance/entrega e CTR no período.';
+    }
+  }
+
+  const noResultCandidates = assessed
+    .filter((creative) => creative.performanceBand === 'no_result' && creative.spend > 0)
+    .sort((a, b) => {
+      const aThreshold = Math.max(a.evaluationThresholdSpend || 0.01, 0.01);
+      const bThreshold = Math.max(b.evaluationThresholdSpend || 0.01, 0.01);
+      const aRatio = a.spend / aThreshold;
+      const bRatio = b.spend / bThreshold;
+      return bRatio - aRatio || b.spend - a.spend;
+    });
+
+  let worst = noResultCandidates[0];
+  if (!worst) {
+    const scoredResults = assessed
+      .filter((creative) => creative.resultValue > 0 && creative.performanceScore !== null)
+      .sort((a, b) => (a.performanceScore || 0) - (b.performanceScore || 0));
+    if (scoredResults.length >= 2) worst = scoredResults[0];
+  }
+
+  if (worst && worst.key !== best?.key) {
+    worst.performanceFlag = 'worst';
+    if (worst.resultValue === 0) {
+      const threshold = Math.max(worst.evaluationThresholdSpend || 0.01, 0.01);
+      const ratio = worst.spend / threshold;
+      worst.performanceReason = `Sem ${worst.resultLabel.toLowerCase()} após investir ${ratio.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}x a faixa mínima de avaliação.`;
+    } else {
+      worst.performanceReason = 'Menor score entre os criativos com resultado, considerando custo, CPM, eficiência de entrega e CTR.';
+    }
+  }
+
+  const bandOrder: Record<CreativePerformanceBand, number> = {
+    strong: 0,
+    average: 1,
+    watch: 2,
+    no_result: 3,
+    insufficient: 4,
+  };
+
+  return assessed.sort((a, b) => {
+    if (a.performanceFlag === 'best' && b.performanceFlag !== 'best') return -1;
+    if (b.performanceFlag === 'best' && a.performanceFlag !== 'best') return 1;
+    if (a.performanceFlag === 'worst' && b.performanceFlag !== 'worst') return 1;
+    if (b.performanceFlag === 'worst' && a.performanceFlag !== 'worst') return -1;
+    if (bandOrder[a.performanceBand] !== bandOrder[b.performanceBand]) {
+      return bandOrder[a.performanceBand] - bandOrder[b.performanceBand];
+    }
+    if (a.performanceScore !== null || b.performanceScore !== null) {
+      return (b.performanceScore ?? -1) - (a.performanceScore ?? -1);
+    }
+    return b.spend - a.spend;
+  });
+}
+
 export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLabCreative[] {
   const groups = new Map<string, CreativeLabRawRow[]>();
   for (const row of rows) {
@@ -466,6 +691,7 @@ export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLab
     const first = creativeRows[0];
     const spend = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'spend'), 0);
     const impressions = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'impressions'), 0);
+    const reach = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'reach'), 0);
     const linkClicks = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'link_clicks'), 0);
     const landingPageViews = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'landing_page_views'), 0);
     const conversations = creativeRows.reduce((sum, row) => sum + metricValue(row.metrics, 'messaging_conversations_started_total'), 0);
@@ -498,6 +724,7 @@ export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLab
       adsets: [...new Set(creativeRows.map((row) => row.adsetName).filter((value): value is string => Boolean(value)))],
       spend,
       impressions,
+      reach,
       linkClicks,
       landingPageViews,
       conversations,
@@ -513,6 +740,11 @@ export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLab
       costLabel: contract.costLabel,
       costPerResult: contract.cost,
       rankScore: contract.score,
+      performanceScore: null,
+      performanceBand: 'insufficient',
+      performanceFlag: null,
+      performanceReason: 'Ainda não há entrega suficiente para classificar este criativo.',
+      evaluationThresholdSpend: null,
       ads: creativeRows.map((row) => ({
         adId: row.adId,
         adName: row.adName,
@@ -539,12 +771,7 @@ export function aggregateCreativeLabRows(rows: CreativeLabRawRow[]): CreativeLab
     });
   }
 
-  return creatives.sort((a, b) => {
-    if (a.spend === 0 && b.spend > 0) return 1;
-    if (b.spend === 0 && a.spend > 0) return -1;
-    if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
-    return b.spend - a.spend;
-  });
+  return classifyCreativePerformance(creatives);
 }
 
 
