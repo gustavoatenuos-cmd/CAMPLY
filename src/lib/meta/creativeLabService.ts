@@ -147,18 +147,31 @@ function hierarchyItemIsActive(item: Pick<MetaHierarchyItem, 'effectiveStatus' |
   return isMetaActive(item.effectiveStatus || item.status);
 }
 
+function runMatchesOfficialDepthContract(run: ClientMetaAccount['lastAttempt']): boolean {
+  if (!run) return false;
+  const level = String(run.level || '').toLowerCase();
+  return run.scope === 'full_account'
+    && run.period === 'last_90d'
+    && (level === 'ad' || level === 'creative');
+}
+
 export function accountHasCreativeDepth(account: ClientMetaAccount): boolean {
-  const candidates = [account.lastAttempt, account.lastSuccess];
-  return candidates.some((run) => {
-    if (!run) return false;
-    const level = String(run.level || '').toLowerCase();
-    const status = run.status;
-    const usableStatus = status === undefined || status === 'success' || status === 'partial';
-    return usableStatus
-      && run.scope === 'full_account'
-      && run.period === 'last_90d'
-      && (level === 'ad' || level === 'creative');
-  });
+  const attempt = account.lastAttempt;
+
+  // A partial deep request is only a request contract, not proof that ad rows
+  // were persisted. The official Lab summary can promote it after verifying
+  // meta_ad_snapshots. Until then, keep the account eligible for a deep sync.
+  if (attempt
+    && attempt.scope === 'full_account'
+    && attempt.period === 'last_90d'
+    && (attempt.status === 'success' || attempt.status === 'partial' || attempt.status === undefined)
+  ) {
+    return attempt.status !== 'partial' && runMatchesOfficialDepthContract(attempt);
+  }
+
+  const success = account.lastSuccess;
+  return runMatchesOfficialDepthContract(success)
+    && (success?.status === undefined || success.status === 'success');
 }
 
 async function loadAllHierarchyItems(input: {
@@ -327,8 +340,12 @@ export function buildCreativeLabClientRows(
     const fallbackCreativeDepthAvailable = campaigns.some((campaign) =>
       (campaign.activeAdSets || []).some((adset) => Array.isArray(adset.ads) && adset.ads.length > 0)
     );
+    const explicitAdAvailability = official.filter((item) => typeof item.adDataAvailable === 'boolean');
+    const catalogCreativeDepthAvailable = accounts.some(accountHasCreativeDepth);
     const creativeDepthAvailable = officialAvailable
-      ? official.some((item) => item.adDataAvailable !== false)
+      ? explicitAdAvailability.length > 0
+        ? explicitAdAvailability.some((item) => item.adDataAvailable === true)
+        : catalogCreativeDepthAvailable
       : fallbackCreativeDepthAvailable;
     const hasActiveMedia = officialAvailable
       ? creativeDepthAvailable && official.some((item) => item.hasActiveMedia)
@@ -556,7 +573,13 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
     throw new Error(`Resumo Meta indisponível: estado ${payload.state}.`);
   }
   return Array.isArray(payload?.items)
-    ? payload.items.map((item) => ({ ...item, dataAvailable: true, adDataAvailable: true }))
+    ? payload.items.map((item) => ({
+        ...item,
+        // Newer RPCs expose both flags explicitly. For older deployments,
+        // lastSyncedAt is the safest evidence that structural data exists.
+        dataAvailable: item.dataAvailable ?? Boolean(item.lastSyncedAt),
+        adDataAvailable: item.adDataAvailable,
+      }))
     : [];
 }
 
