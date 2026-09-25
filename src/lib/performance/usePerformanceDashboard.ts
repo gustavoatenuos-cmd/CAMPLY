@@ -3,6 +3,7 @@ import { loadGlobalPerformanceDashboard, type GlobalClientPerformance } from './
 import { loadAnalyticsCapabilities, type DashboardPeriod } from './analyticsCapabilities';
 import { isClientOperationallyActive } from '../../data/receivablesForecast';
 import type { CamplyData } from '../../types';
+import { META_FRESHNESS_UPDATED_EVENT } from '../meta/metaFreshnessService';
 
 export interface EnrichedGlobalClientPerformance extends GlobalClientPerformance {
   client?: any; // Replace with proper Client type if available
@@ -40,8 +41,8 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<EnrichedGlobalClientPerformance[]>([]);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const loadDashboard = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     setError(null);
     try {
       const capabilities = await loadAnalyticsCapabilities();
@@ -61,12 +62,20 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
       console.error('[usePerformanceDashboard] Erro ao carregar dashboard:', err);
       setError('Falha ao carregar métricas de performance.');
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   }, [period, workspaceData.clients]);
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const onFreshnessUpdated = () => {
+      void loadDashboard({ silent: true });
+    };
+    window.addEventListener(META_FRESHNESS_UPDATED_EVENT, onFreshnessUpdated);
+    return () => window.removeEventListener(META_FRESHNESS_UPDATED_EVENT, onFreshnessUpdated);
   }, [loadDashboard]);
 
   return {
@@ -75,6 +84,6 @@ export function usePerformanceDashboard(workspaceData: CamplyData, defaultPeriod
     error,
     period,
     setPeriod,
-    reload: loadDashboard,
+    reload: () => loadDashboard(),
   };
 }
