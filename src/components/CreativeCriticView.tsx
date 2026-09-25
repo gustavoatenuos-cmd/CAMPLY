@@ -898,7 +898,7 @@ export function CreativeCriticView({ data }: Props) {
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div>
-                      <h2 className="font-black text-white">Classificação de criativos</h2>
+                      <h2 className="font-black text-white">Ranking de criativos</h2>
                       <p className="text-xs text-brand-muted">
                         Score CAMPLY: 55% custo por resultado, 20% CPM, 15% eficiência de alcance/entrega e 10% CTR.
                       </p>
