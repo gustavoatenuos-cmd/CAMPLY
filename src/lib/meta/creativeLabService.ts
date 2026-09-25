@@ -351,7 +351,7 @@ export function buildCreativeLabClientRows(
       ? creativeDepthAvailable && official.some((item) => item.hasActiveMedia)
       : fallbackCreativeDepthAvailable && campaigns.some(campaignStructureIsActive);
     const activeStructureExists = officialAvailable
-      ? officialActiveAdSets > 0
+      ? officialActiveAdSets > 0 || (!creativeDepthAvailable && officialActiveCampaigns > 0)
       : activeAdSets > 0;
 
     const state: CreativeLabClientState = accounts.length > 0 && !dataAvailable && (!officialSummaryLoaded || officialUnavailable)
