@@ -756,15 +756,6 @@ BEGIN
             -- hasNewerPartial/hasNewerFailure below instead of by clientStatus.
             WHEN EXISTS (
               SELECT 1
-              FROM client_metric_values cmv
-              WHERE cmv.client_id = ac.client_id
-                AND cmv.metric_id IN ('spend', 'impressions')
-                AND cmv.available
-            )
-             AND COALESCE((cmj.metrics->'spend'->>'value')::numeric, 0) = 0
-             AND COALESCE((cmj.metrics->'impressions'->>'value')::numeric, 0) = 0 THEN 'no_delivery'
-            WHEN EXISTS (
-              SELECT 1
               FROM account_freshness af
               JOIN selected_ranges sr ON sr.client_meta_asset_id = af.client_meta_asset_id
               WHERE af.client_id = ac.client_id
@@ -775,6 +766,15 @@ BEGIN
                   OR af.refreshed_at < now() - interval '36 hours'
                 )
             ) THEN 'stale'
+            WHEN EXISTS (
+              SELECT 1
+              FROM client_metric_values cmv
+              WHERE cmv.client_id = ac.client_id
+                AND cmv.metric_id IN ('spend', 'impressions')
+                AND cmv.available
+            )
+             AND COALESCE((cmj.metrics->'spend'->>'value')::numeric, 0) = 0
+             AND COALESCE((cmj.metrics->'impressions'->>'value')::numeric, 0) = 0 THEN 'no_delivery'
             ELSE 'available'
           END,
         'accounts', COALESCE((
