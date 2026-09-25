@@ -4,6 +4,14 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontWeight: {
+        black: '700',
+      },
+      borderRadius: {
+        xl: '0.625rem',
+        '2xl': '0.75rem',
+        '3xl': '0.875rem',
+      },
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
@@ -12,21 +20,21 @@ export default {
           foreground: 'var(--primary-foreground)',
         },
         brand: {
-          green: '#00E599',     // Neon premium green
-          deep: '#0F5132',      // Dark green for backgrounds
-          ink: '#090A0F',       // Ultra dark background
+          green: '#3CCF91',     // Functional product green
+          deep: '#123126',      // Restrained green surface
+          ink: '#0B0D10',       // App background
           paper: '#F8FAFC',     // Light mode paper
-          soft: '#E2E8F0',      // Soft text
-          muted: '#94A3B8',     // Muted text
-          line: '#1E293B',      // Subtle borders
-          surface: '#12141D',   // Card background
-          surface2: '#1A1D27',  // Hover surface
+          soft: '#D7DBE0',      // Secondary text
+          muted: '#8B949E',     // Muted text
+          line: '#252A32',      // Product separators
+          surface: '#111419',   // Primary surface
+          surface2: '#171B21',  // Raised/hover surface
         },
       },
       boxShadow: {
-        brand: '0 14px 34px rgba(0, 229, 153, 0.15)',
-        glow: '0 0 20px rgba(0, 229, 153, 0.3)',
-        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+        brand: '0 1px 2px rgba(0, 0, 0, 0.24)',
+        glow: '0 1px 2px rgba(0, 0, 0, 0.24)',
+        glass: '0 1px 3px rgba(0, 0, 0, 0.28)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

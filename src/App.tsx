@@ -5,11 +5,9 @@ import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DataFreshnessIndicator } from './components/DataFreshnessIndicator';
 import { Sidebar } from './components/Sidebar';
-import { StartupModal } from './components/StartupModal';
 import { useCamplyWorkspace } from './hooks/useCamplyWorkspace';
 import { useMetaFreshness } from './hooks/useMetaFreshness';
 import { getCamplyBuildInfo } from './lib/diagnostics/buildInfo';
-import { isMetaE2EMode } from './lib/meta/metaE2ERuntime';
 import { getSupabaseSessionDiagnostics } from './lib/supabase';
 import type { ViewId } from './types';
 
@@ -42,9 +40,9 @@ function SyncErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9, y: 20 }}
       role="alert"
-      className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-rose-500/40 bg-brand-surface2/90 p-4 shadow-glass backdrop-blur-md"
+      className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-rose-500/30 bg-[#171B21] p-4 shadow-lg"
     >
-      <AlertCircle size={18} className="mt-0.5 shrink-0 text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+      <AlertCircle size={18} className="mt-0.5 shrink-0 text-rose-400" />
       <p className="flex-1 text-sm leading-5 text-rose-200">{message}</p>
       <button
         type="button"
@@ -103,8 +101,8 @@ export default function App() {
         alertCount={agentAlertCount}
         onSignOut={workspace.signOut}
       />
-      <main className="min-w-0 flex-1">
-        <div className="flex h-9 items-center justify-end border-b border-brand-line/60 px-4 sm:px-6">
+      <main className="min-w-0 flex-1 bg-brand-ink">
+        <div className="flex h-10 items-center justify-end border-b border-brand-line bg-[#0D1014] px-4 sm:px-6">
           <DataFreshnessIndicator state={freshness} />
         </div>
         {workspace.remoteLoadError ? (
@@ -151,7 +149,6 @@ export default function App() {
           <SyncErrorToast message={workspace.syncError} onDismiss={workspace.dismissSyncError} />
         ) : null}
       </AnimatePresence>
-      {!isMetaE2EMode ? <StartupModal data={workspace.data} setActiveView={setActiveView} /> : null}
     </div>
   );
 }
