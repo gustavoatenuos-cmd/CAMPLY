@@ -3,6 +3,7 @@ import type { CamplyData } from '../../types';
 import {
   accountHasCreativeDepth,
   aggregateCreativeLabRows,
+  classifyCreativePerformance,
   buildCreativeLabClientRows,
   type CreativeLabRawRow,
 } from './creativeLabService';
@@ -436,4 +437,117 @@ describe('creative lab aggregation', () => {
     expect(creatives[0].cpm).toBeCloseTo(10);
     expect(creatives[1].creativeId).toBe('creative-2');
   });
+
+  it('classifies best, median/watch, no-result, insufficient and worst without punishing tiny spend', () => {
+    const messagingMetricSet = (
+      spend: number,
+      impressions: number,
+      clicks: number,
+      conversations: number,
+      reach: number
+    ) => ({
+      spend: metric(spend),
+      impressions: metric(impressions),
+      reach: metric(reach),
+      link_clicks: metric(clicks),
+      purchases: metric(0),
+      purchase_value: metric(0),
+      leads: metric(0),
+      messaging_conversations_started_total: metric(conversations),
+      landing_page_views: metric(0),
+    });
+
+    const creatives = aggregateCreativeLabRows([
+      raw({
+        creativeId: 'creative-best',
+        creativeName: 'Melhor',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(2.5, 100, 2, 1, 80),
+      }),
+      raw({
+        creativeId: 'creative-middle',
+        creativeName: 'Mediano',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(6, 220, 3, 1, 170),
+      }),
+      raw({
+        creativeId: 'creative-expensive',
+        creativeName: 'Caro com resultado',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(21, 1300, 6, 1, 900),
+      }),
+      raw({
+        creativeId: 'creative-no-result',
+        creativeName: 'Sem resultado',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(10.83, 680, 1, 0, 510),
+      }),
+      raw({
+        creativeId: 'creative-watch',
+        creativeName: 'Observação',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(3.31, 210, 1, 0, 155),
+      }),
+      raw({
+        creativeId: 'creative-insufficient',
+        creativeName: 'Sem base',
+        classifiedObjective: 'MESSAGING_OTHER',
+        metrics: messagingMetricSet(0.08, 7, 0, 0, 6),
+      }),
+    ]);
+
+    const byId = new Map(creatives.map((creative) => [creative.creativeId, creative]));
+
+    expect(byId.get('creative-best')).toMatchObject({
+      performanceFlag: 'best',
+      resultLabel: 'Conversas',
+      costPerResult: 2.5,
+    });
+    expect(byId.get('creative-no-result')).toMatchObject({
+      performanceBand: 'no_result',
+      performanceFlag: 'worst',
+      resultValue: 0,
+    });
+    expect(byId.get('creative-watch')).toMatchObject({
+      performanceBand: 'watch',
+      performanceFlag: null,
+    });
+    expect(byId.get('creative-insufficient')).toMatchObject({
+      performanceBand: 'insufficient',
+      performanceFlag: null,
+      performanceScore: null,
+    });
+    expect(byId.get('creative-middle')?.performanceScore).not.toBeNull();
+    expect(byId.get('creative-best')?.performanceScore).toBeGreaterThan(
+      byId.get('creative-middle')?.performanceScore || 0
+    );
+  });
+
+  it('keeps classification deterministic when passed through the exported classifier again', () => {
+    const creatives = aggregateCreativeLabRows([
+      raw({ creativeId: 'creative-a' }),
+      raw({
+        creativeId: 'creative-b',
+        creativeName: 'Segundo',
+        metrics: {
+          spend: metric(120),
+          impressions: metric(9000),
+          reach: metric(7000),
+          link_clicks: metric(90),
+          purchases: metric(2),
+          purchase_value: metric(180),
+          leads: metric(0),
+          messaging_conversations_started_total: metric(0),
+          landing_page_views: metric(0),
+        },
+      }),
+    ]);
+
+    const classified = classifyCreativePerformance(creatives);
+    expect(classified.map((creative) => creative.creativeId)).toEqual(
+      creatives.map((creative) => creative.creativeId)
+    );
+    expect(classified.find((creative) => creative.performanceFlag === 'best')).toBeTruthy();
+  });
+
 });
