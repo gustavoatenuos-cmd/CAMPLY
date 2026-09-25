@@ -25,7 +25,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
     return {
       adAccountId: legacyAdAccountId || undefined,
       periods: [OFFICIAL_META_SYNC_PERIOD],
-      requestedLevel: 'campaign',
+      requestedLevel: 'creative',
     };
   }
 
@@ -33,7 +33,7 @@ function normalizeOptions(clientOrOptions: Client | MetaSyncOptions): MetaSyncOp
   return {
     ...options,
     periods: [OFFICIAL_META_SYNC_PERIOD],
-    requestedLevel: options.requestedLevel ?? 'campaign',
+    requestedLevel: options.requestedLevel ?? 'creative',
   };
 }
 
@@ -68,7 +68,7 @@ async function syncOperationalMetaAsset(
     return {
       success: true,
       status: 'success',
-      runId: `run-e2e-${OFFICIAL_META_SYNC_PERIOD}-${input.requestedLevel || 'campaign'}`,
+      runId: `run-e2e-${OFFICIAL_META_SYNC_PERIOD}-${input.requestedLevel || 'creative'}`,
     };
   }
 
@@ -76,7 +76,7 @@ async function syncOperationalMetaAsset(
     const response = await invokeFunction<MetaSyncResponse>('meta-sync-performance', {
       clientMetaAssetId: input.clientMetaAssetId,
       periods: [OFFICIAL_META_SYNC_PERIOD],
-      requestedLevel: input.requestedLevel || 'campaign',
+      requestedLevel: input.requestedLevel || 'creative',
       selectedEntityIds: {
         campaign_ids: input.campaignIds || [],
         adset_ids: input.adsetIds || [],
