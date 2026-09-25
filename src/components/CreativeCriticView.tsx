@@ -410,7 +410,6 @@ export function CreativeCriticView({ data }: Props) {
   const [labLoading, setLabLoading] = useState(false);
   const [labSyncing, setLabSyncing] = useState(false);
   const [labSyncNote, setLabSyncNote] = useState<string | null>(null);
-  const [labRefreshKey, setLabRefreshKey] = useState(0);
   const deepSyncedClientIdsRef = useRef<Set<string>>(new Set());
   const [selectedCreative, setSelectedCreative] = useState<CreativeLabCreative | null>(null);
   const [analysis, setAnalysis] = useState<CreativeCriticResponse | null>(null);
@@ -621,7 +620,7 @@ export function CreativeCriticView({ data }: Props) {
       });
 
     return () => { active = false; };
-  }, [selectedClient?.client.id, selectedClient?.accounts, period, labRefreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedClient?.client.id, selectedClient?.accounts, period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const creatives = labResult?.creatives || [];
   const visibleCreatives = useMemo(() => creatives.filter((creative) => {
