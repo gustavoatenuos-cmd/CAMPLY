@@ -264,12 +264,13 @@ describe('creative lab sync depth', () => {
     })).toBe(false);
   });
 
-  it('accepts ad or creative level as enough depth for the lab', () => {
+  it('accepts successful ad or creative level as enough depth for the lab', () => {
     for (const level of ['ad', 'creative']) {
       expect(accountHasCreativeDepth({
         ...account,
         lastSuccess: {
           id: 'run-1',
+          status: 'success',
           period: 'last_90d',
           level,
           scope: 'full_account',
@@ -277,6 +278,47 @@ describe('creative lab sync depth', () => {
           finishedAt: '2026-09-24T18:01:00Z',
         },
       })).toBe(true);
+    }
+  });
+
+  it('accepts a partial creative attempt when it still persisted usable deep data', () => {
+    expect(accountHasCreativeDepth({
+      ...account,
+      lastAttempt: {
+        id: 'run-partial',
+        status: 'partial',
+        period: 'last_90d',
+        level: 'creative',
+        scope: 'full_account',
+        startedAt: '2026-09-24T19:00:00Z',
+        finishedAt: '2026-09-24T19:01:00Z',
+      },
+      lastSuccess: {
+        id: 'run-shallow',
+        status: 'success',
+        period: 'last_90d',
+        level: 'campaign',
+        scope: 'full_account',
+        startedAt: '2026-09-24T18:00:00Z',
+        finishedAt: '2026-09-24T18:01:00Z',
+      },
+    })).toBe(true);
+  });
+
+  it('rejects failed or running creative attempts as usable depth', () => {
+    for (const status of ['failed', 'running'] as const) {
+      expect(accountHasCreativeDepth({
+        ...account,
+        lastAttempt: {
+          id: 'run-bad',
+          status,
+          period: 'last_90d',
+          level: 'creative',
+          scope: 'full_account',
+          startedAt: '2026-09-24T19:00:00Z',
+          finishedAt: status === 'running' ? null : '2026-09-24T19:01:00Z',
+        },
+      })).toBe(false);
     }
   });
 });

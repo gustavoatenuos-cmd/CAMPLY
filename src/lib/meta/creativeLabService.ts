@@ -148,8 +148,17 @@ function hierarchyItemIsActive(item: Pick<MetaHierarchyItem, 'effectiveStatus' |
 }
 
 export function accountHasCreativeDepth(account: ClientMetaAccount): boolean {
-  const level = String(account.lastSuccess?.level || '').toLowerCase();
-  return level === 'ad' || level === 'creative';
+  const candidates = [account.lastAttempt, account.lastSuccess];
+  return candidates.some((run) => {
+    if (!run) return false;
+    const level = String(run.level || '').toLowerCase();
+    const status = run.status;
+    const usableStatus = status === undefined || status === 'success' || status === 'partial';
+    return usableStatus
+      && run.scope === 'full_account'
+      && run.period === 'last_90d'
+      && (level === 'ad' || level === 'creative');
+  });
 }
 
 async function loadAllHierarchyItems(input: {
