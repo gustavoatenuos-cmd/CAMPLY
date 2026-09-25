@@ -20,7 +20,6 @@ import {
 import type { CamplyData, CreativeCriticResponse } from '../types';
 import { invokeFunction } from '../lib/invokeFunction';
 import {
-  accountHasCreativeDepth,
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
   loadCreativeLabCreativeRows,
@@ -412,8 +411,6 @@ export function CreativeCriticView({ data }: Props) {
   const [labSyncing, setLabSyncing] = useState(false);
   const [labSyncNote, setLabSyncNote] = useState<string | null>(null);
   const [labRefreshKey, setLabRefreshKey] = useState(0);
-  const [bulkCreativeSyncing, setBulkCreativeSyncing] = useState(false);
-  const [bulkCreativeProgress, setBulkCreativeProgress] = useState({ done: 0, total: 0 });
   const deepSyncedClientIdsRef = useRef<Set<string>>(new Set());
   const [selectedCreative, setSelectedCreative] = useState<CreativeLabCreative | null>(null);
   const [analysis, setAnalysis] = useState<CreativeCriticResponse | null>(null);
@@ -506,71 +503,6 @@ export function CreativeCriticView({ data }: Props) {
     ));
   }, [clientRows, clientFilter, search]);
 
-  const accountsNeedingCreativeDepth = useMemo(() => {
-    const unique = new Map<string, (typeof clientRows)[number]['accounts'][number]>();
-    for (const row of clientRows) {
-      for (const account of row.accounts) {
-        const summary = mediaSummaryByAccount.get(account.clientMetaAssetId);
-        const verifiedDepth = summary?.adDataAvailable === true;
-        const verifiedMissingDepth = summary?.adDataAvailable === false;
-        if (verifiedMissingDepth || (!verifiedDepth && !accountHasCreativeDepth(account))) {
-          unique.set(account.clientMetaAssetId, account);
-        }
-      }
-    }
-    return [...unique.values()];
-  }, [clientRows, mediaSummaryByAccount]);
-
-  const syncCreativeLab = async () => {
-    if (bulkCreativeSyncing || accountsNeedingCreativeDepth.length === 0) return;
-
-    setBulkCreativeSyncing(true);
-    setBulkCreativeProgress({ done: 0, total: accountsNeedingCreativeDepth.length });
-    setMediaSummaryError(null);
-    const failures: string[] = [];
-
-    for (let index = 0; index < accountsNeedingCreativeDepth.length; index += 1) {
-      const account = accountsNeedingCreativeDepth[index];
-      try {
-        const result = await syncMetaAsset({
-          clientMetaAssetId: account.clientMetaAssetId,
-          period: OFFICIAL_META_SYNC_PERIOD,
-          requestedLevel: 'creative',
-        });
-        if (result.status === 'failed') failures.push(`${account.accountName}: falha na sincronização.`);
-        if (result.status === 'running') failures.push(`${account.accountName}: já existe uma sincronização em andamento.`);
-      } catch (error) {
-        failures.push(`${account.accountName}: ${error instanceof Error ? error.message : 'falha na sincronização'}`);
-      } finally {
-        setBulkCreativeProgress({ done: index + 1, total: accountsNeedingCreativeDepth.length });
-      }
-    }
-
-    try {
-      const freshCatalog = await loadClientMetaAssetCatalog();
-      setCatalog(freshCatalog);
-      const freshMap = new Map(
-        (freshCatalog.clients || []).map((item) => [item.clientId, item.accounts] as const)
-      );
-
-      try {
-        const summaries = await loadCreativeLabClientMediaSummaries();
-        setMediaSummaries(summaries);
-        setMediaSummaryLoaded(true);
-      } catch {
-        const fallback = await loadCreativeLabClientMediaSummariesFromHierarchy(data, freshMap);
-        setMediaSummaries(fallback);
-        setMediaSummaryLoaded(true);
-      }
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : 'Não foi possível atualizar o catálogo após a sincronização.');
-    } finally {
-      setBulkCreativeSyncing(false);
-      if (failures.length > 0) {
-        setMediaSummaryError(failures.join(' '));
-      }
-    }
-  };
 
   const selectedClient = useMemo(
     () => clientRows.find((row) => row.client.id === selectedClientId) || null,
@@ -595,8 +527,15 @@ export function CreativeCriticView({ data }: Props) {
     void (async () => {
       let accounts = selectedClient.accounts;
       const clientId = selectedClient.client.id;
+      const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
       const shouldDeepSync = !deepSyncedClientIdsRef.current.has(clientId)
-        && accounts.some((account) => !accountHasCreativeDepth(account));
+        && accounts.some((account) => {
+          const summary = mediaSummaryByAccount.get(account.clientMetaAssetId);
+          if (summary?.adDataAvailable !== true) return true;
+          if (!summary.adLastSyncedAt) return false;
+          const syncedAt = new Date(summary.adLastSyncedAt).getTime();
+          return Number.isFinite(syncedAt) && syncedAt < sixHoursAgo;
+        });
 
       if (shouldDeepSync && accounts.length > 0) {
         setLabSyncing(true);
@@ -815,18 +754,6 @@ export function CreativeCriticView({ data }: Props) {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    deepSyncedClientIdsRef.current.delete(selectedClient.client.id);
-                    setLabRefreshKey((value) => value + 1);
-                  }}
-                  disabled={labLoading}
-                  className="inline-flex items-center gap-2 rounded-xl border border-brand-line bg-brand-surface px-3 py-2 text-xs font-bold text-brand-muted transition hover:text-white disabled:opacity-50"
-                >
-                  <RefreshCw size={14} className={labSyncing ? 'animate-spin' : ''} />
-                  Atualizar criativos
-                </button>
                 <div className="flex rounded-xl border border-brand-line bg-brand-surface p-1">
                 {([
                   ['last_7d', '7 dias'],
@@ -1059,19 +986,10 @@ export function CreativeCriticView({ data }: Props) {
               Comece pelo cliente. O CAMPLY usa a base persistida do Analytics para relacionar campanhas, anúncios, criativos e resultados.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void syncCreativeLab()}
-            disabled={bulkCreativeSyncing || catalogLoading || accountsNeedingCreativeDepth.length === 0}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-2.5 text-xs font-black text-brand-ink transition disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={bulkCreativeSyncing ? 'animate-spin' : ''} />
-            {bulkCreativeSyncing
-              ? `Sincronizando ${bulkCreativeProgress.done}/${bulkCreativeProgress.total}`
-              : accountsNeedingCreativeDepth.length > 0
-                ? `Sincronizar laboratório (${accountsNeedingCreativeDepth.length})`
-                : 'Laboratório sincronizado'}
-          </button>
+          <div className="inline-flex shrink-0 items-center gap-2 text-xs text-brand-muted">
+            <CheckCircle2 size={14} className="text-emerald-400" />
+            Atualização automática
+          </div>
         </header>
 
         {catalogError && (
@@ -1137,7 +1055,7 @@ export function CreativeCriticView({ data }: Props) {
         )}
 
         <p className="text-xs text-brand-muted">
-          O Lab lista somente clientes operacionalmente ativos. Quando houver “Estrutura ativa”, use “Sincronizar laboratório” para aprofundar as contas até anúncio/criativo; depois disso o status passa a refletir a mídia real.
+          O Lab atualiza a profundidade de anúncios e criativos automaticamente quando necessário. A tela sempre abre usando a última base persistida enquanto a atualização acontece em segundo plano.
         </p>
       </div>
     </div>
