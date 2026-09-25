@@ -19,6 +19,7 @@ import {
 import { evaluateOperationalSignals } from '../lib/operational/evaluateOperationalSignals';
 import { syncOperationalSignals } from '../lib/operational/syncOperationalSignals';
 import { canMutateWorkspace, WORKSPACE_READ_ONLY_MESSAGE } from '../lib/operational/workspaceMutationPolicy';
+import { refreshStaleMetaAccounts } from '../lib/meta/metaFreshnessService';
 import { setSupabaseSession, supabase } from '../lib/supabase';
 import type { CamplyData } from '../types';
 
@@ -68,6 +69,8 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
   const remoteHydratingRef = useRef(false);
   const authTransitionRef = useRef(false);
   const lastConflictAtRef = useRef(0);
+  const metaFreshnessRunningRef = useRef(false);
+  const lastMetaFreshnessCheckAtRef = useRef(0);
   const workspaceReadOnly = !canMutateWorkspace(remoteLoadError);
 
   useEffect(() => {
@@ -204,6 +207,54 @@ export function useCamplyWorkspace(): CamplyWorkspaceController {
       document.removeEventListener('visibilitychange', refresh);
     };
   }, [authenticated, remoteLoaded]);
+
+  useEffect(() => {
+    if (!authenticated || !remoteLoaded || isMetaE2EMode) return;
+
+    let active = true;
+    const minCheckIntervalMs = 5 * 60 * 1000;
+
+    const refreshFreshness = () => {
+      if (document.visibilityState === 'hidden' || metaFreshnessRunningRef.current) return;
+      const now = Date.now();
+      if (now - lastMetaFreshnessCheckAtRef.current < minCheckIntervalMs) return;
+
+      lastMetaFreshnessCheckAtRef.current = now;
+      metaFreshnessRunningRef.current = true;
+
+      void refreshStaleMetaAccounts({
+        level: 'campaign',
+        staleAfterMinutes: 30,
+        concurrency: 2,
+      })
+        .catch((error) => {
+          console.warn('[Camply] Atualização Meta em background não concluiu.', error);
+        })
+        .finally(() => {
+          if (active) metaFreshnessRunningRef.current = false;
+        });
+    };
+
+    // The workspace becomes interactive first; Meta refresh happens behind it.
+    const startupTimer = window.setTimeout(refreshFreshness, 250);
+    const interval = window.setInterval(refreshFreshness, 15 * 60 * 1000);
+
+    const onFocus = () => refreshFreshness();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshFreshness();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      active = false;
+      window.clearTimeout(startupTimer);
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [authenticated, remoteLoaded, session?.user.id]);
 
   useEffect(() => {
     saveData(data, session?.user.id);
