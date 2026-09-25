@@ -43,7 +43,9 @@ interface Props {
 }
 
 type ClientFilter = 'all' | CreativeLabClientState;
-type CreativeFilter = 'all' | 'active' | 'history';
+type CreativePerformanceFilter = 'all' | 'best' | 'average' | 'watch' | 'no_result' | 'insufficient' | 'worst';
+type CreativeDeliveryFilter = 'all' | 'active' | 'history';
+type CreativeSectionKey = 'best' | 'strong' | 'average' | 'watch' | 'no_result' | 'insufficient' | 'worst';
 
 const clientStateCopy: Record<CreativeLabClientState, { label: string; className: string; dot: string }> = {
   active_media: {
@@ -110,6 +112,111 @@ function creativeKpi(creative: CreativeLabCreative): 'roas' | 'ctr' | 'cpa' {
   if (objective === 'SALES') return 'roas';
   if (objective === 'TRAFFIC') return 'ctr';
   return 'cpa';
+}
+
+
+const performanceBandCopy: Record<CreativeLabCreative['performanceBand'], {
+  label: string;
+  className: string;
+  sectionTitle: string;
+  sectionDescription: string;
+}> = {
+  strong: {
+    label: 'Bom desempenho',
+    className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
+    sectionTitle: 'Bom desempenho',
+    sectionDescription: 'Criativos acima da faixa central de eficiência, sem serem o destaque principal.',
+  },
+  average: {
+    label: 'Mediano',
+    className: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
+    sectionTitle: 'Criativos medianos',
+    sectionDescription: 'Performance próxima da faixa central dos criativos comparáveis.',
+  },
+  watch: {
+    label: 'Em observação',
+    className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+    sectionTitle: 'Em observação',
+    sectionDescription: 'Ainda sem base para invalidar ou com eficiência abaixo dos pares.',
+  },
+  no_result: {
+    label: 'Sem resultado',
+    className: 'border-orange-500/25 bg-orange-500/10 text-orange-300',
+    sectionTitle: 'Sem resultado',
+    sectionDescription: 'Já atingiram a faixa mínima de avaliação sem gerar o resultado principal.',
+  },
+  insufficient: {
+    label: 'Dados insuficientes',
+    className: 'border-white/10 bg-white/5 text-brand-muted',
+    sectionTitle: 'Dados insuficientes',
+    sectionDescription: 'Ainda não existe entrega suficiente para uma decisão segura.',
+  },
+};
+
+const sectionCopy: Record<CreativeSectionKey, { title: string; description: string; className: string }> = {
+  best: {
+    title: 'Melhor criativo',
+    description: 'Maior eficiência combinada no período, com prioridade para custo por resultado.',
+    className: 'border-emerald-500/30 bg-emerald-500/[0.04]',
+  },
+  strong: {
+    title: performanceBandCopy.strong.sectionTitle,
+    description: performanceBandCopy.strong.sectionDescription,
+    className: 'border-brand-line bg-transparent',
+  },
+  average: {
+    title: performanceBandCopy.average.sectionTitle,
+    description: performanceBandCopy.average.sectionDescription,
+    className: 'border-brand-line bg-transparent',
+  },
+  watch: {
+    title: performanceBandCopy.watch.sectionTitle,
+    description: performanceBandCopy.watch.sectionDescription,
+    className: 'border-amber-500/15 bg-amber-500/[0.02]',
+  },
+  no_result: {
+    title: performanceBandCopy.no_result.sectionTitle,
+    description: performanceBandCopy.no_result.sectionDescription,
+    className: 'border-orange-500/15 bg-orange-500/[0.02]',
+  },
+  insufficient: {
+    title: performanceBandCopy.insufficient.sectionTitle,
+    description: performanceBandCopy.insufficient.sectionDescription,
+    className: 'border-brand-line bg-transparent',
+  },
+  worst: {
+    title: 'Pior criativo',
+    description: 'Maior sinal de ineficiência entre os criativos com base suficiente para decisão.',
+    className: 'border-rose-500/30 bg-rose-500/[0.04]',
+  },
+};
+
+function creativePerformanceLabel(creative: CreativeLabCreative): string {
+  if (creative.performanceFlag === 'best') return 'Melhor criativo';
+  if (creative.performanceFlag === 'worst') return 'Pior criativo';
+  return performanceBandCopy[creative.performanceBand].label;
+}
+
+function creativePerformanceClass(creative: CreativeLabCreative): string {
+  if (creative.performanceFlag === 'best') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+  if (creative.performanceFlag === 'worst') return 'border-rose-500/40 bg-rose-500/10 text-rose-300';
+  return performanceBandCopy[creative.performanceBand].className;
+}
+
+function creativeSectionKey(creative: CreativeLabCreative): CreativeSectionKey {
+  if (creative.performanceFlag === 'best') return 'best';
+  if (creative.performanceFlag === 'worst') return 'worst';
+  return creative.performanceBand;
+}
+
+function creativeMatchesPerformanceFilter(
+  creative: CreativeLabCreative,
+  filter: CreativePerformanceFilter
+): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'best') return creative.performanceFlag === 'best' || creative.performanceBand === 'strong';
+  if (filter === 'worst') return creative.performanceFlag === 'worst';
+  return creative.performanceBand === filter;
 }
 
 function ClientStateBadge({ state }: { state: CreativeLabClientState }) {
@@ -211,11 +318,23 @@ function CreativeRow({
   onOpen: () => void;
 }) {
   const currency = creative.currency || 'BRL';
+  const isBest = creative.performanceFlag === 'best';
+  const isWorst = creative.performanceFlag === 'worst';
+  const rowClass = isBest
+    ? 'border-emerald-500/45 bg-emerald-500/[0.035]'
+    : isWorst
+      ? 'border-rose-500/45 bg-rose-500/[0.035]'
+      : creative.performanceBand === 'watch'
+        ? 'border-amber-500/15 bg-brand-surface'
+        : creative.performanceBand === 'no_result'
+          ? 'border-orange-500/15 bg-brand-surface'
+          : 'border-brand-line bg-brand-surface';
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded-2xl border border-brand-line bg-brand-surface p-4 text-left transition hover:border-brand-green/30 hover:bg-white/[0.04]"
+      className={`w-full rounded-2xl border p-4 text-left transition hover:bg-white/[0.04] ${rowClass}`}
     >
       <div className="flex gap-4">
         <CreativeThumb creative={creative} />
@@ -230,15 +349,35 @@ function CreativeRow({
                 {creative.campaigns.slice(0, 2).join(' · ') || 'Campanha não identificada'}
               </p>
             </div>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${
-              creative.active
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-white/10 bg-white/5 text-brand-muted'
-            }`}>
-              {creative.active ? 'Em veiculação' : 'Histórico/pausado'}
-            </span>
+            <div className="flex flex-wrap justify-end gap-2">
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${creativePerformanceClass(creative)}`}>
+                {creativePerformanceLabel(creative)}
+              </span>
+              {creative.performanceScore !== null && (
+                <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-black text-brand-soft">
+                  Score {creative.performanceScore}/100
+                </span>
+              )}
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                creative.active
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-white/10 bg-white/5 text-brand-muted'
+              }`}>
+                {creative.active ? 'Em veiculação' : 'Histórico/pausado'}
+              </span>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] leading-5 ${
+        isBest
+          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+          : isWorst
+            ? 'border-rose-500/20 bg-rose-500/10 text-rose-200'
+            : 'border-white/5 bg-black/15 text-brand-muted'
+      }`}>
+        {creative.performanceReason}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -264,7 +403,9 @@ export function CreativeCriticView({ data }: Props) {
   const [search, setSearch] = useState('');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [period, setPeriod] = useState<CreativeLabPeriod>('last_30d');
-  const [creativeFilter, setCreativeFilter] = useState<CreativeFilter>('all');
+  const [performanceFilter, setPerformanceFilter] = useState<CreativePerformanceFilter>('all');
+  const [deliveryFilter, setDeliveryFilter] = useState<CreativeDeliveryFilter>('all');
+  const [hideLowPerformance, setHideLowPerformance] = useState(false);
   const [labResult, setLabResult] = useState<CreativeLabClientResult | null>(null);
   const [labLoading, setLabLoading] = useState(false);
   const [labSyncing, setLabSyncing] = useState(false);
@@ -544,10 +685,36 @@ export function CreativeCriticView({ data }: Props) {
 
   const creatives = labResult?.creatives || [];
   const visibleCreatives = useMemo(() => creatives.filter((creative) => {
-    if (creativeFilter === 'active') return creative.active;
-    if (creativeFilter === 'history') return !creative.active;
+    if (!creativeMatchesPerformanceFilter(creative, performanceFilter)) return false;
+    if (deliveryFilter === 'active' && !creative.active) return false;
+    if (deliveryFilter === 'history' && creative.active) return false;
+    if (hideLowPerformance && (creative.performanceFlag === 'worst' || creative.performanceBand === 'no_result')) return false;
     return true;
-  }), [creatives, creativeFilter]);
+  }), [creatives, performanceFilter, deliveryFilter, hideLowPerformance]);
+
+  const creativeSections = useMemo(() => {
+    const order: CreativeSectionKey[] = ['best', 'strong', 'average', 'watch', 'no_result', 'insufficient', 'worst'];
+    const grouped = new Map<CreativeSectionKey, CreativeLabCreative[]>();
+    for (const creative of visibleCreatives) {
+      const key = creativeSectionKey(creative);
+      const items = grouped.get(key) || [];
+      items.push(creative);
+      grouped.set(key, items);
+    }
+    return order
+      .map((key) => ({ key, items: grouped.get(key) || [] }))
+      .filter((section) => section.items.length > 0);
+  }, [visibleCreatives]);
+
+  const performanceCounts = useMemo(() => ({
+    all: creatives.length,
+    best: creatives.filter((creative) => creative.performanceFlag === 'best' || creative.performanceBand === 'strong').length,
+    average: creatives.filter((creative) => creative.performanceBand === 'average').length,
+    watch: creatives.filter((creative) => creative.performanceBand === 'watch').length,
+    no_result: creatives.filter((creative) => creative.performanceBand === 'no_result').length,
+    insufficient: creatives.filter((creative) => creative.performanceBand === 'insufficient').length,
+    worst: creatives.filter((creative) => creative.performanceFlag === 'worst').length,
+  }), [creatives]);
 
   const currencies = useMemo(() => [...new Set(creatives.map((creative) => creative.currency || 'BRL'))], [creatives]);
   const investmentSummary = useMemo(() => currencies.map((currency) => {
@@ -558,8 +725,8 @@ export function CreativeCriticView({ data }: Props) {
   }).join(' + '), [creatives, currencies]);
 
   const deliveredCreatives = creatives.filter((creative) => creative.spend > 0).length;
-  const withoutResult = creatives.filter((creative) => creative.spend > 0 && creative.resultValue === 0).length;
-  const bestCreative = creatives.find((creative) => creative.spend > 0);
+  const bestCreative = creatives.find((creative) => creative.performanceFlag === 'best') || null;
+  const worstCreative = creatives.find((creative) => creative.performanceFlag === 'worst') || null;
 
   const runAiAnalysis = async (creative: CreativeLabCreative) => {
     if (!labResult) return;
@@ -709,52 +876,137 @@ export function CreativeCriticView({ data }: Props) {
               <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SummaryCard label="Criativos com entrega" value={String(deliveredCreatives)} note={`${creatives.length} criativos sincronizados`} icon={ImageIcon} />
                 <SummaryCard label="Investimento analisado" value={investmentSummary || '—'} note="Somado por moeda" icon={BarChart3} />
-                <SummaryCard label="Melhor criativo" value={bestCreative?.name || '—'} note={bestCreative ? `${bestCreative.resultLabel}: ${number(bestCreative.resultValue)}` : 'Sem entrega'} icon={Target} />
-                <SummaryCard label="Investiram sem resultado" value={String(withoutResult)} note="Sinal factual para investigação" icon={AlertTriangle} />
+                <SummaryCard
+                  label="Melhor criativo"
+                  value={bestCreative?.name || '—'}
+                  note={bestCreative
+                    ? `Score ${bestCreative.performanceScore ?? '—'}/100 · ${bestCreative.costLabel} ${money(bestCreative.costPerResult, bestCreative.currency || 'BRL')}`
+                    : 'Sem base suficiente'}
+                  icon={Target}
+                  tone="positive"
+                />
+                <SummaryCard
+                  label="Pior criativo"
+                  value={worstCreative?.name || '—'}
+                  note={worstCreative ? worstCreative.performanceReason : 'Nenhum criativo invalidado no período'}
+                  icon={AlertTriangle}
+                  tone="negative"
+                />
               </section>
 
               <section className="rounded-2xl border border-brand-line bg-brand-surface p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="font-black text-white">Ranking de criativos</h2>
-                    <p className="text-xs text-brand-muted">Ordenado pelo resultado principal do objetivo; sem score artificial.</p>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                      <h2 className="font-black text-white">Classificação de criativos</h2>
+                      <p className="text-xs text-brand-muted">
+                        Score CAMPLY: 55% custo por resultado, 20% CPM, 15% eficiência de alcance/entrega e 10% CTR.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-1 rounded-xl bg-black/20 p-1">
+                      {([
+                        ['all', 'Todos'],
+                        ['best', 'Melhores'],
+                        ['average', 'Medianos'],
+                        ['watch', 'Observação'],
+                        ['no_result', 'Sem resultado'],
+                        ['insufficient', 'Sem base'],
+                        ['worst', 'Piores'],
+                      ] as Array<[CreativePerformanceFilter, string]>).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setPerformanceFilter(value)}
+                          className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                            performanceFilter === value ? 'bg-white/10 text-white' : 'text-brand-muted hover:text-white'
+                          }`}
+                        >
+                          {label} <span className="ml-1 opacity-50">{performanceCounts[value]}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex rounded-xl bg-black/20 p-1">
-                    {([
-                      ['all', 'Todos'],
-                      ['active', 'Em veiculação'],
-                      ['history', 'Histórico'],
-                    ] as Array<[CreativeFilter, string]>).map(([value, label]) => (
+
+                  <div className="flex flex-col gap-3 border-t border-brand-line/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap gap-1 rounded-xl bg-black/20 p-1">
+                      {([
+                        ['all', 'Todos os status'],
+                        ['active', 'Em veiculação'],
+                        ['history', 'Histórico'],
+                      ] as Array<[CreativeDeliveryFilter, string]>).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setDeliveryFilter(value)}
+                          className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                            deliveryFilter === value ? 'bg-white/10 text-white' : 'text-brand-muted hover:text-white'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
-                        key={value}
                         type="button"
-                        onClick={() => setCreativeFilter(value)}
-                        className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
-                          creativeFilter === value ? 'bg-white/10 text-white' : 'text-brand-muted hover:text-white'
+                        onClick={() => setHideLowPerformance((value) => !value)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                          hideLowPerformance
+                            ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                            : 'border-brand-line text-brand-muted hover:text-white'
                         }`}
                       >
-                        {label}
+                        {hideLowPerformance ? 'Baixo desempenho oculto' : 'Ocultar baixo desempenho'}
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPerformanceFilter('all');
+                          setDeliveryFilter('all');
+                          setHideLowPerformance(false);
+                        }}
+                        className="rounded-xl border border-brand-line px-3 py-2 text-xs font-bold text-brand-muted transition hover:text-white"
+                      >
+                        Mostrar tudo
+                      </button>
+                    </div>
                   </div>
                 </div>
               </section>
 
-              <section className="space-y-3">
-                {visibleCreatives.map((creative) => (
-                  <CreativeRow
-                    key={creative.key}
-                    creative={creative}
-                    rank={creatives.findIndex((item) => item.key === creative.key) + 1}
-                    onOpen={() => {
-                      setSelectedCreative(creative);
-                      setAnalysis(null);
-                      setAnalysisError(null);
-                    }}
-                  />
-                ))}
+              <section className="space-y-5">
+                {creativeSections.map((section) => {
+                  const copy = sectionCopy[section.key];
+                  return (
+                    <div key={section.key} className={`rounded-2xl border p-3 sm:p-4 ${copy.className}`}>
+                      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <h3 className="font-black text-white">{copy.title}</h3>
+                          <p className="mt-0.5 text-xs text-brand-muted">{copy.description}</p>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-bold text-brand-muted">
+                          {section.items.length} criativo{section.items.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {section.items.map((creative) => (
+                          <CreativeRow
+                            key={creative.key}
+                            creative={creative}
+                            rank={creatives.findIndex((item) => item.key === creative.key) + 1}
+                            onOpen={() => {
+                              setSelectedCreative(creative);
+                              setAnalysis(null);
+                              setAnalysisError(null);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
                 {visibleCreatives.length === 0 && (
-                  <EmptyState icon={ImageIcon} title="Nenhum criativo neste filtro" description="Troque o filtro para visualizar o restante do histórico." />
+                  <EmptyState icon={ImageIcon} title="Nenhum criativo neste filtro" description="Troque a classificação, o status ou volte a mostrar baixo desempenho." />
                 )}
               </section>
             </>
@@ -892,20 +1144,33 @@ function SummaryCard({
   value,
   note,
   icon: Icon,
+  tone = 'default',
 }: {
   label: string;
   value: string;
   note: string;
   icon: typeof ImageIcon;
+  tone?: 'default' | 'positive' | 'negative';
 }) {
+  const toneClass = tone === 'positive'
+    ? 'border-emerald-500/35 bg-emerald-500/[0.045]'
+    : tone === 'negative'
+      ? 'border-rose-500/35 bg-rose-500/[0.045]'
+      : 'border-brand-line bg-brand-surface';
+  const labelClass = tone === 'positive'
+    ? 'text-emerald-300'
+    : tone === 'negative'
+      ? 'text-rose-300'
+      : 'text-brand-muted';
+
   return (
-    <div className="rounded-2xl border border-brand-line bg-brand-surface p-4">
-      <div className="flex items-center gap-2 text-brand-muted">
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className={`flex items-center gap-2 ${labelClass}`}>
         <Icon size={15} />
         <p className="text-[10px] font-bold uppercase tracking-wider">{label}</p>
       </div>
       <p className="mt-3 line-clamp-2 text-xl font-black text-white">{value}</p>
-      <p className="mt-1 text-[11px] text-brand-muted">{note}</p>
+      <p className="mt-1 line-clamp-2 text-[11px] text-brand-muted">{note}</p>
     </div>
   );
 }
