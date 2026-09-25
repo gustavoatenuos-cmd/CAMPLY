@@ -279,6 +279,8 @@ describe('creative lab client state', () => {
       activeAds: 0,
       hasActiveMedia: false,
       lastSyncedAt: '2026-09-24T18:00:00Z',
+      dataAvailable: true,
+      adDataAvailable: true,
     }]]]);
 
     expect(buildCreativeLabClientRows(data, new Map(), official)[0]).toMatchObject({
