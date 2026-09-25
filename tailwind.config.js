@@ -4,6 +4,14 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontWeight: {
+        black: '700',
+      },
+      borderRadius: {
+        xl: '0.625rem',
+        '2xl': '0.75rem',
+        '3xl': '0.875rem',
+      },
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
