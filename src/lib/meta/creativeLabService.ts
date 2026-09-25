@@ -514,7 +514,7 @@ function performanceMoney(value: number, currency: string | null): string {
 }
 
 export function classifyCreativePerformance(creatives: CreativeLabCreative[]): CreativeLabCreative[] {
-  const byKey = new Map(creatives.map((creative) => [creative.key, {
+  const byKey = new Map<string, CreativeLabCreative>(creatives.map((creative) => [creative.key, {
     ...creative,
     performanceScore: null,
     performanceBand: 'insufficient' as CreativePerformanceBand,
