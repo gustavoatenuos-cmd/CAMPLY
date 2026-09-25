@@ -102,7 +102,7 @@ interface OwnedClientMetaAsset {
 }
 
 const METRIC_DEFINITION_VERSION = '2026-07-01.1';
-const COLLECTION_CONTRACT_VERSION = '2026-07-20.1';
+const COLLECTION_CONTRACT_VERSION = '2026-09-25.1';
 const OFFICIAL_SYNC_PERIOD = 'last_90d';
 const VALID_REQUESTED_LEVELS = ['campaign', 'adset', 'ad', 'creative'] as const;
 
@@ -789,7 +789,7 @@ export async function handleRequest(req: Request) {
       fields: {
         campaigns: 'id,name,status,objective,daily_budget,lifetime_budget,effective_status',
         adsets: 'id,campaign_id,name,status,effective_status,optimization_goal,destination_type,promoted_object,attribution_setting,daily_budget,lifetime_budget',
-        ads: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
+        ads: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
         campaignInsights: 'campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
         adsetInsights: 'adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
         adInsights: 'ad_id,adset_id,campaign_id,date_start,date_stop,impressions,reach,clicks,inline_link_clicks,spend,actions,action_values',
@@ -922,7 +922,7 @@ export async function handleRequest(req: Request) {
         timeoutMs: 40000,
         maxRetries: 2,
           params: {
-            fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url,updated_time}',
+            fields: 'id,name,campaign_id,adset_id,status,effective_status,creative{id,name,title,body,object_story_spec,thumbnail_url,image_url}',
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
             limit: '100',
           },
