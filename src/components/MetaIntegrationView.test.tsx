@@ -102,6 +102,8 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     await waitFor(() => expect(syncMetaAssetMock).toHaveBeenCalledTimes(1));
     expect(syncMetaAssetMock).toHaveBeenCalledWith(expect.objectContaining({
       clientMetaAssetId: 'link-linked-1',
+      period: 'last_90d',
+      requestedLevel: 'creative',
     }));
 
     await waitFor(() => expect(screen.getByTestId('meta-bulk-sync-progress')).toHaveTextContent('1/1'));
