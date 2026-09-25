@@ -21,6 +21,7 @@ export interface CreativeLabClientMediaSummary {
   activeAds: number;
   hasActiveMedia: boolean;
   lastSyncedAt: string | null;
+  adLastSyncedAt?: string | null;
   dataAvailable?: boolean;
   adDataAvailable?: boolean;
 }

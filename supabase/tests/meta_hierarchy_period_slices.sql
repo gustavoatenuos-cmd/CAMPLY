@@ -284,6 +284,21 @@ BEGIN
     RAISE EXCEPTION 'stale base must not answer a slice it does not cover: %', v_h;
   END IF;
 
+  v_lab_summary := public.get_meta_freshness_status(60, 360);
+  IF v_lab_summary->>'state' <> 'ready'
+     OR v_lab_summary->'items'->0->>'clientId' <> 'client_slices'
+     OR v_lab_summary->'items'->0->>'structureLastSyncedAt' IS NULL
+     OR v_lab_summary->'items'->0->>'creativeLastSyncedAt' IS NULL
+  THEN
+    RAISE EXCEPTION 'meta freshness status must expose independent structure/creative clocks: %', v_lab_summary;
+  END IF;
+
+  IF has_function_privilege('anon', 'public.get_meta_freshness_status(INTEGER,INTEGER)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_meta_freshness_status(INTEGER,INTEGER)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'meta freshness RPC privileges are wrong';
+  END IF;
+
   IF has_function_privilege('authenticated', 'public.get_period_entity_metrics(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, DATE)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.get_hierarchy_entity_metrics(DATE, DATE, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT)', 'EXECUTE')
   THEN
@@ -325,13 +340,13 @@ BEGIN
   v_lab_summary := public.get_meta_creative_lab_account_summary();
   IF v_lab_summary->>'state' <> 'ready'
      OR COALESCE((v_lab_summary->'items'->0->>'dataAvailable')::boolean, false) IS NOT TRUE
-     OR COALESCE((v_lab_summary->'items'->0->>'adDataAvailable')::boolean, true) IS NOT FALSE
+     OR COALESCE((v_lab_summary->'items'->0->>'adDataAvailable')::boolean, false) IS NOT TRUE
      OR (v_lab_summary->'items'->0->>'activeCampaigns')::int <> 1
      OR (v_lab_summary->'items'->0->>'activeAdSets')::int <> 1
-     OR (v_lab_summary->'items'->0->>'activeAds')::int <> 0
-     OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT FALSE
+     OR (v_lab_summary->'items'->0->>'activeAds')::int <> 1
+     OR COALESCE((v_lab_summary->'items'->0->>'hasActiveMedia')::boolean, false) IS NOT TRUE
   THEN
-    RAISE EXCEPTION 'partial creative run without ad snapshots must stay unverified: %', v_lab_summary;
+    RAISE EXCEPTION 'newer shallow/partial structure must preserve older verified ad depth: %', v_lab_summary;
   END IF;
 END;
 $$;

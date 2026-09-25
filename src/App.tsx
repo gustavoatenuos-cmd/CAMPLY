@@ -3,9 +3,11 @@ import { AlertCircle, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DataFreshnessIndicator } from './components/DataFreshnessIndicator';
 import { Sidebar } from './components/Sidebar';
 import { StartupModal } from './components/StartupModal';
 import { useCamplyWorkspace } from './hooks/useCamplyWorkspace';
+import { useMetaFreshness } from './hooks/useMetaFreshness';
 import { getCamplyBuildInfo } from './lib/diagnostics/buildInfo';
 import { isMetaE2EMode } from './lib/meta/metaE2ERuntime';
 import { getSupabaseSessionDiagnostics } from './lib/supabase';
@@ -59,6 +61,10 @@ function SyncErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
 export default function App() {
   const [activeView, setActiveView] = useState<ViewId>(() => initialActiveView());
   const workspace = useCamplyWorkspace();
+  const freshness = useMetaFreshness(
+    workspace.authenticated && workspace.remoteLoaded && !workspace.remoteLoadError,
+    workspace.session?.user.id
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -98,6 +104,9 @@ export default function App() {
         onSignOut={workspace.signOut}
       />
       <main className="min-w-0 flex-1">
+        <div className="flex h-9 items-center justify-end border-b border-brand-line/60 px-4 sm:px-6">
+          <DataFreshnessIndicator state={freshness} />
+        </div>
         {workspace.remoteLoadError ? (
           <div role="alert" className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
             <span className="flex-1"><strong>Modo somente leitura.</strong> {workspace.remoteLoadError}</span>
