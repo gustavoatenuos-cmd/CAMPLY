@@ -196,7 +196,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
       const result = await syncMetaAsset({
         clientMetaAssetId: account.clientMetaAssetId,
         period: OFFICIAL_META_SYNC_PERIOD,
-        requestedLevel: 'campaign',
+        requestedLevel: 'creative',
       });
       return classifySyncOutcome(result);
     } catch (syncError) {
