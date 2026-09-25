@@ -560,6 +560,8 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
       activeAds: 1,
       hasActiveMedia: true,
       lastSyncedAt: '2026-06-30T18:00:00.000Z',
+      dataAvailable: true,
+      adDataAvailable: true,
     }];
   }
   if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
