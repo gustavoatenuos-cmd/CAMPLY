@@ -23,6 +23,7 @@ import {
   accountHasCreativeDepth,
   buildCreativeLabClientRows,
   loadCreativeLabForClient,
+  loadCreativeLabCreativeRows,
   loadCreativeLabClientMediaSummaries,
   loadCreativeLabClientMediaSummariesFromHierarchy,
   type CreativeLabClientMediaSummary,
@@ -729,13 +730,17 @@ export function CreativeCriticView({ data }: Props) {
   const worstCreative = creatives.find((creative) => creative.performanceFlag === 'worst') || null;
 
   const runAiAnalysis = async (creative: CreativeLabCreative) => {
-    if (!labResult) return;
-    const rows = labResult.rawRows.filter((row) => `${row.accountId}:${row.creativeId}` === creative.key);
-    if (rows.length === 0) return;
+    if (!labResult || !selectedClient) return;
     setAnalysisLoading(true);
     setAnalysisError(null);
     setAnalysis(null);
     try {
+      // Heavy ad-level rows are fetched only when the user asks for AI
+      // interpretation. Normal Lab loading receives only the backend read model.
+      const rows = await loadCreativeLabCreativeRows(selectedClient.accounts, period, creative.key);
+      if (rows.length === 0) {
+        throw new Error('Detalhes deste criativo não estão disponíveis para análise.');
+      }
       const adsData = rows.slice(0, 20).map((row) => {
         const matchingAd = creative.ads.find((ad) => ad.adId === row.adId);
         const impressions = Number(row.metrics.impressions?.value || 0);
