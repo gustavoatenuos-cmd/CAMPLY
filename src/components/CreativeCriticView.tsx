@@ -12,7 +12,6 @@ import {
   PauseCircle,
   RefreshCw,
   Search,
-  Sparkles,
   Target,
   Users,
   X,
@@ -978,11 +977,11 @@ export function CreativeCriticView({ data }: Props) {
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="text-brand-green" size={22} />
-              <h1 className="text-2xl font-black sm:text-3xl">Laboratório de Criativos</h1>
+              <Layers3 className="text-brand-muted" size={19} strokeWidth={1.8} />
+              <h1 className="text-xl font-semibold sm:text-2xl">Criativos</h1>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-muted">
-              Comece pelo cliente. O CAMPLY usa a base persistida do Analytics para relacionar campanhas, anúncios, criativos e resultados.
+            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-brand-muted">
+              Desempenho, classificação e histórico dos criativos conectados às contas Meta.
             </p>
           </div>
           <div className="inline-flex shrink-0 items-center gap-2 text-xs text-brand-muted">
@@ -1005,7 +1004,7 @@ export function CreativeCriticView({ data }: Props) {
           </div>
         )}
 
-        <section className="flex flex-col gap-3 rounded-2xl border border-brand-line bg-brand-surface p-4 lg:flex-row lg:items-center lg:justify-between">
+        <section className="flex flex-col gap-3 border-y border-brand-line bg-brand-surface/50 px-0 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
             <input
