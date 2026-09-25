@@ -269,7 +269,7 @@ BEGIN
   ) VALUES (
     v_partial_run, v_user, v_integration, 'act_slices', 'v23.0',
     'last_90d', 'creative', 'full_account', 'hierarchy-slices-partial',
-    'partial', now() + interval '1 minute', now() + interval '2 minutes', 'timeout', 'BRL', 'America/Sao_Paulo',
+    'partial', now() + interval '1 minute', now() + interval '2 minutes', 'partial_collection', 'BRL', 'America/Sao_Paulo',
     v_today - 89, v_today
   );
 
