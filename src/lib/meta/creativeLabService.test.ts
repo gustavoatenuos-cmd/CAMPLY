@@ -208,6 +208,62 @@ describe('creative lab client state', () => {
     });
   });
 
+  it('keeps a shallow active campaign as active structure until ad depth is verified', () => {
+    const data = baseData();
+    data.campaigns = [];
+    const accounts = new Map([['client-1', [{
+      clientMetaAssetId: 'link-1',
+      metaAssetId: 'asset-1',
+      integrationId: 'integration-1',
+      adAccountId: 'act_1',
+      accountName: 'Conta',
+      currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
+      assetStatus: 'ACTIVE',
+      linkedAt: '2026-09-24T18:00:00Z',
+      availablePeriods: ['last_90d'],
+      lastAttempt: {
+        id: 'run-campaign',
+        status: 'success' as const,
+        period: 'last_90d',
+        level: 'campaign',
+        scope: 'full_account',
+        startedAt: '2026-09-24T18:00:00Z',
+        finishedAt: '2026-09-24T18:01:00Z',
+      },
+      lastSuccess: {
+        id: 'run-campaign',
+        status: 'success' as const,
+        period: 'last_90d',
+        level: 'campaign',
+        scope: 'full_account',
+        startedAt: '2026-09-24T18:00:00Z',
+        finishedAt: '2026-09-24T18:01:00Z',
+      },
+    }]]]);
+    const official = new Map([['client-1', [{
+      clientId: 'client-1',
+      clientMetaAssetId: 'link-1',
+      accountId: 'act_1',
+      accountName: 'Conta',
+      activeCampaigns: 2,
+      activeAdSets: 0,
+      activeAds: 0,
+      hasActiveMedia: false,
+      lastSyncedAt: '2026-09-24T18:01:00Z',
+      dataAvailable: true,
+      adDataAvailable: false,
+    }]]]);
+
+    expect(buildCreativeLabClientRows(data, accounts, official)[0]).toMatchObject({
+      state: 'active_structure',
+      activeCampaigns: 2,
+      activeAdSets: 0,
+      activeAds: null,
+      creativeDepthAvailable: false,
+    });
+  });
+
   it('prefers the official synced Meta structure over the workspace fallback', () => {
     const data = baseData();
     data.campaigns[0].activeAdSets![0].status = 'ACTIVE';
@@ -223,6 +279,8 @@ describe('creative lab client state', () => {
       activeAds: 0,
       hasActiveMedia: false,
       lastSyncedAt: '2026-09-24T18:00:00Z',
+      dataAvailable: true,
+      adDataAvailable: true,
     }]]]);
 
     expect(buildCreativeLabClientRows(data, new Map(), official)[0]).toMatchObject({
@@ -281,7 +339,7 @@ describe('creative lab sync depth', () => {
     }
   });
 
-  it('accepts a partial creative attempt when it still persisted usable deep data', () => {
+  it('does not infer persisted depth from partial run metadata alone', () => {
     expect(accountHasCreativeDepth({
       ...account,
       lastAttempt: {
@@ -294,15 +352,15 @@ describe('creative lab sync depth', () => {
         finishedAt: '2026-09-24T19:01:00Z',
       },
       lastSuccess: {
-        id: 'run-shallow',
+        id: 'run-deep-older',
         status: 'success',
         period: 'last_90d',
-        level: 'campaign',
+        level: 'creative',
         scope: 'full_account',
         startedAt: '2026-09-24T18:00:00Z',
         finishedAt: '2026-09-24T18:01:00Z',
       },
-    })).toBe(true);
+    })).toBe(false);
   });
 
   it('rejects failed or running creative attempts as usable depth', () => {

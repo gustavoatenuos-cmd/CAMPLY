@@ -343,6 +343,11 @@ export function CreativeCriticView({ data }: Props) {
     return map;
   }, [mediaSummaries]);
 
+  const mediaSummaryByAccount = useMemo(
+    () => new Map(mediaSummaries.map((summary) => [summary.clientMetaAssetId, summary] as const)),
+    [mediaSummaries]
+  );
+
   const clientRows = useMemo(
     () => buildCreativeLabClientRows(data, accountMap, mediaSummaryMap, mediaSummaryLoaded).sort((a, b) => (
       stateOrder(a.state) - stateOrder(b.state)
@@ -363,11 +368,16 @@ export function CreativeCriticView({ data }: Props) {
     const unique = new Map<string, (typeof clientRows)[number]['accounts'][number]>();
     for (const row of clientRows) {
       for (const account of row.accounts) {
-        if (!accountHasCreativeDepth(account)) unique.set(account.clientMetaAssetId, account);
+        const summary = mediaSummaryByAccount.get(account.clientMetaAssetId);
+        const verifiedDepth = summary?.adDataAvailable === true;
+        const verifiedMissingDepth = summary?.adDataAvailable === false;
+        if (verifiedMissingDepth || (!verifiedDepth && !accountHasCreativeDepth(account))) {
+          unique.set(account.clientMetaAssetId, account);
+        }
       }
     }
     return [...unique.values()];
-  }, [clientRows]);
+  }, [clientRows, mediaSummaryByAccount]);
 
   const syncCreativeLab = async () => {
     if (bulkCreativeSyncing || accountsNeedingCreativeDepth.length === 0) return;
