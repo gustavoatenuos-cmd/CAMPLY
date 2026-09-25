@@ -78,10 +78,17 @@ export async function refreshStaleMetaAccounts(options: {
   level?: Extract<MetaSyncLevel, 'campaign' | 'creative'>;
   staleAfterMinutes?: number;
   concurrency?: number;
+  clientMetaAssetIds?: string[];
 } = {}): Promise<RefreshStaleMetaResult> {
   const level = options.level || 'campaign';
   const accounts = await loadMetaFreshnessStatus(options.staleAfterMinutes ?? 30);
-  const staleAccounts = accounts.filter((account) => (
+  const selectedIds = options.clientMetaAssetIds?.length
+    ? new Set(options.clientMetaAssetIds)
+    : null;
+  const eligibleAccounts = selectedIds
+    ? accounts.filter((account) => selectedIds.has(account.clientMetaAssetId))
+    : accounts;
+  const staleAccounts = eligibleAccounts.filter((account) => (
     level === 'creative'
       ? account.needsCreativeRefresh
       : account.needsCampaignRefresh
@@ -123,11 +130,11 @@ export async function refreshStaleMetaAccounts(options: {
   }
 
   return {
-    checked: accounts.length,
+    checked: eligibleAccounts.length,
     stale: staleAccounts.length,
     refreshed,
     running,
     failed,
-    accounts,
+    accounts: eligibleAccounts,
   };
 }
