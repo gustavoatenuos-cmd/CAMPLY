@@ -1,7 +1,7 @@
 import type { Campaign, CamplyData, Client } from '../../types';
 import { isClientOperationallyActive } from '../../data/receivablesForecast';
 import type { DashboardPeriod, MetricContract } from '../performance/globalPerformanceDashboard';
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import type { ClientMetaAccount } from './clientMetaAssetService';
 import { e2eMetric, isMetaE2EMode } from './metaE2ERuntime';
 import { loadMetaHierarchy, type MetaHierarchyItem, type MetaHierarchyPage } from './performanceHierarchyService';
@@ -801,8 +801,8 @@ export async function loadCreativeLabClientMediaSummaries(): Promise<CreativeLab
       adDataAvailable: true,
     }];
   }
-  if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
-  const { data, error } = await supabase.rpc('get_meta_creative_lab_account_summary');
+  if (!supabaseData) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
+  const { data, error } = await supabaseData.rpc('get_meta_creative_lab_account_summary');
   if (error) {
     console.error('[CreativeLab] Falha no resumo oficial de mídia ativa.', error);
     throw new Error(`Resumo Meta indisponível: ${error.message}`);
@@ -945,7 +945,7 @@ async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPe
       }],
     };
   }
-  if (!supabase) throw new Error('Supabase não configurado.');
+  if (!supabaseData) throw new Error('Supabase não configurado.');
   const pageSize = 100;
   let page = 1;
   let total = 0;
@@ -953,7 +953,7 @@ async function loadAccountRows(account: ClientMetaAccount, period: CreativeLabPe
   const rows: CreativeLabRawRow[] = [];
 
   do {
-    const { data, error } = await supabase.rpc('get_meta_creative_lab', {
+    const { data, error } = await supabaseData.rpc('get_meta_creative_lab', {
       p_client_meta_asset_id: account.clientMetaAssetId,
       p_period: period,
       p_page: page,
@@ -1013,9 +1013,9 @@ export async function loadCreativeLabForClient(
         : { state: 'empty', rawRows: [], creatives: [], message: 'Nenhum criativo sincronizado para este cliente no período.' };
     }
 
-    if (!supabase) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
+    if (!supabaseData) throw new Error('Supabase não configurado para o Laboratório de Criativos.');
 
-    const { data, error } = await supabase.rpc('get_meta_creative_lab_dashboard', {
+    const { data, error } = await supabaseData.rpc('get_meta_creative_lab_dashboard', {
       p_client_meta_asset_ids: accounts.map((account) => account.clientMetaAssetId),
       p_period: period,
       p_force_refresh: false,
