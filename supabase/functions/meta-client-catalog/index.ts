@@ -29,6 +29,10 @@ type RunRow = {
   started_at: string
   finished_at: string | null
   termination_reason?: string | null
+  error_message?: string | null
+  metadata?: Record<string, unknown> | null
+  date_start?: string | null
+  date_stop?: string | null
   pages_fetched?: number | null
   records_fetched?: number | null
   integration_id: string
@@ -68,6 +72,10 @@ function runSummary(run?: RunRow) {
     startedAt: run.started_at,
     finishedAt: run.finished_at,
     terminationReason: run.termination_reason ?? null,
+    errorMessage: run.error_message ?? null,
+    metadata: run.metadata ?? null,
+    dateStart: run.date_start ?? null,
+    dateStop: run.date_stop ?? null,
     pagesFetched: run.pages_fetched ?? undefined,
     recordsFetched: run.records_fetched ?? undefined,
   }
@@ -147,7 +155,8 @@ serve(async (req) => {
         ? []
         : await sql<RunRow[]>`
           select id, status, requested_period, requested_level, run_scope, started_at, finished_at,
-                 termination_reason, pages_fetched, records_fetched, integration_id, ad_account_id
+                 termination_reason, error_message, metadata, date_start, date_stop,
+                 pages_fetched, records_fetched, integration_id, ad_account_id
           from public.meta_sync_runs
           where user_id = ${user.id}::uuid
             and integration_id = any(${integrationIds}::uuid[])
