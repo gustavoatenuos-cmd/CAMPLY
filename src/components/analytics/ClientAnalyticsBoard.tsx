@@ -78,30 +78,30 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient, o
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50/30">
+    <div className="flex h-full flex-col bg-brand-ink">
       {/* Header section with filters */}
-      <div className="bg-white text-gray-900 border-b px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+      <div className="flex shrink-0 flex-col gap-4 border-b border-brand-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-7">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Analytics por Cliente</h2>
-          <p className="text-sm text-gray-500">Acompanhamento de orçamento e performance</p>
+          <h2 className="text-lg font-semibold text-white">Analytics por Cliente</h2>
+          <p className="mt-0.5 text-sm text-brand-muted">Acompanhamento de orçamento e performance</p>
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-brand-muted" />
             <input 
               type="text"
               placeholder="Buscar cliente..." 
-              className="pl-9 bg-gray-50 flex h-10 w-full rounded-md border border-input px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full rounded-lg border border-brand-line bg-brand-surface py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-brand-muted focus:border-white/20"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           
           <div className="w-[180px] relative">
-            <Filter className="absolute left-2.5 top-3 h-4 w-4 text-gray-400" />
+            <Filter className="absolute left-2.5 top-3 h-4 w-4 text-brand-muted" />
             <select 
-              className="pl-8 bg-gray-50 flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full rounded-lg border border-brand-line bg-brand-surface py-2 pl-8 pr-3 text-sm text-white outline-none focus:border-white/20"
               value={statusFilter} 
               onChange={(e: any) => setStatusFilter(e.target.value as FilterStatus)}
             >
@@ -117,19 +117,19 @@ export function ClientAnalyticsBoard({ clients, period, loading, onEditClient, o
       </div>
 
       {/* Grid section */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto px-5 py-5 lg:px-7">
         {loading ? (
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex h-full items-center justify-center text-brand-muted">
             Carregando analytics de clientes...
           </div>
         ) : filteredClients.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-white border border-dashed rounded-lg p-12">
+          <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-brand-line bg-brand-surface p-12 text-brand-muted">
             <Filter className="w-10 h-10 mb-3 opacity-20" />
-            <p className="text-lg font-medium text-gray-700">Nenhum cliente encontrado</p>
+            <p className="text-base font-semibold text-white">Nenhum cliente encontrado</p>
             <p className="text-sm">Tente ajustar a busca ou os filtros.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+          <div className="grid grid-cols-1 gap-3 pb-16 md:grid-cols-2 2xl:grid-cols-3">
             {filteredClients.map(c => (
               <ClientAnalyticsCard
                 key={c.clientId}

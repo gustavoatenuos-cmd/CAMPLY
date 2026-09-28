@@ -8,12 +8,12 @@ interface StatusTone {
 }
 
 export const STATUS_TONE: Record<ClientAnalyticsDecision['status'], StatusTone> = {
-  healthy: { label: 'Saudável', icon: <CheckCircle2 className="h-3.5 w-3.5" />, badgeClass: 'bg-green-50 text-green-700 border border-green-200' },
-  attention: { label: 'Atenção', icon: <CircleDashed className="h-3.5 w-3.5" />, badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  critical: { label: 'Crítico', icon: <AlertTriangle className="h-3.5 w-3.5" />, badgeClass: 'bg-red-50 text-red-700 border border-red-200' },
-  no_profile: { label: 'Perfil pendente', icon: <HelpCircle className="h-3.5 w-3.5" />, badgeClass: 'bg-gray-100 text-gray-700 border border-gray-200' },
-  no_data: { label: 'Sem dados', icon: <Clock className="h-3.5 w-3.5" />, badgeClass: 'bg-gray-100 text-gray-700 border border-gray-200' },
-  stale_data: { label: 'Dados desatualizados', icon: <Clock className="h-3.5 w-3.5" />, badgeClass: 'bg-sky-50 text-sky-700 border border-sky-200' },
+  healthy: { label: 'Saudável', icon: <CheckCircle2 className="h-3.5 w-3.5" />, badgeClass: 'bg-emerald-400/10 text-emerald-300 border border-emerald-400/20' },
+  attention: { label: 'Atenção', icon: <CircleDashed className="h-3.5 w-3.5" />, badgeClass: 'bg-amber-400/10 text-amber-300 border border-amber-400/20' },
+  critical: { label: 'Crítico', icon: <AlertTriangle className="h-3.5 w-3.5" />, badgeClass: 'bg-rose-400/10 text-rose-300 border border-rose-400/20' },
+  no_profile: { label: 'Perfil pendente', icon: <HelpCircle className="h-3.5 w-3.5" />, badgeClass: 'bg-white/[0.04] text-brand-muted border border-brand-line' },
+  no_data: { label: 'Sem dados', icon: <Clock className="h-3.5 w-3.5" />, badgeClass: 'bg-white/[0.04] text-brand-muted border border-brand-line' },
+  stale_data: { label: 'Dados desatualizados', icon: <Clock className="h-3.5 w-3.5" />, badgeClass: 'bg-sky-400/10 text-sky-300 border border-sky-400/20' },
 };
 
 function money(value: number | null): string | null {
@@ -76,18 +76,18 @@ export function ClientAnalyticsStatusPanel({ decision }: { decision: ClientAnaly
           {tone.label}
         </span>
         {decision.dataQuality.status === 'partial' && (
-          <span className="text-[11px] font-medium text-amber-600">Dados parciais — leitura limitada</span>
+          <span className="text-[11px] font-medium text-amber-300">Dados parciais — leitura limitada</span>
         )}
       </div>
 
-      <p className="text-sm leading-snug text-gray-600">{decision.recommendation}</p>
+      <p className="text-sm leading-snug text-brand-muted">{decision.recommendation}</p>
 
       {statGrid.length > 0 && (
         <div className="hidden gap-2 lg:grid lg:grid-cols-2">
           {statGrid.map((item) => (
-            <div key={item.label} className="rounded-lg bg-gray-50 p-2">
-              <p className="text-[10px] uppercase tracking-wide text-gray-500">{item.label}</p>
-              <p className="mt-0.5 text-sm font-semibold text-gray-900">{item.value}</p>
+            <div key={item.label} className="border-l border-brand-line pl-3">
+              <p className="text-[10px] text-brand-muted">{item.label}</p>
+              <p className="mt-0.5 text-sm font-semibold text-white">{item.value}</p>
             </div>
           ))}
         </div>

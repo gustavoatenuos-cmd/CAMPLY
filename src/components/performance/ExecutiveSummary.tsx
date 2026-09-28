@@ -40,13 +40,13 @@ interface SummaryCellProps {
 
 function SummaryCell({ icon: Icon, label, value, detail }: SummaryCellProps) {
   return (
-    <div className="rounded-xl border border-brand-line bg-brand-ink/45 p-4">
+    <div className="min-w-0 px-4 py-3">
       <div className="flex items-center gap-2">
-        <Icon size={15} className="text-brand-green" />
-        <p className="text-[10px] font-bold uppercase tracking-wider text-brand-muted">{label}</p>
+        <Icon size={14} className="text-brand-muted" />
+        <p className="text-[10px] font-medium text-brand-muted">{label}</p>
       </div>
-      <p className="mt-2 text-xl font-black text-white">{value}</p>
-      {detail && <p className="mt-1 text-[11px] text-brand-muted">{detail}</p>}
+      <p className="mt-1.5 truncate text-lg font-semibold text-white">{value}</p>
+      {detail && <p className="mt-1 text-[10px] text-brand-muted">{detail}</p>}
     </div>
   );
 }
@@ -106,11 +106,11 @@ export function ExecutiveSummary({ clients, period, statusFilter, onStatusFilter
     : null;
 
   return (
-    <section className="rounded-2xl border border-brand-line bg-brand-surface p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="overflow-hidden rounded-xl border border-brand-line bg-brand-surface">
+      <div className="flex flex-col gap-3 border-b border-brand-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Resumo executivo</p>
-          <h2 className="mt-1 text-xl font-black text-white">Como está a operação agora</h2>
+          <p className="text-[11px] font-medium text-brand-muted">Resumo executivo</p>
+          <h2 className="mt-0.5 text-sm font-semibold text-white">Operação no período</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar clientes por saúde">
           <button
@@ -140,7 +140,7 @@ export function ExecutiveSummary({ clients, period, statusFilter, onStatusFilter
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid divide-y divide-brand-line sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
         <SummaryCell icon={Banknote} label="Investimento total" value={investmentValue} detail={`${spend.accountsUsed} conta${spend.accountsUsed === 1 ? '' : 's'} com gasto no período`} />
         <SummaryCell icon={MessageCircle} label="Conversas totais" value={formatCount(conversations.value)} />
         <SummaryCell icon={ShoppingBag} label="Compras totais" value={formatCount(purchases.value)} />
@@ -150,7 +150,7 @@ export function ExecutiveSummary({ clients, period, statusFilter, onStatusFilter
         <SummaryCell icon={ShieldAlert} label="Contas com problema" value={formatCount(problemAccounts)} detail="tentativa de sync com falha ou parcial" />
       </div>
 
-      {partialNote && <p className="mt-3 text-xs text-amber-300/90">{partialNote}</p>}
+      {partialNote && <p className="border-t border-brand-line px-4 py-2 text-[11px] text-amber-300/90">{partialNote}</p>}
     </section>
   );
 }

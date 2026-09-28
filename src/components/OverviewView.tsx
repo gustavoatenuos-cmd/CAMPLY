@@ -493,72 +493,64 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
   }
 
   return (
-    <motion.section 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="h-full overflow-y-auto bg-brand-ink px-4 py-5 sm:px-5 lg:px-8 lg:py-8"
+    <motion.section
+      initial={false}
+      className="h-full overflow-y-auto bg-brand-ink px-4 py-4 sm:px-5 lg:px-7 lg:py-6"
     >
-      <div className="mx-auto max-w-[1700px] space-y-6">
-        <header className="glass-card rounded-2xl p-5 lg:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-brand-green">
-                <CircleGauge size={18} />
-                <p className="text-xs font-bold uppercase tracking-[0.2em]">Dashboard</p>
+      <div className="mx-auto max-w-[1720px] space-y-5">
+        <header className="border-b border-brand-line pb-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-brand-muted">
+                <CircleGauge size={15} />
+                <span className="text-xs font-medium">Visão geral da operação</span>
               </div>
-              <h1 className="mt-3 text-3xl font-black text-white lg:text-4xl">Performance real da operação.</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-muted">
-                Clientes, contas, campanhas, metas e qualidade dos dados em uma leitura única. Os números desta área vêm do banco analítico e não usam o fallback antigo do workspace.
+              <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">Dashboard</h1>
+              <p className="mt-1 max-w-2xl text-sm text-brand-muted">
+                Performance, prioridades e qualidade dos dados em um único recorte operacional.
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="relative min-w-[230px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" size={16} />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="relative min-w-[240px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" size={15} />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   aria-label="Buscar cliente ou conta"
                   placeholder="Buscar cliente ou conta"
-                  className="w-full rounded-xl border border-brand-line bg-brand-ink py-2.5 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-brand-muted focus:border-brand-green"
+                  className="h-9 w-full rounded-lg border border-brand-line bg-brand-surface pl-9 pr-3 text-sm text-white outline-none placeholder:text-brand-muted focus:border-white/20"
                 />
               </label>
               <select
                 aria-label="Período do Dashboard"
                 value={period}
                 onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
-                className="rounded-xl border border-brand-line bg-brand-ink px-3 py-2.5 text-sm text-white outline-none focus:border-brand-green"
+                className="h-9 rounded-lg border border-brand-line bg-brand-surface px-3 text-sm text-white outline-none focus:border-white/20"
               >
                 {capabilityState.capabilities.supportedPeriods.map((value) => (
                   <option key={value} value={value}>{periodLabels[value]}</option>
                 ))}
               </select>
-                <button
-                  type="button"
-                  onClick={handleRefreshDashboard}
-                  disabled={loading}
-                  title="Relê os dados já salvos — não dispara sincronização"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-line px-4 py-2.5 text-sm font-bold text-brand-soft transition hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
-                >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                  Atualizar Dashboard
-                </button>
+              <button
+                type="button"
+                onClick={handleRefreshDashboard}
+                disabled={loading}
+                title="Relê os dados já salvos — não dispara sincronização"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-brand-line bg-brand-surface px-3 text-sm font-medium text-brand-soft transition-colors hover:bg-brand-surface2 disabled:cursor-wait disabled:opacity-60"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                Recarregar
+              </button>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-brand-line pt-4 text-xs text-brand-muted">
-            <span>Período: <strong className="text-white">{periodLabels[period]}</strong></span>
-            <span>•</span>
-            <span>Intervalo exato: <strong className="text-white">{selectedRange.dateStart} a {selectedRange.dateStop}</strong></span>
-            <span>•</span>
-            <span>Cobertura: <strong className="text-white">{coverageLabel(filteredClients)}</strong></span>
-            <span>•</span>
-            <span>Carregado: <strong className="text-white">{lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : 'aguardando'}</strong></span>
-            <span>•</span>
-            <span>Clientes exibidos: <strong className="text-white">{filteredClients.length}</strong> de <strong className="text-white">{clients.length}</strong></span>
-            <span>•</span>
-            <label className="flex items-center gap-2 text-xs text-brand-muted">
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-brand-muted">
+            <span><strong className="font-medium text-brand-soft">{selectedRange.dateStart} → {selectedRange.dateStop}</strong></span>
+            <span>{coverageLabel(filteredClients)}</span>
+            <span>Atualizado {lastLoadedAt ? lastLoadedAt.toLocaleString('pt-BR') : '—'}</span>
+            <span>{filteredClients.length} de {clients.length} clientes</span>
+            <label className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={includeInactive}
@@ -655,13 +647,13 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
 
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-              <article className="glass-card rounded-2xl p-5">
+              <article className="rounded-xl border border-brand-line bg-brand-surface p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Desvios de metas</p>
-                    <h2 className="mt-1 text-xl font-black text-white">Comparações que sustentam as decisões</h2>
+                    <p className="text-xs font-medium text-brand-muted">Desvios de metas</p>
+                    <h2 className="mt-1 text-base font-semibold text-white">Comparações que sustentam as decisões</h2>
                   </div>
-                  <AlertTriangle className="text-brand-green drop-shadow-[0_0_8px_rgba(0,229,153,0.8)]" size={22} />
+                  <AlertTriangle className="text-brand-muted" size={18} />
                 </div>
                 <div className="mt-4 space-y-3">
                   {priorities.length > 0 ? priorities.map(({ client, evaluation }, index) => (
@@ -673,12 +665,12 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-bold text-white">{index + 1}. {client.clientName}</p>
-                          <p className="mt-1 text-xs font-bold uppercase tracking-wider text-brand-green">{client.analysisProfile?.customVertical || client.analysisProfile?.vertical || 'Segmento não configurado'} · {metricLabel(evaluation.metricId)}</p>
+                          <p className="mt-1 text-xs font-medium text-brand-muted">{client.analysisProfile?.customVertical || client.analysisProfile?.vertical || 'Segmento não configurado'} · {metricLabel(evaluation.metricId)}</p>
                           <p className="mt-1 text-sm text-brand-muted">{evaluationDescription(client, evaluation)}</p>
                           <p className="mt-2 text-xs text-brand-soft">
                             Confiança: {evaluation.confidence.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}% · Investigar {evaluation.campaignId ? 'a campanha e seus conjuntos' : 'a conta e as campanhas responsáveis'}.
                           </p>
-                          <p className="mt-2 text-sm font-semibold text-white">Ação recomendada: <span className="text-brand-green drop-shadow-[0_0_4px_rgba(0,229,153,0.3)]">{recommendationFor(evaluation)}</span></p>
+                          <p className="mt-2 text-sm font-semibold text-white">Ação recomendada: <span className="text-brand-soft">{recommendationFor(evaluation)}</span></p>
                         </div>
                         <PerformanceStatusBadge status={evaluation.status} />
                       </div>
@@ -691,9 +683,9 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
                 </div>
               </article>
 
-              <article className="glass-card rounded-2xl p-5">
-                <p className="text-xs font-semibold uppercase tracking-wider text-brand-green">Operação de hoje</p>
-                <h2 className="mt-1 text-xl font-black text-white">Visibilidade rápida do sistema</h2>
+              <article className="rounded-xl border border-brand-line bg-brand-surface p-4">
+                <p className="text-xs font-medium text-brand-muted">Operação de hoje</p>
+                <h2 className="mt-1 text-base font-semibold text-white">Visibilidade rápida do sistema</h2>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <QuickMetric icon={Users} label="Clientes ativos" value={activeClients} onClick={() => setActiveView('clients')} />
                   <QuickMetric icon={Megaphone} label="Campanhas ativas" value={activeCampaigns} onClick={() => setActiveView('campaigns')} />
@@ -724,17 +716,15 @@ export function OverviewView({ data, updateData, setActiveView }: OverviewViewPr
 function QuickMetric({ icon: Icon, label, value, onClick }: { icon: any; label: string; value: number | string; onClick: () => void }) {
   return (
     <motion.button
-      whileHover={{ scale: 1.03, y: -2 }}
-      whileTap={{ scale: 0.97 }}
       onClick={onClick}
-      className="flex flex-col items-start gap-2 rounded-xl border border-white/[0.04] bg-brand-surface2/30 p-3 text-left transition hover:border-brand-green/30 hover:shadow-[0_0_15px_rgba(0,229,153,0.1)]"
+      className="flex min-h-20 flex-col items-start justify-between rounded-lg border border-brand-line bg-brand-ink p-3 text-left transition-colors hover:bg-brand-surface2"
     >
       <div className="flex w-full items-center justify-between">
-        <Icon size={16} className="text-brand-green drop-shadow-[0_0_4px_rgba(0,229,153,0.6)]" />
+        <Icon size={15} className="text-brand-muted" />
       </div>
       <div>
-        <p className="text-[11px] uppercase tracking-wider text-brand-muted">{label}</p>
-        <p className="mt-0.5 text-lg font-bold text-white drop-shadow-md">{value}</p>
+        <p className="text-[10px] font-medium text-brand-muted">{label}</p>
+        <p className="mt-0.5 text-base font-semibold text-white">{value}</p>
       </div>
     </motion.button>
   );

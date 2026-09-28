@@ -48,7 +48,7 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
 
   if (view.status === 'no_profile') {
     return (
-      <div className="flex items-center text-sm text-gray-500 italic py-2">
+      <div className="flex items-center text-sm text-brand-muted italic py-2">
         Meta principal não configurada
       </div>
     );
@@ -57,9 +57,9 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
   if (view.status === 'unmapped') {
     return (
       <div className="space-y-2 text-sm">
-        <div className="flex justify-between items-center text-gray-600 mb-1">
+        <div className="flex justify-between items-center text-brand-muted mb-1">
           <span className="font-medium">Meta configurada:</span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+          <span className="inline-flex items-center rounded-md border border-brand-line bg-white/[0.04] px-2 py-0.5 text-xs font-medium text-brand-soft">
             {view.label}
           </span>
         </div>
@@ -75,15 +75,15 @@ export function ClientPrimaryMetricBlock({ performance }: ClientPrimaryMetricBlo
 
   return (
     <div className="space-y-2 text-sm">
-      <div className="flex justify-between items-center text-gray-600 mb-1">
+      <div className="flex justify-between items-center text-brand-muted mb-1">
         <span className="font-medium">Meta configurada:</span>
         <span>{view.label}</span>
       </div>
-      <div className={`grid gap-2 ${cells.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+      <div className={`grid gap-px overflow-hidden rounded-lg border border-brand-line bg-brand-line ${cells.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
         {cells.map((cell) => (
-          <div key={cell.label} className="bg-gray-50 p-2 rounded flex flex-col">
-            <span className="text-xs text-gray-500">{cell.label}</span>
-            <span className="font-semibold text-gray-900">{cell.value}</span>
+          <div key={cell.label} className="flex flex-col bg-brand-surface p-2.5">
+            <span className="text-xs text-brand-muted">{cell.label}</span>
+            <span className="font-semibold text-white">{cell.value}</span>
           </div>
         ))}
       </div>

@@ -76,7 +76,7 @@ if [[ $("${BROWSER[@]}" eval 'document.body.innerText.includes("Briefing do Agen
 fi
 
 step "segment filter persistence"
-assert_js 'document.body.innerText.includes("Performance real da operação.")' 'overview did not render'
+assert_js 'document.body.innerText.includes("Visão geral da operação") && document.body.innerText.includes("Dashboard")' 'overview did not render'
 assert_js 'document.body.innerText.includes("Dashboard") && document.body.innerText.includes("Últimos 90 dias")' 'official Dashboard naming/default did not render'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=\"segment-filter-Saúde\"]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 100
