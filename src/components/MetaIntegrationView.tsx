@@ -392,7 +392,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     try {
       const response = await invokeFunction<{ assets?: MetaAsset[] }>('meta-list-assets');
       setAssets(response.assets || []);
-      setNotice('Ativos atualizados e salvos. As métricas das campanhas só mudam quando você sincronizar a conta ou o período.');
+      setNotice('Ativos atualizados e salvos. As métricas seguem a atualização automática do CAMPLY.');
       await loadCatalog();
     } catch (discoverError) {
       setError(metaActionError(discoverError, 'Não foi possível atualizar os ativos.'));
