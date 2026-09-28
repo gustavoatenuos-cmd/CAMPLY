@@ -25,9 +25,9 @@ const TIER_ICON: Record<PriorityTier, typeof Siren> = {
 };
 
 const TIER_TONE: Record<PriorityTier, string> = {
-  action_now: 'border-rose-400/25 bg-rose-400/[0.04]',
-  attention: 'border-amber-400/25 bg-amber-400/[0.04]',
-  healthy: 'border-emerald-400/25 bg-emerald-400/[0.04]',
+  action_now: 'text-rose-300',
+  attention: 'text-amber-300',
+  healthy: 'text-emerald-300',
 };
 
 const HEALTHY_PREVIEW_LIMIT = 6;
@@ -54,7 +54,7 @@ function ClientPriorityRow({ entry, onSelectClient }: { entry: ClientPriorityEnt
       type="button"
       data-testid="client-priority-row"
       onClick={() => onSelectClient(entry.client.clientId)}
-      className="flex w-full items-start justify-between gap-3 rounded-xl border border-transparent bg-black/15 p-3 text-left transition hover:border-white/10 hover:bg-black/25"
+      className="flex w-full items-start justify-between gap-3 border-b border-brand-line px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-white/[0.025]"
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-white">
@@ -90,16 +90,16 @@ function PriorityTierColumn({
   const visible = isCappable && !expanded ? entries.slice(0, HEALTHY_PREVIEW_LIMIT) : entries;
 
   return (
-    <div data-testid={`priority-column-${tier}`} className={`rounded-2xl border p-4 ${TIER_TONE[tier]}`}>
-      <div className="flex items-center gap-2">
-        <Icon size={16} className="shrink-0 text-white/80" />
-        <h3 className="text-sm font-black text-white">{PRIORITY_TIER_LABELS[tier]}</h3>
-        <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-bold text-white">{entries.length}</span>
+    <div data-testid={`priority-column-${tier}`} className="min-w-0 bg-brand-surface">
+      <div className="flex h-10 items-center gap-2 border-b border-brand-line px-3">
+        <Icon size={14} className={`shrink-0 ${TIER_TONE[tier]}`} />
+        <h3 className="text-xs font-semibold text-white">{PRIORITY_TIER_LABELS[tier]}</h3>
+        <span className="ml-auto text-[11px] font-medium text-brand-muted">{entries.length}</span>
       </div>
 
-      <div className="mt-3 space-y-2">
+      <div>
         {visible.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-brand-muted">
+          <p className="p-5 text-center text-xs text-brand-muted">
             Nenhum cliente neste grupo.
           </p>
         ) : (
@@ -113,7 +113,7 @@ function PriorityTierColumn({
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="mt-2 text-xs font-bold text-brand-soft hover:text-white"
+          className="mx-3 my-2 text-xs font-medium text-brand-soft hover:text-white"
         >
           {expanded ? 'Mostrar menos' : `Ver todos (${entries.length})`}
         </button>
@@ -132,7 +132,7 @@ export function ClientPriorityBoard({ entries, onSelectClient }: ClientPriorityB
   const groups = groupByPriorityTier(entries);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid overflow-hidden rounded-xl border border-brand-line bg-brand-surface lg:grid-cols-3 lg:divide-x lg:divide-brand-line">
       <PriorityTierColumn tier="action_now" entries={groups.action_now} onSelectClient={onSelectClient} />
       <PriorityTierColumn tier="attention" entries={groups.attention} onSelectClient={onSelectClient} />
       <PriorityTierColumn tier="healthy" entries={groups.healthy} onSelectClient={onSelectClient} />
