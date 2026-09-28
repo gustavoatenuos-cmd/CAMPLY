@@ -93,19 +93,19 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
   // Determine badge color for pacing
   const getPacingColor = (status: string) => {
     switch (status) {
-      case 'on_track': return 'bg-green-100 text-green-800';
-      case 'under_pacing': return 'bg-blue-100 text-blue-800';
-      case 'over_pacing': return 'bg-yellow-100 text-yellow-800';
-      case 'budget_exceeded': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'on_track': return 'border border-emerald-400/20 bg-emerald-400/10 text-emerald-300';
+      case 'under_pacing': return 'border border-sky-400/20 bg-sky-400/10 text-sky-300';
+      case 'over_pacing': return 'border border-amber-400/20 bg-amber-400/10 text-amber-300';
+      case 'budget_exceeded': return 'border border-rose-400/20 bg-rose-400/10 text-rose-300';
+      default: return 'border border-brand-line bg-white/[0.04] text-brand-muted';
     }
   };
 
   const hasDataIssues = readiness.analytics.status === 'blocked';
 
   return (
-    <div className="flex flex-col h-full shadow-sm hover:shadow-md transition-shadow bg-white text-gray-900 rounded-xl border border-gray-200 overflow-hidden">
-      <div className="pb-3 border-b bg-gray-50/50 p-4">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-brand-line bg-brand-surface text-white">
+      <div className="border-b border-brand-line px-4 py-3">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
             <ClientLogo 
@@ -114,9 +114,9 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
               size="sm" 
             />
             <div>
-              <h3 className="font-semibold text-gray-900 line-clamp-1">{client?.company || client?.name || performance.clientName || 'Cliente Desconhecido'}</h3>
-              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                {profile?.operationType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-800 border border-gray-200">{profile.operationType}</span>}
+              <h3 className="line-clamp-1 font-semibold text-white">{client?.company || client?.name || performance.clientName || 'Cliente Desconhecido'}</h3>
+              <div className="mt-1 flex items-center gap-2 text-xs text-brand-muted">
+                {profile?.operationType && <span className="inline-flex items-center rounded-md border border-brand-line bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-brand-soft">{profile.operationType}</span>}
                 {profile?.salesModels && profile.salesModels.length > 0 && (
                   <span className="truncate max-w-[120px]">{profile.salesModels[0]}</span>
                 )}
@@ -133,16 +133,16 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
         </div>
       </div>
 
-      <div className="flex-1 p-4 pt-4">
+      <div className="flex-1 p-4">
         {readiness.analytics.status === 'blocked' ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
-            <HelpCircle className="h-5 w-5 text-gray-400" />
-            <p className="text-sm font-medium text-gray-600">
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-brand-line bg-brand-ink p-6 text-center">
+            <HelpCircle className="h-5 w-5 text-brand-muted" />
+            <p className="text-sm font-medium text-brand-soft">
               {readiness.analytics.missing[0] || readiness.analytics.warnings[0] || 'Cliente ainda não pode ser analisado'}
             </p>
             {readiness.analytics.action && (
               <button
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                className="rounded-md bg-brand-green px-3 py-1.5 text-xs font-semibold text-brand-ink hover:brightness-95"
                 onClick={() => (
                   onOpenMetaIntegration && META_INTEGRATION_ACTION.test(readiness.analytics.action)
                     ? onOpenMetaIntegration()
@@ -156,43 +156,43 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
         ) : (
           <>
             {readiness.analytics.status === 'limited' && readiness.analytics.warnings.length > 0 && (
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 p-2 text-xs text-amber-300">
                 <Clock className="h-3.5 w-3.5 shrink-0" />
                 <span>{readiness.analytics.warnings.join(' ')}</span>
               </div>
             )}
             <ClientAnalyticsStatusPanel decision={decision} />
 
-            <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="mt-4 border-t border-brand-line pt-4">
               <ClientPrimaryMetricBlock performance={performance} />
             </div>
 
-            <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="mt-4 border-t border-brand-line pt-4">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-600">Orçamento mensal</span>
+                <span className="text-sm font-medium text-brand-soft">Orçamento mensal</span>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPacingColor(budgetPacing.status)}`}>
                   {budgetPacing.statusText}
                 </span>
               </div>
 
               {budgetPacing.status === 'no_budget' ? (
-                <div className="text-sm text-gray-500 italic py-1">
+                <div className="py-1 text-sm italic text-brand-muted">
                   Orçamento não configurado
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2 mt-2">
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Planejado</span>
-                    <span className="font-semibold text-sm text-gray-900">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
+                  <div className="flex flex-col rounded-md border border-brand-line bg-brand-ink p-2.5">
+                    <span className="text-[10px] font-medium text-brand-muted">Planejado</span>
+                    <span className="text-sm font-semibold text-white">{formatCurrency(budgetPacing.plannedMonthlyBudget)}</span>
                   </div>
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Gasto</span>
-                    <span className="font-semibold text-sm text-gray-900">{formatCurrency(budgetPacing.actualSpend)}</span>
+                  <div className="flex flex-col rounded-md border border-brand-line bg-brand-ink p-2.5">
+                    <span className="text-[10px] font-medium text-brand-muted">Gasto</span>
+                    <span className="text-sm font-semibold text-white">{formatCurrency(budgetPacing.actualSpend)}</span>
                   </div>
-                  <div className="bg-gray-50 p-2 rounded flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Restante</span>
+                  <div className="flex flex-col rounded-md border border-brand-line bg-brand-ink p-2.5">
+                    <span className="text-[10px] font-medium text-brand-muted">Restante</span>
                     <span className={`font-semibold text-sm ${
-                      budgetPacing.remainingBudget !== null && budgetPacing.remainingBudget < 0 ? 'text-red-600' : 'text-gray-900'
+                      budgetPacing.remainingBudget !== null && budgetPacing.remainingBudget < 0 ? 'text-rose-300' : 'text-white'
                     }`}>
                       {formatCurrency(budgetPacing.remainingBudget)}
                     </span>
@@ -204,15 +204,15 @@ export function ClientAnalyticsCard({ performance, period, onOpenCampaigns, onOp
         )}
       </div>
 
-      <div className="p-4 border-t bg-gray-50/30 flex justify-between gap-2 mt-auto">
+      <div className="mt-auto flex gap-2 border-t border-brand-line p-3">
         <button 
-          className="w-full text-xs inline-flex items-center justify-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand-line bg-brand-ink px-3 text-xs font-medium text-brand-soft hover:bg-brand-surface2 disabled:opacity-50"
           onClick={() => onOpenDetails(performance)}
         >
           Ver detalhes
         </button>
         <button 
-          className="w-full text-xs inline-flex items-center justify-center px-3 py-1.5 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-brand-green px-3 text-xs font-semibold text-brand-ink hover:brightness-95 disabled:opacity-40"
           disabled={hasDataIssues}
           onClick={() => onOpenCampaigns(performance)}
         >
