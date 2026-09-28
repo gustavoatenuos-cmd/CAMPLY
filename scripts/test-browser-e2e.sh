@@ -264,7 +264,7 @@ assert_js 'document.querySelector("[role=tab][aria-selected=true]")?.innerText.i
 assert_js 'document.body.innerText.includes("Analytics por Cliente")' 'Analytics did not render the separate official client performance view'
 
 step "Creative Lab client-first flow"
-"${BROWSER[@]}" find role button click --name "Lab. Criativo"
+"${BROWSER[@]}" find role button click --name "Criativos"
 "${BROWSER[@]}" wait 350
 assert_js 'document.querySelector("main h1")?.innerText.includes("Laboratório de Criativos") === true && document.body.innerText.includes("Clínica Mock")' 'Creative Lab did not open with the synced client list'
 "${BROWSER[@]}" eval '(() => { const button=[...document.querySelectorAll("main button")].find((item) => item.innerText.includes("Clínica Mock")); button?.click(); return Boolean(button); })()' >/dev/null
