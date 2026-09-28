@@ -131,7 +131,9 @@ export function useMetaFreshness(enabled: boolean, userId?: string | null): Meta
     };
 
     const handleOnline = () => {
-      void run(false);
+      // Reconnect should bypass the focus throttle so a failed offline check
+      // can recover immediately without any manual action.
+      void run(true);
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
