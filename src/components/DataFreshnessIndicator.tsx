@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, WifiOff } from 'lucide-react';
+import { Check, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { MetaFreshnessState } from '../hooks/useMetaFreshness';
 
 export function DataFreshnessIndicator({ state }: { state: MetaFreshnessState }) {
@@ -8,7 +8,7 @@ export function DataFreshnessIndicator({ state }: { state: MetaFreshnessState })
     return (
       <div className="inline-flex items-center gap-2 text-xs text-brand-muted">
         <LoaderCircle size={13} className="animate-spin" />
-        Verificando dados
+        Verificando atualização automática
       </div>
     );
   }
@@ -17,7 +17,7 @@ export function DataFreshnessIndicator({ state }: { state: MetaFreshnessState })
     return (
       <div className="inline-flex items-center gap-2 text-xs text-brand-soft">
         <LoaderCircle size={13} className="animate-spin" />
-        Atualizando dados {state.completed}/{state.total}
+        Atualizando automaticamente {state.completed}/{state.total}
       </div>
     );
   }
@@ -25,8 +25,8 @@ export function DataFreshnessIndicator({ state }: { state: MetaFreshnessState })
   if (state.phase === 'attention') {
     return (
       <div className="inline-flex items-center gap-2 text-xs text-amber-300">
-        <WifiOff size={13} />
-        Algumas contas ainda estão atualizando
+        <RefreshCw size={13} />
+        Nova tentativa automática em breve
       </div>
     );
   }
@@ -34,7 +34,7 @@ export function DataFreshnessIndicator({ state }: { state: MetaFreshnessState })
   return (
     <div className="inline-flex items-center gap-2 text-xs text-brand-muted">
       <Check size={13} />
-      Dados atualizados
+      Atualização automática ativa
     </div>
   );
 }
