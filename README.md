@@ -32,6 +32,10 @@ Ela descreve:
 
 O app usa Supabase Auth com e-mail e senha, RLS por usuário e persistência híbrida. O `localStorage` mantém uma cópia local para abertura rápida; o Supabase sincroniza o workspace com controle de versão para impedir sobrescritas silenciosas entre dispositivos.
 
+O baseline de produção mais recente, incluindo gates aprovados, riscos e
+evidências ainda ausentes, está em
+[docs/production-baseline-2026-08-14.md](docs/production-baseline-2026-08-14.md).
+
 ## Supabase
 
 Crie um arquivo `.env.local` com:
