@@ -38,8 +38,9 @@ describe('operational decision ownership', () => {
     expect(aiService).not.toContain('budget_assessment');
   });
 
-  it('keeps the asynchronous startup briefing out of deterministic Meta browser E2E', () => {
-    expect(app).toContain("import { isMetaE2EMode } from './lib/meta/metaE2ERuntime'");
-    expect(app).toContain('!isMetaE2EMode ? <StartupModal');
+  it('keeps the authenticated app shell free of a blocking startup briefing', () => {
+    expect(app).not.toContain("import { StartupModal } from './components/StartupModal'");
+    expect(app).not.toContain('<StartupModal');
+    expect(app).toContain('<DataFreshnessIndicator state={freshness} />');
   });
 });
