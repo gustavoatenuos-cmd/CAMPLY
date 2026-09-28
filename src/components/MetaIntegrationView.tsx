@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Facebook, Link as LinkIcon, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Facebook, Link as LinkIcon, RefreshCw, Settings2, ShieldCheck, Unlink } from 'lucide-react';
 import { isClientOperationallyActive } from '../data/receivablesForecast';
 import { invokeFunction } from '../lib/invokeFunction';
 import {
@@ -19,11 +19,11 @@ import {
   type BulkSyncProgress,
 } from '../lib/meta/bulkSyncDiagnostics';
 import { OFFICIAL_META_SYNC_PERIOD, syncMetaAsset } from '../lib/meta/metaSyncService';
+import { describeMetaRunHealth, type MetaSyncHealth } from '../lib/meta/metaSyncHealth';
 import type { DashboardPeriod } from '../lib/performance/analyticsCapabilities';
 import type { CamplyData } from '../types';
 import { evaluateClientOperationalReadiness, summarizeMetaReadinessAcrossClients } from '../lib/operational/clientOperationalReadiness';
 import { BulkSyncResultsPanel } from './meta/BulkSyncResultsPanel';
-import { SyncStatusBadge } from './meta/SyncStatusBadge';
 import { MetaOperationalWorkspace } from './meta/MetaOperationalWorkspace';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
@@ -49,13 +49,19 @@ function accountLinkStatusLabel(account: ClientMetaAccount): string {
   return account.assetStatus === 'ACTIVE' || !account.assetStatus ? 'Conta pronta' : 'Conta vinculada';
 }
 
-function accountSyncEvidence(account: ClientMetaAccount): string {
-  const run = latestAccountSyncRun(account);
-  if (!run) return '\u00daltima sync: sem tentativa';
-  const status = run.status ?? 'success';
-  const period = bulkPeriodLabels[run.period as DashboardPeriod] ?? run.period;
-  const reason = run.terminationReason ? ` - Motivo: ${run.terminationReason}` : '';
-  return `\u00daltima sync: ${status} - Per\u00edodo: ${period}${reason} - Run: ${run.id}`;
+function healthToneClasses(health: MetaSyncHealth): string {
+  switch (health.tone) {
+    case 'success':
+      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200';
+    case 'warning':
+      return 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+    case 'danger':
+      return 'border-rose-400/20 bg-rose-400/10 text-rose-200';
+    case 'info':
+      return 'border-sky-400/20 bg-sky-400/10 text-sky-200';
+    default:
+      return 'border-brand-line bg-white/[0.04] text-brand-muted';
+  }
 }
 
 interface MetaIntegrationViewProps {
@@ -113,6 +119,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [showAvailableAssets, setShowAvailableAssets] = useState(false);
   const [showInactiveAccounts, setShowInactiveAccounts] = useState(false);
+  const [showAdvancedSync, setShowAdvancedSync] = useState(false);
   const bulkPeriod: DashboardPeriod = OFFICIAL_META_SYNC_PERIOD;
   const [bulkSync, setBulkSync] = useState<BulkSyncProgress | null>(null);
   const [retryingAccountId, setRetryingAccountId] = useState<string | null>(null);
@@ -168,6 +175,19 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
     () => linkedAccounts.filter((entry) => !isLinkedClientOperationallyActive(entry.clientId)),
     [linkedAccounts, isLinkedClientOperationallyActive]
   );
+
+
+  const activeAccountHealth = useMemo(() => activeLinkedAccounts.map((entry) => ({
+    ...entry,
+    health: describeMetaRunHealth(latestAccountSyncRun(entry.account)),
+  })), [activeLinkedAccounts]);
+
+  const accountHealthCounts = useMemo(() => ({
+    updated: activeAccountHealth.filter((entry) => entry.health.state === 'updated').length,
+    delayed: activeAccountHealth.filter((entry) => entry.health.state === 'delayed').length,
+    needsRetry: activeAccountHealth.filter((entry) => entry.health.state === 'needs_retry').length,
+    running: activeAccountHealth.filter((entry) => entry.health.state === 'running').length,
+  }), [activeAccountHealth]);
 
   // Prontidão Meta de cada conta já vinculada, a partir do último sync conhecido
   // (independente de um bulk sync ter acabado de rodar) - camada central usada em
@@ -260,6 +280,25 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
         setNotice(buildBulkSyncSummaryMessage(next));
         return next;
       });
+      await loadCatalog();
+    } finally {
+      setRetryingAccountId(null);
+    }
+  };
+
+
+  const retryLinkedAccount = async (account: ClientMetaAccount) => {
+    if (bulkSyncBusy) return;
+    setRetryingAccountId(account.clientMetaAssetId);
+    setError(null);
+    setNotice(null);
+    try {
+      const outcome = await runAccountSync(account);
+      if (outcome.status === 'failed') {
+        setError(outcome.error || outcome.message || 'A nova tentativa não foi concluída.');
+      } else {
+        setNotice('Nova tentativa concluída. O estado da conta foi atualizado abaixo.');
+      }
       await loadCatalog();
     } finally {
       setRetryingAccountId(null);
@@ -424,34 +463,39 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-brand-green">Contas operacionais</p>
                 <h2 className="mt-1 text-lg font-black text-white">Contas vinculadas a clientes</h2>
-                <p className="mt-1 max-w-xl text-sm text-brand-muted">Esta sincronização atualiza a base dos últimos 90 dias. O Dashboard e o Analytics usam essa base para montar os recortes de hoje, ontem, últimos 7 dias, últimos 30 dias e últimos 90 dias.</p>
+                <p className="mt-1 max-w-xl text-sm text-brand-muted">As contas são atualizadas automaticamente. Aqui você acompanha apenas a saúde da coleta e age quando existir uma falha real.</p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span data-testid="meta-bulk-period-fixed" className="rounded-lg border border-brand-line bg-brand-ink px-3 py-2 text-sm font-bold text-white">
-                  {bulkPeriodLabels[OFFICIAL_META_SYNC_PERIOD]}
-                </span>
-                <button
-                  data-testid="meta-sync-linked-clients"
-                  type="button"
-                  onClick={() => void syncLinkedClients()}
-                  disabled={activeLinkedAccounts.length === 0 || bulkSyncBusy}
-                  className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-black text-brand-ink disabled:opacity-60"
-                >
-                  <RefreshCw size={16} className={bulkSync?.running ? 'animate-spin' : ''} /> Sincronizar últimos 90 dias
-                </button>
+              <div className="flex items-center gap-2 text-xs text-brand-muted">
+                <CheckCircle2 size={14} className="text-emerald-300" />
+                Atualização automática
               </div>
             </div>
 
-            {bulkSync && (
-              <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs font-bold text-brand-soft">
-                {bulkSync.running ? 'Sincronizando' : 'Concluído'}: {bulkSync.completed}/{bulkSync.total} conta(s) vinculada(s)
-                {' · '}{bulkSync.success} sucesso
-                {bulkSync.partial > 0 ? `, ${bulkSync.partial} parcial` : ''}
-                {bulkSync.failed > 0 ? `, ${bulkSync.failed} falha` : ''}
-              </p>
-            )}
-
-            {bulkSync && <BulkSyncResultsPanel results={bulkSync.results} onRetry={(target) => void retryAccountSync(target)} retryDisabled={bulkSyncBusy} />}
+            <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+              <span className="rounded-md border border-brand-line bg-brand-ink px-2.5 py-1 text-brand-soft">
+                {activeLinkedAccounts.length} contas conectadas
+              </span>
+              {accountHealthCounts.updated > 0 && (
+                <span className="rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-emerald-200">
+                  {accountHealthCounts.updated} atualizadas
+                </span>
+              )}
+              {accountHealthCounts.delayed > 0 && (
+                <span className="rounded-md border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-amber-200">
+                  {accountHealthCounts.delayed} aguardando Meta
+                </span>
+              )}
+              {accountHealthCounts.needsRetry > 0 && (
+                <span className="rounded-md border border-rose-400/20 bg-rose-400/10 px-2.5 py-1 text-rose-200">
+                  {accountHealthCounts.needsRetry} precisam de atenção
+                </span>
+              )}
+              {accountHealthCounts.running > 0 && (
+                <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2.5 py-1 text-sky-200">
+                  {accountHealthCounts.running} atualizando
+                </span>
+              )}
+            </div>
 
             {catalogError && <div role="alert" className="mt-4 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">{catalogError}</div>}
 
@@ -463,27 +507,40 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
             )}
 
             <div className="mt-4 space-y-2">
-              {linkedAccountsReadiness.map(({ clientName, account, readiness }) => {
-                const syncResult = bulkSync?.results.find((result) => result.clientMetaAssetId === account.clientMetaAssetId);
-                return (
-                  <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex items-center justify-between gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-400/10" title="Conta vinculada ao cliente">
-                        <LinkIcon className="text-blue-300" size={15} />
-                      </div>
-                      <div>
-                        <p className="font-bold text-white">{clientName}</p>
-                        <p className="text-xs text-brand-muted">{account.accountName} - {account.adAccountId}</p>
-                        <p className="mt-0.5 text-[10px] text-brand-muted">{accountSyncEvidence(account)}</p>
-                      </div>
+              {activeAccountHealth.map(({ clientName, account, health }) => (
+                <div key={account.clientMetaAssetId} data-testid="meta-linked-account-row" className="flex flex-col gap-3 rounded-xl border border-brand-line bg-brand-ink/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-blue-400/10" title="Conta vinculada ao cliente">
+                      <LinkIcon className="text-blue-300" size={15} />
                     </div>
-                    <div className="flex items-center gap-2">
-                      {syncResult ? <SyncStatusBadge status={syncResult.status} /> : <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold text-emerald-200"><CheckCircle2 size={13} /> {accountLinkStatusLabel(account)}</span>}
-                      <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
+                    <div className="min-w-0">
+                      <p className="font-bold text-white">{clientName}</p>
+                      <p className="truncate text-xs text-brand-muted">{account.accountName} · {account.adAccountId}</p>
+                      <p className="mt-1 text-[11px] leading-4 text-brand-muted">{health.detail}</p>
                     </div>
                   </div>
-                );
-              })}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold ${healthToneClasses(health)}`}>
+                      {health.state === 'updated' && <CheckCircle2 size={13} />}
+                      {health.state === 'delayed' && <RefreshCw size={13} />}
+                      {health.state === 'needs_retry' && <AlertTriangle size={13} />}
+                      {health.state === 'running' && <RefreshCw size={13} className="animate-spin" />}
+                      {health.label}
+                    </span>
+                    {health.retryRecommended && (
+                      <button
+                        type="button"
+                        disabled={bulkSyncBusy}
+                        onClick={() => void retryLinkedAccount(account)}
+                        className="rounded-lg border border-rose-400/30 px-2.5 py-1 text-[11px] font-bold text-rose-200 disabled:opacity-50"
+                      >
+                        {retryingAccountId === account.clientMetaAssetId ? 'Tentando...' : 'Tentar novamente'}
+                      </button>
+                    )}
+                    <span className="rounded-full bg-white/5 px-2 py-1 text-[10px] font-bold text-brand-soft">{account.assetStatus || 'STATUS N/D'}</span>
+                  </div>
+                </div>
+              ))}
               {catalogLoading && linkedAccounts.length === 0 && (
                 <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Carregando contas vinculadas...</div>
               )}
@@ -492,6 +549,58 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
               )}
               {!catalogLoading && linkedAccounts.length > 0 && activeLinkedAccounts.length === 0 && (
                 <div className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">Nenhuma conta ativa no momento — veja "Contas fora da operação" abaixo.</div>
+              )}
+            </div>
+
+
+            <div className="mt-5 border-t border-brand-line pt-4">
+              <button
+                type="button"
+                data-testid="meta-advanced-sync-toggle"
+                onClick={() => setShowAdvancedSync((current) => !current)}
+                className="inline-flex items-center gap-2 text-xs font-bold text-brand-soft"
+              >
+                <Settings2 size={14} />
+                {showAdvancedSync ? 'Ocultar opções avançadas' : 'Opções avançadas'}
+              </button>
+
+              {showAdvancedSync && (
+                <div className="mt-3 rounded-xl border border-brand-line bg-brand-ink/40 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Reconstruir histórico de 90 dias</p>
+                      <p className="mt-1 text-xs text-brand-muted">Use somente para auditoria, recuperação de histórico ou quando o suporte solicitar. O uso normal é automático.</p>
+                    </div>
+                    <button
+                      data-testid="meta-sync-linked-clients"
+                      type="button"
+                      onClick={() => void syncLinkedClients()}
+                      disabled={activeLinkedAccounts.length === 0 || bulkSyncBusy}
+                      className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-3 py-2 text-xs font-bold text-brand-soft disabled:opacity-60"
+                    >
+                      <RefreshCw size={14} className={bulkSync?.running ? 'animate-spin' : ''} />
+                      Reconstruir 90 dias
+                    </button>
+                  </div>
+
+                  <span data-testid="meta-bulk-period-fixed" className="sr-only">
+                    {bulkPeriodLabels[OFFICIAL_META_SYNC_PERIOD]}
+                  </span>
+
+                  {bulkSync && (
+                    <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs text-brand-muted">
+                      {bulkSync.running ? 'Reconstruindo histórico' : 'Reconstrução concluída'}: {bulkSync.completed}/{bulkSync.total} conta(s)
+                    </p>
+                  )}
+
+                  {bulkSync && (
+                    <BulkSyncResultsPanel
+                      results={bulkSync.results}
+                      onRetry={(target) => void retryAccountSync(target)}
+                      retryDisabled={bulkSyncBusy}
+                    />
+                  )}
+                </div>
               )}
             </div>
 
