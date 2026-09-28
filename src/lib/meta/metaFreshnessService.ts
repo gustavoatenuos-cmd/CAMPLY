@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabaseData } from '../supabase';
 import { isMetaE2EMode } from './metaE2ERuntime';
 import { syncMetaAsset } from './metaSyncService';
 
@@ -35,9 +35,9 @@ export async function loadMetaFreshnessStatus(): Promise<MetaFreshnessSnapshot> 
   if (isMetaE2EMode) {
     return { state: 'ready', checkedAt: new Date().toISOString(), items: [] };
   }
-  if (!supabase) return EMPTY;
+  if (!supabaseData) return EMPTY;
 
-  const { data, error } = await supabase.rpc('get_meta_freshness_status', {
+  const { data, error } = await supabaseData.rpc('get_meta_freshness_status', {
     p_structure_max_age_minutes: 60,
     p_creative_max_age_minutes: 360,
   });
