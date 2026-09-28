@@ -135,6 +135,9 @@ assert_js 'document.querySelector("main h1")?.innerText === "Integração Meta A
 assert_js 'document.querySelector("[data-testid=meta-link-button]") !== null' 'Meta link control did not render after navigating to the integration'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-link-button]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 250
+"${BROWSER[@]}" wait '[data-testid=meta-advanced-sync-toggle]'
+"${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-advanced-sync-toggle]").click(); true' >/dev/null
+"${BROWSER[@]}" wait 100
 "${BROWSER[@]}" wait '[data-testid=meta-sync-linked-clients]'
 "${BROWSER[@]}" eval 'document.querySelector("[data-testid=meta-sync-linked-clients]").click(); true' >/dev/null
 "${BROWSER[@]}" wait 350

@@ -151,6 +151,47 @@ describe('evaluateClientOperationalReadiness', () => {
     expect(readiness.globalStatus).toBe('attention');
   });
 
+  it('treats Meta reporting lag as stale/awaiting Meta instead of partial failure', () => {
+    const readiness = evaluateClientOperationalReadiness(
+      baseInput({
+        metaAccounts: [
+          makeAccount({
+            lastSuccess: null,
+            lastAttempt: {
+              id: 'run-delayed',
+              status: 'partial',
+              period: 'this_month',
+              level: 'creative',
+              scope: 'full_account',
+              startedAt: '2026-07-15T11:00:00.000Z',
+              finishedAt: '2026-07-15T11:05:00.000Z',
+              errorMessage: 'Account insights this_month: Meta last_90d range differs from local expectation; using returned range.',
+              metadata: {
+                collection_errors: [],
+                collection_warnings: ['Meta last_90d range differs from local expectation; using returned range.'],
+                range_diagnostics_by_period: {
+                  this_month: {
+                    expectedDateStop: '2026-07-15',
+                    returnedDateStop: '2026-07-14',
+                  },
+                },
+              },
+            },
+          }),
+        ],
+      })
+    );
+
+    expect(readiness.meta.status).toBe('stale');
+    expect(readiness.meta.warnings).toContain('Atualizada até ontem');
+    expect(readiness.meta.action).toBe('Aguardar consolidação da Meta');
+    expect(readiness.analytics.status).toBe('limited');
+    expect(readiness.analytics.action).toBe('Aguardar consolidação da Meta');
+    expect(readiness.campaigns.status).toBe('stale');
+    expect(readiness.campaigns.action).toBe('Aguardar consolidação da Meta');
+    expect(readiness.globalStatus).toBe('attention');
+  });
+
   it('marks a successful but old sync as stale', () => {
     const readiness = evaluateClientOperationalReadiness(
       baseInput({

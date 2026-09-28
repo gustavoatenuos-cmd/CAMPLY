@@ -122,8 +122,8 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: sem tentativa');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Aguardando primeira atualização');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Ainda não existe uma coleta registrada');
     expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sucesso');
   });
 
@@ -145,11 +145,9 @@ describe('MetaIntegrationView linked-vs-available accounts', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Conta pronta');
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('sync: success');
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
-    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Run: run-fresh');
-    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Sync pronto');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Atualizada');
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Última atualização concluída');
+    expect(screen.getByTestId('meta-linked-account-row')).not.toHaveTextContent('Run: run-fresh');
   });
 });
 
@@ -333,12 +331,12 @@ describe('MetaIntegrationView bulk sync diagnostics', () => {
     render(<MetaIntegrationView data={baseData} updateData={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('meta-linked-account-row')).toBeInTheDocument());
 
-    // Antes de qualquer Sincronização, a linha mostra só o vínculo (ícone de
-    // link), sem nenhum badge de status de sync (sucesso/falha/parcial/etc).
+    // Antes de qualquer coleta, a linha mostra estado operacional neutro,
+    // sem fingir sucesso e sem expor o status técnico bruto.
     expect(screen.getByTitle('Conta vinculada ao cliente')).toBeInTheDocument();
+    expect(screen.getByTestId('meta-linked-account-row')).toHaveTextContent('Aguardando primeira atualização');
     expect(screen.queryByText('Sucesso')).not.toBeInTheDocument();
-    expect(screen.queryByText('Falha')).not.toBeInTheDocument();
-    expect(screen.queryByText('Pendente')).not.toBeInTheDocument();
+    expect(screen.queryByText('Parcial')).not.toBeInTheDocument();
   });
 
   it('disables the main bulk-sync button while a single-account retry is in flight', async () => {

@@ -3,6 +3,7 @@ import type { ClientAnalysisProfile } from '../analysis/clientAnalysisProfile';
 import type { ClientAnalyticsDecision } from '../performance/clientAnalyticsDecision';
 import type { GlobalClientStatus } from '../performance/globalPerformanceDashboard';
 import type { ClientMetaAccount, MetaRunSummary } from '../meta/clientMetaAssetService';
+import { describeMetaRunHealth } from '../meta/metaSyncHealth';
 import { isClientActive, isProjectActive, type OperationalEntry } from '../../data/receivablesForecast';
 
 // Mesmo limiar de "sincronização desatualizada" usado em clientAnalyticsDecision.ts
@@ -124,9 +125,11 @@ function evaluateMeta(
   const hasRunning = runs.some((run) => run.status === 'running');
   if (hasRunning) warnings.push('Sincronização em andamento');
 
-  const hasSuccess = runs.some((run) => run.status === 'success');
-  const hasPartial = runs.some((run) => run.status === 'partial');
-  const hasFailed = runs.some((run) => run.status === 'failed');
+  const runHealth = runs.map((run) => ({ run, health: describeMetaRunHealth(run) }));
+  const hasSuccess = runHealth.some(({ health }) => health.state === 'updated');
+  const hasDelayed = runHealth.some(({ health }) => health.state === 'delayed');
+  const hasPartial = runHealth.some(({ run, health }) => run.status === 'partial' && health.state === 'needs_retry');
+  const hasFailed = runHealth.some(({ run, health }) => run.status === 'failed' && health.state === 'needs_retry');
 
   // Só "running" (nenhum resultado terminal ainda para o período) - não bloquear
   // com a ação genérica de sincronizar, que sugeriria disparar um sync duplicado
@@ -149,14 +152,25 @@ function evaluateMeta(
     };
   }
 
-  // Partial nunca deve ser mascarado como sucesso total, mesmo que outra conta do
-  // mesmo cliente tenha sincronizado com sucesso.
+  // Partial com falha real de coleta nunca deve ser mascarado como sucesso total.
+  // Atraso de fechamento da própria Meta é tratado separadamente como dado stale,
+  // porque os dados já recebidos continuam utilizáveis e não pedem novo sync.
   if (hasPartial) {
     return {
       status: 'partial',
       missing: [],
       warnings: [...warnings, 'Leitura parcial — análise limitada'],
       action: 'Revisar sincronização parcial',
+    };
+  }
+
+  if (hasDelayed) {
+    const delayed = runHealth.find(({ health }) => health.state === 'delayed')?.health;
+    return {
+      status: 'stale',
+      missing: [],
+      warnings: [...warnings, delayed?.label || 'Meta ainda consolidando os dados mais recentes'],
+      action: 'Aguardar consolidação da Meta',
     };
   }
 
@@ -278,8 +292,10 @@ function evaluateAnalytics(
       return {
         status: 'limited',
         missing: [],
-        warnings: [`Dados desatualizados (mais de ${STALE_SYNC_HOURS}h sem sincronização)`],
-        action: 'Sincronizar Meta novamente',
+        warnings: meta.warnings.length > 0
+          ? meta.warnings
+          : [`Dados desatualizados (mais de ${STALE_SYNC_HOURS}h sem sincronização)`],
+        action: meta.action || 'Sincronizar Meta novamente',
       };
     }
     // healthy | attention | critical: dados existem e são analisáveis - o veredito
@@ -313,8 +329,10 @@ function evaluateAnalytics(
     return {
       status: 'limited',
       missing: [],
-      warnings: [`Dados desatualizados (mais de ${STALE_SYNC_HOURS}h sem sincronização)`],
-      action: 'Sincronizar Meta novamente',
+      warnings: meta.warnings.length > 0
+        ? meta.warnings
+        : [`Dados desatualizados (mais de ${STALE_SYNC_HOURS}h sem sincronização)`],
+      action: meta.action || 'Sincronizar Meta novamente',
     };
   }
   return { status: 'ready', missing: [], warnings: [], action: '' };
@@ -341,7 +359,7 @@ function evaluateCampaigns(meta: ReadinessArea<MetaReadinessStatus>): ReadinessA
     };
   }
   if (meta.status === 'stale') {
-    return { status: 'stale', missing: [], warnings: meta.warnings, action: 'Sincronizar Meta novamente' };
+    return { status: 'stale', missing: [], warnings: meta.warnings, action: meta.action || 'Sincronizar Meta novamente' };
   }
   return { status: 'ready', missing: [], warnings: [], action: '' };
 }
