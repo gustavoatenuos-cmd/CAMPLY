@@ -25,15 +25,15 @@ export function ClientAnalyticsView({ data, updateData, setActiveView }: { data:
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-red-500 bg-red-50 p-8">
-        <h2 className="text-xl font-bold mb-2">Erro ao carregar Analytics</h2>
+      <div className="flex h-full flex-col items-center justify-center bg-brand-ink p-8 text-rose-300">
+        <h2 className="mb-2 text-lg font-semibold text-white">Erro ao carregar Analytics</h2>
         <p>{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden bg-brand-ink">
       <ClientAnalyticsBoard
         clients={clients}
         period={period}
