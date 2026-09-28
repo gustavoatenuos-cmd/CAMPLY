@@ -31,6 +31,42 @@ const EMPTY: MetaFreshnessSnapshot = {
   items: [],
 };
 
+export const META_STRUCTURE_MAX_AGE_MINUTES = 60;
+export const META_CREATIVE_MAX_AGE_MINUTES = 360;
+export const META_REPORTING_LAG_TOLERANCE_DAYS = 2;
+
+function isoDayDiff(later: string | null, earlier: string | null): number | null {
+  if (!later || !earlier) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(later) || !/^\d{4}-\d{2}-\d{2}$/.test(earlier)) return null;
+  const laterMs = Date.parse(`${later}T12:00:00Z`);
+  const earlierMs = Date.parse(`${earlier}T12:00:00Z`);
+  if (!Number.isFinite(laterMs) || !Number.isFinite(earlierMs)) return null;
+  return Math.round((laterMs - earlierMs) / 86_400_000);
+}
+
+function syncedRecently(iso: string | null, maxAgeMinutes: number, nowMs = Date.now()): boolean {
+  if (!iso) return false;
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return false;
+  return nowMs - timestamp <= maxAgeMinutes * 60_000;
+}
+
+export function normalizeMetaFreshnessItem(item: MetaFreshnessItem, nowMs = Date.now()): MetaFreshnessItem {
+  const lagDays = isoDayDiff(item.localToday, item.structureDateStop);
+  const lagAcceptable = lagDays !== null
+    && lagDays >= 0
+    && lagDays <= META_REPORTING_LAG_TOLERANCE_DAYS;
+  const derivedStructureFresh = lagAcceptable
+    && syncedRecently(item.structureLastSyncedAt, META_STRUCTURE_MAX_AGE_MINUTES, nowMs);
+  const structureFresh = item.structureFresh || derivedStructureFresh;
+
+  return {
+    ...item,
+    structureFresh,
+    needsStructureRefresh: !structureFresh,
+  };
+}
+
 export async function loadMetaFreshnessStatus(): Promise<MetaFreshnessSnapshot> {
   if (isMetaE2EMode) {
     return { state: 'ready', checkedAt: new Date().toISOString(), items: [] };
@@ -38,8 +74,8 @@ export async function loadMetaFreshnessStatus(): Promise<MetaFreshnessSnapshot> 
   if (!supabaseData) return EMPTY;
 
   const { data, error } = await supabaseData.rpc('get_meta_freshness_status', {
-    p_structure_max_age_minutes: 60,
-    p_creative_max_age_minutes: 360,
+    p_structure_max_age_minutes: META_STRUCTURE_MAX_AGE_MINUTES,
+    p_creative_max_age_minutes: META_CREATIVE_MAX_AGE_MINUTES,
   });
 
   if (error) {
@@ -56,7 +92,9 @@ export async function loadMetaFreshnessStatus(): Promise<MetaFreshnessSnapshot> 
   return {
     state: payload?.state || 'unavailable',
     checkedAt: payload?.checkedAt || null,
-    items: Array.isArray(payload?.items) ? payload.items : [],
+    items: Array.isArray(payload?.items)
+      ? payload.items.map((item) => normalizeMetaFreshnessItem(item))
+      : [],
   };
 }
 
