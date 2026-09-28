@@ -585,6 +585,9 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                   {bulkSync && (
                     <p data-testid="meta-bulk-sync-progress" className="mt-3 text-xs text-brand-muted">
                       {bulkSync.running ? 'Reconstruindo histórico' : 'Reconstrução concluída'}: {bulkSync.completed}/{bulkSync.total} conta(s)
+                      {' · '}{bulkSync.success} sucesso
+                      {bulkSync.partial > 0 ? `, ${bulkSync.partial} parcial` : ''}
+                      {bulkSync.failed > 0 ? `, ${bulkSync.failed} falha` : ''}
                     </p>
                   )}
 
