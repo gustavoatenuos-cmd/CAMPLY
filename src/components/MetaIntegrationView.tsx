@@ -45,10 +45,6 @@ function latestAccountSyncRun(account: ClientMetaAccount) {
   return attempt ?? success ?? null;
 }
 
-function accountLinkStatusLabel(account: ClientMetaAccount): string {
-  return account.assetStatus === 'ACTIVE' || !account.assetStatus ? 'Conta pronta' : 'Conta vinculada';
-}
-
 function healthToneClasses(health: MetaSyncHealth): string {
   switch (health.tone) {
     case 'success':
@@ -564,8 +560,7 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                 {showAdvancedSync ? 'Ocultar opções avançadas' : 'Opções avançadas'}
               </button>
 
-              {showAdvancedSync && (
-                <div className="mt-3 rounded-xl border border-brand-line bg-brand-ink/40 p-4">
+              <div className={showAdvancedSync ? 'mt-3 rounded-xl border border-brand-line bg-brand-ink/40 p-4' : 'hidden'}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-white">Reconstruir histórico de 90 dias</p>
@@ -601,7 +596,6 @@ export function MetaIntegrationView({ data }: MetaIntegrationViewProps) {
                     />
                   )}
                 </div>
-              )}
             </div>
 
             {inactiveLinkedAccounts.length > 0 && (
