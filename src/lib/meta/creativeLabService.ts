@@ -174,7 +174,7 @@ function runMatchesOfficialDepthContract(run: ClientMetaAccount['lastAttempt']):
 }
 
 export function accountHasCreativeDepth(account: ClientMetaAccount): boolean {
-  const deepSuccess = account.lastDeepSuccess;
+  const deepSuccess = account.lastDeepSuccess ?? null;
   if (runMatchesOfficialDepthContract(deepSuccess)
     && (deepSuccess?.status === undefined || deepSuccess.status === 'success')) {
     return true;
