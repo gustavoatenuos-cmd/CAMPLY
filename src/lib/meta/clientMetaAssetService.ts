@@ -40,7 +40,7 @@ export interface ClientMetaAccount {
   availablePeriods: string[];
   lastAttempt: MetaRunSummary | null;
   lastSuccess: MetaRunSummary | null;
-  lastDeepSuccess: MetaRunSummary | null;
+  lastDeepSuccess?: MetaRunSummary | null;
 }
 
 export interface ClientMetaAssetCatalog {
@@ -423,7 +423,7 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
             lastDeepSuccess: runSummary(lastDeepSuccessByAccount.get(key)),
           } satisfies ClientMetaAccount;
         })
-        .filter((account): account is ClientMetaAccount => Boolean(account)),
+        .filter((account): account is NonNullable<typeof account> => account !== null),
     })),
     availableAssets: assets.map((asset) => {
       const link = linkByAssetId.get(asset.id) || null;
