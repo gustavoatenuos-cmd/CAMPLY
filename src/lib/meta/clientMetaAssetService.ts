@@ -40,7 +40,7 @@ export interface ClientMetaAccount {
   availablePeriods: string[];
   lastAttempt: MetaRunSummary | null;
   lastSuccess: MetaRunSummary | null;
-  lastDeepSuccess?: MetaRunSummary | null;
+  lastDeepSuccess: MetaRunSummary | null;
 }
 
 export interface ClientMetaAssetCatalog {
@@ -61,6 +61,20 @@ export interface ClientMetaAssetCatalog {
 }
 
 const CACHE_PREFIX = 'camply.meta.assetCatalog.v1';
+
+function normalizeCatalog(catalog: ClientMetaAssetCatalog): ClientMetaAssetCatalog {
+  return {
+    ...catalog,
+    clients: (catalog.clients || []).map((client) => ({
+      ...client,
+      accounts: (client.accounts || []).map((account) => ({
+        ...account,
+        lastDeepSuccess: account.lastDeepSuccess ?? null,
+      })),
+    })),
+  };
+}
+
 
 function cacheKey(clientId?: string): string | null {
   const userId = getSupabaseSessionUserId();
@@ -90,7 +104,7 @@ function readCachedCatalog(clientId?: string): ClientMetaAssetCatalog | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ClientMetaAssetCatalog;
     if (!Array.isArray(parsed.clients) || !Array.isArray(parsed.availableAssets)) return null;
-    return { ...parsed, source: 'cache' };
+    return { ...normalizeCatalog(parsed), source: 'cache' };
   } catch {
     return null;
   }
@@ -171,7 +185,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     const catalog = await invokeFunction<ClientMetaAssetCatalog>('meta-client-catalog', {
       clientId: clientId || null,
     }, 8_000);
-    const edgeCatalog = { ...catalog, source: 'edge' as const };
+    const edgeCatalog = { ...normalizeCatalog(catalog), source: 'edge' as const };
     writeCachedCatalog(clientId, edgeCatalog);
     return edgeCatalog;
   } catch {
@@ -189,7 +203,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       'A leitura dos vínculos salvos demorou mais que o esperado.'
     );
     if (error) throw new Error('Não foi possível carregar os vínculos Meta.');
-    const catalog = { ...(data as ClientMetaAssetCatalog), source: 'rpc' as const };
+    const catalog = { ...normalizeCatalog(data as ClientMetaAssetCatalog), source: 'rpc' as const };
     writeCachedCatalog(clientId, catalog);
     return catalog;
   } catch (rpcError) {
