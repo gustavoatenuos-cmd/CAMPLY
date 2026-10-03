@@ -40,7 +40,7 @@ export interface ClientMetaAccount {
   availablePeriods: string[];
   lastAttempt: MetaRunSummary | null;
   lastSuccess: MetaRunSummary | null;
-  lastDeepSuccess: MetaRunSummary | null;
+  lastDeepSuccess?: MetaRunSummary | null;
 }
 
 export interface ClientMetaAssetCatalog {
