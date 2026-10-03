@@ -174,6 +174,12 @@ function runMatchesOfficialDepthContract(run: ClientMetaAccount['lastAttempt']):
 }
 
 export function accountHasCreativeDepth(account: ClientMetaAccount): boolean {
+  const deepSuccess = account.lastDeepSuccess ?? null;
+  if (runMatchesOfficialDepthContract(deepSuccess)
+    && (deepSuccess?.status === undefined || deepSuccess.status === 'success')) {
+    return true;
+  }
+
   const attempt = account.lastAttempt;
 
   // A partial deep request is only a request contract, not proof that ad rows

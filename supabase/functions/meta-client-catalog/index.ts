@@ -169,6 +169,7 @@ serve(async (req) => {
       const linkByAssetId = new Map(links.map((link) => [link.meta_asset_id, link]))
       const lastAttemptByAccount = new Map<string, RunRow>()
       const lastSuccessByAccount = new Map<string, RunRow>()
+      const lastDeepSuccessByAccount = new Map<string, RunRow>()
       const periodsByAccount = new Map<string, Set<string>>()
 
       for (const run of runs) {
@@ -176,6 +177,13 @@ serve(async (req) => {
         lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run))
         if (run.status === 'success') {
           lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run))
+          if (
+            run.run_scope === 'full_account'
+            && run.requested_period === 'last_90d'
+            && ['ad', 'creative'].includes(String(run.requested_level || '').toLowerCase())
+          ) {
+            lastDeepSuccessByAccount.set(key, newestRun(lastDeepSuccessByAccount.get(key), run))
+          }
           if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'].includes(run.requested_period)) {
             const periods = periodsByAccount.get(key) || new Set<string>()
             periods.add(run.requested_period)
@@ -207,6 +215,7 @@ serve(async (req) => {
                 availablePeriods: Array.from(periodsByAccount.get(key) || []).sort(),
                 lastAttempt: runSummary(lastAttemptByAccount.get(key)),
                 lastSuccess: runSummary(lastSuccessByAccount.get(key)),
+                lastDeepSuccess: runSummary(lastDeepSuccessByAccount.get(key)),
               }
             })
             .filter(Boolean),

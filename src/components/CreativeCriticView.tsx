@@ -37,6 +37,10 @@ import {
   type ClientMetaAssetCatalog,
 } from '../lib/meta/clientMetaAssetService';
 import { OFFICIAL_META_SYNC_PERIOD, syncMetaAsset } from '../lib/meta/metaSyncService';
+import {
+  loadMetaFreshnessStatus,
+  refreshStaleMetaCreatives,
+} from '../lib/meta/metaFreshnessService';
 
 interface Props {
   data: CamplyData;
@@ -410,7 +414,11 @@ export function CreativeCriticView({ data }: Props) {
   const [labLoading, setLabLoading] = useState(false);
   const [labSyncing, setLabSyncing] = useState(false);
   const [labSyncNote, setLabSyncNote] = useState<string | null>(null);
+  const [labPreparing, setLabPreparing] = useState(false);
+  const [labPrepareProgress, setLabPrepareProgress] = useState({ completed: 0, total: 0 });
+  const [labPrepareError, setLabPrepareError] = useState<string | null>(null);
   const deepSyncedClientIdsRef = useRef<Set<string>>(new Set());
+  const autoPrepareStartedRef = useRef(false);
   const [selectedCreative, setSelectedCreative] = useState<CreativeLabCreative | null>(null);
   const [analysis, setAnalysis] = useState<CreativeCriticResponse | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -494,6 +502,131 @@ export function CreativeCriticView({ data }: Props) {
     [data, accountMap, mediaSummaryMap, mediaSummaryLoaded]
   );
 
+  useEffect(() => {
+    if (
+      catalogLoading
+      || !mediaSummaryLoaded
+      || autoPrepareStartedRef.current
+      || clientRows.length === 0
+    ) return;
+
+    const rowsWithAccounts = clientRows.filter((row) => row.accounts.length > 0);
+    const activeClientIds = new Set(rowsWithAccounts.map((row) => row.client.id));
+    const needsPreparation = rowsWithAccounts.some((row) => (
+      row.state === 'active_structure' || row.state === 'data_unavailable'
+    ));
+
+    autoPrepareStartedRef.current = true;
+    if (!needsPreparation) return;
+
+    let active = true;
+    setLabPreparing(true);
+    setLabPrepareError(null);
+    setLabPrepareProgress({ completed: 0, total: 0 });
+
+    void (async () => {
+      try {
+        const snapshot = await loadMetaFreshnessStatus();
+        if (!active) return;
+
+        if (snapshot.state === 'ready') {
+          const targets = snapshot.items.filter((item) => (
+            activeClientIds.has(item.clientId) && item.needsCreativeRefresh
+          ));
+          setLabPrepareProgress({ completed: 0, total: targets.length });
+
+          const result = await refreshStaleMetaCreatives(
+            snapshot,
+            activeClientIds,
+            (completed, total) => {
+              if (active) setLabPrepareProgress({ completed, total });
+            }
+          );
+          if (!active) return;
+
+          if (result.failures.length > 0) {
+            setLabPrepareError(
+              result.failures
+                .slice(0, 3)
+                .map((item) => `${item.accountName}: ${item.message}`)
+                .join(' ')
+            );
+          }
+        } else {
+          const accounts = rowsWithAccounts.flatMap((row) => row.accounts.filter((account) => {
+            const summary = mediaSummaryByAccount.get(account.clientMetaAssetId);
+            return summary?.adDataAvailable !== true;
+          }));
+
+          setLabPrepareProgress({ completed: 0, total: accounts.length });
+          let completed = 0;
+          const failures: string[] = [];
+
+          for (const account of accounts) {
+            try {
+              const result = await syncMetaAsset({
+                clientMetaAssetId: account.clientMetaAssetId,
+                period: OFFICIAL_META_SYNC_PERIOD,
+                requestedLevel: 'creative',
+              });
+              if (result.status === 'failed') {
+                failures.push(`${account.accountName}: sincronização não concluída.`);
+              }
+            } catch (error) {
+              failures.push(
+                `${account.accountName}: ${error instanceof Error ? error.message : 'falha ao sincronizar criativos'}`
+              );
+            } finally {
+              completed += 1;
+              if (active) setLabPrepareProgress({ completed, total: accounts.length });
+            }
+          }
+
+          if (!active) return;
+          if (failures.length > 0) setLabPrepareError(failures.slice(0, 3).join(' '));
+        }
+
+        const freshCatalog = await loadClientMetaAssetCatalog();
+        if (!active) return;
+        setCatalog(freshCatalog);
+
+        const freshAccountMap = new Map(
+          (freshCatalog.clients || []).map((item) => [item.clientId, item.accounts] as const)
+        );
+
+        try {
+          const summaries = await loadCreativeLabClientMediaSummaries();
+          if (!active) return;
+          setMediaSummaries(summaries);
+          setMediaSummaryLoaded(true);
+        } catch {
+          const summaries = await loadCreativeLabClientMediaSummariesFromHierarchy(data, freshAccountMap);
+          if (!active) return;
+          setMediaSummaries(summaries);
+          setMediaSummaryLoaded(true);
+        }
+      } catch (error) {
+        if (!active) return;
+        setLabPrepareError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível preparar automaticamente os criativos.'
+        );
+      } finally {
+        if (active) setLabPreparing(false);
+      }
+    })();
+
+    return () => { active = false; };
+  }, [
+    catalogLoading,
+    mediaSummaryLoaded,
+    clientRows,
+    data,
+    mediaSummaryByAccount,
+  ]);
+
+
   const visibleClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return clientRows.filter((row) => (
@@ -527,7 +660,8 @@ export function CreativeCriticView({ data }: Props) {
       let accounts = selectedClient.accounts;
       const clientId = selectedClient.client.id;
       const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
-      const shouldDeepSync = !deepSyncedClientIdsRef.current.has(clientId)
+      const shouldDeepSync = !labPreparing
+        && !deepSyncedClientIdsRef.current.has(clientId)
         && accounts.some((account) => {
           const summary = mediaSummaryByAccount.get(account.clientMetaAssetId);
           if (summary?.adDataAvailable !== true) return true;
@@ -620,7 +754,7 @@ export function CreativeCriticView({ data }: Props) {
       });
 
     return () => { active = false; };
-  }, [selectedClient?.client.id, selectedClient?.accounts, period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedClient?.client.id, selectedClient?.accounts, period, labPreparing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const creatives = labResult?.creatives || [];
   const visibleCreatives = useMemo(() => creatives.filter((creative) => {
@@ -1002,6 +1136,26 @@ export function CreativeCriticView({ data }: Props) {
             : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
             <strong>Dados Meta:</strong> {mediaSummaryError}
             {!mediaSummaryLoaded && <span className="ml-1">Os cards não exibem zero quando a fonte não pôde ser lida.</span>}
+          </div>
+        )}
+
+        {labPreparing && (
+          <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-4 text-sm text-sky-200">
+            <div className="flex items-center gap-2 font-bold">
+              <RefreshCw size={15} className="animate-spin" />
+              Preparando anúncios e criativos automaticamente
+            </div>
+            <p className="mt-1 text-xs text-sky-200/80">
+              {labPrepareProgress.total > 0
+                ? `${labPrepareProgress.completed} de ${labPrepareProgress.total} contas processadas.`
+                : 'Identificando quais contas precisam de sincronização profunda.'}
+            </p>
+          </div>
+        )}
+
+        {labPrepareError && !labPreparing && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <strong>Preparação do Lab:</strong> {labPrepareError}
           </div>
         )}
 

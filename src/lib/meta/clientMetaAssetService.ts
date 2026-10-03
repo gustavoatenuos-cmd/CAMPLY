@@ -40,6 +40,7 @@ export interface ClientMetaAccount {
   availablePeriods: string[];
   lastAttempt: MetaRunSummary | null;
   lastSuccess: MetaRunSummary | null;
+  lastDeepSuccess?: MetaRunSummary | null;
 }
 
 export interface ClientMetaAssetCatalog {
@@ -60,6 +61,20 @@ export interface ClientMetaAssetCatalog {
 }
 
 const CACHE_PREFIX = 'camply.meta.assetCatalog.v1';
+
+function normalizeCatalog(catalog: ClientMetaAssetCatalog): ClientMetaAssetCatalog {
+  return {
+    ...catalog,
+    clients: (catalog.clients || []).map((client) => ({
+      ...client,
+      accounts: (client.accounts || []).map((account) => ({
+        ...account,
+        lastDeepSuccess: account.lastDeepSuccess ?? null,
+      })),
+    })),
+  };
+}
+
 
 function cacheKey(clientId?: string): string | null {
   const userId = getSupabaseSessionUserId();
@@ -89,7 +104,7 @@ function readCachedCatalog(clientId?: string): ClientMetaAssetCatalog | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ClientMetaAssetCatalog;
     if (!Array.isArray(parsed.clients) || !Array.isArray(parsed.availableAssets)) return null;
-    return { ...parsed, source: 'cache' };
+    return { ...normalizeCatalog(parsed), source: 'cache' };
   } catch {
     return null;
   }
@@ -136,6 +151,11 @@ const mockAccount = (): ClientMetaAccount => ({
     startedAt: '2026-06-30T17:59:00.000Z', finishedAt: '2026-06-30T18:00:00.000Z',
     pagesFetched: 4, recordsFetched: 12,
   },
+  lastDeepSuccess: {
+    id: 'run-e2e', period: 'last_90d', level: 'creative', scope: 'full_account',
+    startedAt: '2026-06-30T17:59:00.000Z', finishedAt: '2026-06-30T18:00:00.000Z',
+    pagesFetched: 4, recordsFetched: 12,
+  },
 });
 
 export async function loadClientMetaAssetCatalog(clientId?: string): Promise<ClientMetaAssetCatalog> {
@@ -165,7 +185,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
     const catalog = await invokeFunction<ClientMetaAssetCatalog>('meta-client-catalog', {
       clientId: clientId || null,
     }, 8_000);
-    const edgeCatalog = { ...catalog, source: 'edge' as const };
+    const edgeCatalog = { ...normalizeCatalog(catalog), source: 'edge' as const };
     writeCachedCatalog(clientId, edgeCatalog);
     return edgeCatalog;
   } catch {
@@ -183,7 +203,7 @@ export async function loadClientMetaAssetCatalog(clientId?: string): Promise<Cli
       'A leitura dos vínculos salvos demorou mais que o esperado.'
     );
     if (error) throw new Error('Não foi possível carregar os vínculos Meta.');
-    const catalog = { ...(data as ClientMetaAssetCatalog), source: 'rpc' as const };
+    const catalog = { ...normalizeCatalog(data as ClientMetaAssetCatalog), source: 'rpc' as const };
     writeCachedCatalog(clientId, catalog);
     return catalog;
   } catch (rpcError) {
@@ -354,6 +374,7 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
   const linkByAssetId = new Map(links.map((link) => [link.meta_asset_id, link]));
   const lastAttemptByAccount = new Map<string, DirectRunRow>();
   const lastSuccessByAccount = new Map<string, DirectRunRow>();
+  const lastDeepSuccessByAccount = new Map<string, DirectRunRow>();
   const periodsByAccount = new Map<string, Set<string>>();
 
   for (const run of runs) {
@@ -361,6 +382,13 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
     lastAttemptByAccount.set(key, newestRun(lastAttemptByAccount.get(key), run));
     if (run.status === 'success') {
       lastSuccessByAccount.set(key, newestRun(lastSuccessByAccount.get(key), run));
+      if (
+        run.run_scope === 'full_account'
+        && run.requested_period === 'last_90d'
+        && ['ad', 'creative'].includes(String(run.requested_level || '').toLowerCase())
+      ) {
+        lastDeepSuccessByAccount.set(key, newestRun(lastDeepSuccessByAccount.get(key), run));
+      }
       if (run.run_scope === 'full_account' && ['this_month', 'this_week', 'today', 'last_7d', 'last_30d', 'last_90d'].includes(run.requested_period)) {
         const periods = periodsByAccount.get(key) || new Set<string>();
         periods.add(run.requested_period);
@@ -392,9 +420,10 @@ async function loadClientMetaAssetCatalogDirect(clientId?: string): Promise<Clie
             availablePeriods: Array.from(periodsByAccount.get(key) || []).sort(),
             lastAttempt: runSummary(lastAttemptByAccount.get(key)),
             lastSuccess: runSummary(lastSuccessByAccount.get(key)),
+            lastDeepSuccess: runSummary(lastDeepSuccessByAccount.get(key)),
           } satisfies ClientMetaAccount;
         })
-        .filter((account): account is ClientMetaAccount => Boolean(account)),
+        .filter((account): account is NonNullable<typeof account> => account !== null),
     })),
     availableAssets: assets.map((asset) => {
       const link = linkByAssetId.get(asset.id) || null;
