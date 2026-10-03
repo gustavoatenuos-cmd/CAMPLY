@@ -113,6 +113,75 @@ async function runWithConcurrency<T>(
   await Promise.all(runners);
 }
 
+export interface MetaCreativeRefreshResult {
+  attempted: number;
+  failed: number;
+  completed: number;
+  failures: Array<{ clientMetaAssetId: string; accountName: string; message: string }>;
+}
+
+export async function refreshStaleMetaCreatives(
+  snapshot: MetaFreshnessSnapshot,
+  clientIds?: Set<string>,
+  onProgress?: (completed: number, total: number) => void
+): Promise<MetaCreativeRefreshResult> {
+  const stale = snapshot.items.filter((item) => (
+    item.needsCreativeRefresh
+    && (!clientIds || clientIds.has(item.clientId))
+  ));
+
+  if (stale.length === 0 || isMetaE2EMode) {
+    return { attempted: 0, failed: 0, completed: 0, failures: [] };
+  }
+
+  let completed = 0;
+  let failed = 0;
+  const failures: MetaCreativeRefreshResult['failures'] = [];
+
+  // Creative-depth collection is heavier than the normal structural refresh.
+  // Keep concurrency at 1 to avoid unnecessary Graph API bursts and rate-limit
+  // contention while still making the Lab self-healing.
+  await runWithConcurrency(stale, 1, async (item) => {
+    try {
+      const result = await syncMetaAsset({
+        clientMetaAssetId: item.clientMetaAssetId,
+        period: 'last_90d',
+        requestedLevel: 'creative',
+      });
+
+      if (!result.success && result.status !== 'running') {
+        failed += 1;
+        failures.push({
+          clientMetaAssetId: item.clientMetaAssetId,
+          accountName: item.accountName,
+          message: result.message || 'A sincronização de criativos não foi concluída.',
+        });
+      }
+    } catch (error) {
+      failed += 1;
+      failures.push({
+        clientMetaAssetId: item.clientMetaAssetId,
+        accountName: item.accountName,
+        message: error instanceof Error ? error.message : 'Falha ao sincronizar criativos.',
+      });
+      console.warn('[MetaFreshness] creative refresh failed', {
+        clientMetaAssetId: item.clientMetaAssetId,
+        error,
+      });
+    } finally {
+      completed += 1;
+      onProgress?.(completed, stale.length);
+    }
+  });
+
+  return {
+    attempted: stale.length,
+    failed,
+    completed,
+    failures,
+  };
+}
+
 export async function refreshStaleMetaStructure(
   snapshot: MetaFreshnessSnapshot,
   onProgress?: (completed: number, total: number) => void
